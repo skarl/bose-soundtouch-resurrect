@@ -1,0 +1,74 @@
+#!/bin/sh
+#
+# tunein — dumb forwarder to opml.radiotime.com.
+#
+# Switches on PATH_INFO. Pipes raw TuneIn JSON back verbatim — no
+# {ok, data} envelope, no CGI-side classification. The browser parses
+# the response (see admin/app/reshape.js, slice 4).
+#
+# See admin/PLAN.md § REST API → tunein.
+#
+# Routes:
+#   GET /tunein/search?q=...&type=station   → Search.ashx
+#   GET /tunein/browse                      → Browse.ashx (root)
+#   GET /tunein/browse?id=g22               → Browse.ashx?id=g22
+#   GET /tunein/station/sNNN                → Describe.ashx?id=sNNN
+#   GET /tunein/probe/sNNN                  → Tune.ashx?id=sNNN
+#
+# busybox-shell only — no bash-isms. Uses wget (not curl); the speaker
+# ships busybox 1.x with wget but no curl.
+
+UA='Bose_Lisa/27.0.6'
+MAGIC='formats=mp3,aac&lang=de-de&render=json'
+BASE='https://opml.radiotime.com'
+
+# CORS preflight: respond and exit before doing any work.
+if [ "${REQUEST_METHOD:-GET}" = 'OPTIONS' ]; then
+  printf 'Status: 204 No Content\r\n'
+  printf 'Access-Control-Allow-Origin: *\r\n'
+  printf 'Access-Control-Allow-Methods: GET, OPTIONS\r\n'
+  printf 'Access-Control-Allow-Headers: Content-Type\r\n'
+  printf '\r\n'
+  exit 0
+fi
+
+emit_error() {
+  printf 'Status: %s\r\n' "$1"
+  printf 'Content-Type: application/json; charset=utf-8\r\n'
+  printf 'Cache-Control: no-store\r\n'
+  printf 'Access-Control-Allow-Origin: *\r\n'
+  printf '\r\n'
+  printf '{"error":"%s"}\n' "$2"
+  exit 0
+}
+
+# Resolve PATH_INFO to a TuneIn endpoint + extra query string.
+# QUERY_STRING is forwarded for /search and /browse (the only routes
+# that take user-supplied params). For /station/sNNN and /probe/sNNN
+# the id comes from the path, not the query.
+PI="${PATH_INFO:-}"
+QS="${QUERY_STRING:-}"
+case "$PI" in
+  /search)
+    URL="$BASE/Search.ashx?$MAGIC${QS:+&$QS}" ;;
+  /browse)
+    URL="$BASE/Browse.ashx?$MAGIC${QS:+&$QS}" ;;
+  /station/s[0-9]*)
+    SID=${PI#/station/}
+    URL="$BASE/Describe.ashx?$MAGIC&id=$SID" ;;
+  /probe/s[0-9]*)
+    SID=${PI#/probe/}
+    URL="$BASE/Tune.ashx?$MAGIC&id=$SID" ;;
+  *)
+    emit_error '404 Not Found' 'unknown tunein route' ;;
+esac
+
+# Headers first, then body. busybox wget writes the body to stdout
+# with -O -, swallows its progress noise with -q.
+printf 'Status: 200 OK\r\n'
+printf 'Content-Type: application/json; charset=utf-8\r\n'
+printf 'Cache-Control: no-store\r\n'
+printf 'Access-Control-Allow-Origin: *\r\n'
+printf '\r\n'
+
+wget -q -O - -U "$UA" "$URL" || printf '{"error":"upstream fetch failed"}\n'
