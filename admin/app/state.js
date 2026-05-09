@@ -4,9 +4,10 @@
 
 const TOP_LEVEL_KEYS = ['speaker', 'caches', 'ws', 'ui'];
 
-// localStorage key + cap for the recently-viewed station list.
-// Owned by station.js (slice 4); read by search.js (slice 3) for its
-// empty state. Shape: Array<{ sid, name, art? }>, most-recent first.
+// Recently-viewed station list. station.js prepends on view-entry;
+// search.js renders it as the empty-state landing. Shape:
+// Array<{ sid, name, art? }>, most-recent first, capped at RECENT_MAX,
+// persisted in localStorage.
 const RECENT_KEY = 'admin.recentlyViewed';
 const RECENT_MAX = 20;
 

@@ -71,10 +71,10 @@ check "port 8090 /now_playing returns XML" \
 
 printf '\n=== Admin SPA (skipped if not deployed) ===\n'
 # Probe via the speaker (matches the existing wget/curl-through-ssh
-# pattern). The admin is optional in 0.2 slice 1: skip cleanly if
-# index.html isn't served, but if it IS served, assert the meta tag.
-# Also assert the resolver's services endpoint still serves — admin
-# install must not break the resolver tree.
+# pattern). The admin is optional: skip cleanly if index.html isn't
+# served, but if it IS served, assert the meta tag. Also assert the
+# resolver's services endpoint still serves — admin install must not
+# break the resolver tree.
 admin_status=$($SSH root@"$SPEAKER" \
     'wget -q -S -O /dev/null http://127.0.0.1:8181/ 2>&1 | grep -E "HTTP/" | tail -1' \
     2>/dev/null || true)
@@ -85,7 +85,7 @@ case "$admin_status" in
             $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/ | grep -q "admin-version"'
         ;;
     *)
-        printf '  [SKIP] admin shell not deployed (slice 1+)\n'
+        printf '  [SKIP] admin shell not deployed\n'
         ;;
 esac
 
@@ -94,9 +94,7 @@ check "resolver services endpoint still serves" \
 
 printf '\n=== Admin CGIs (skipped if not deployed) ===\n'
 # Each probe HEADs first to see if the CGI exists; only then asserts
-# the response shape. This keeps the script useful while the 0.2
-# slices land out of order — slice 5 ships presets, slice 2 ships
-# tunein/browse. Until then, both probes skip cleanly.
+# the response shape. Skip cleanly when a CGI isn't installed.
 
 presets_status=$($SSH root@"$SPEAKER" \
     'wget -q -S -O /dev/null http://127.0.0.1:8181/cgi-bin/api/v1/presets 2>&1 | grep -E "HTTP/" | tail -1' \
@@ -108,7 +106,7 @@ case "$presets_status" in
             $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/cgi-bin/api/v1/presets | grep -q "\"ok\":true"'
         ;;
     *)
-        printf '  [SKIP] presets CGI not deployed (slice 5+)\n'
+        printf '  [SKIP] presets CGI not deployed\n'
         ;;
 esac
 
@@ -122,7 +120,7 @@ case "$tunein_status" in
             $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/cgi-bin/api/v1/tunein/browse | head -c 1 | grep -qE "[\\[{]"'
         ;;
     *)
-        printf '  [SKIP] tunein CGI not deployed (slice 2+)\n'
+        printf '  [SKIP] tunein CGI not deployed\n'
         ;;
 esac
 

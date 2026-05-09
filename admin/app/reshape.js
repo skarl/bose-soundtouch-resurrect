@@ -1,4 +1,4 @@
-// reshape — TuneIn JSON classifier + Bose-shape generator (slice 4).
+// reshape — TuneIn JSON classifier + Bose-shape generator.
 //
 // Two exports, both pure functions:
 //

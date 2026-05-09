@@ -1,14 +1,9 @@
 // Shared UI fragments. dom.js stays minimal (just the html`...` tag +
 // mount); anything view-shaped that's reused across views lives here.
 //
-// stationCard() is reused by:
-//   - browse view (slice 2)  — audio leaves under any browse node
-//   - search view (slice 3)  — search results
-//   - station detail (slice 4) — "more like this" row
-//
-// Built with imperative DOM rather than html`...`: the slice 1 tag
-// handles text-position interpolation only, and stationCard needs to
-// set href/src/dataset on real elements.
+// Built with imperative DOM rather than html`...`: the html tag handles
+// text-position interpolation only, and stationCard needs to set
+// href/src/dataset on real elements.
 
 // Build a clickable card for a TuneIn station. `sid` is the only
 // required field; everything else degrades gracefully when missing.

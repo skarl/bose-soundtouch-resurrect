@@ -1,4 +1,4 @@
-/* SoundTouch admin — vanilla, mobile-first. Layout polish lands in later slices. */
+/* SoundTouch admin — vanilla, mobile-first. */
 
 :root {
   --bg: #fff;
@@ -63,7 +63,7 @@ nav.routes a:hover {
   text-decoration: underline;
 }
 
-/* --- browse view (slice 2) ---------------------------------------- */
+/* --- browse view ------------------------------------------------- */
 
 .browse-tabs {
   display: flex;
@@ -140,7 +140,7 @@ nav.routes a:hover {
   text-decoration: none;
 }
 
-/* --- station card (slice 2; reused by slices 3 and 4) ------------- */
+/* --- station card (used by browse, search, station detail) ------- */
 
 .station-card {
   display: flex;
@@ -193,7 +193,7 @@ nav.routes a:hover {
   font-size: 0.85rem;
 }
 
-/* --- now-playing 0.2 header strip (slice 6) ----------------------- */
+/* --- now-playing header strip (transport/volume land in 0.3) ----- */
 /* Read-only: station name + art + 6 preset slots. */
 
 .now-playing-strip {
@@ -280,7 +280,7 @@ nav.routes a:hover {
   white-space: nowrap;
 }
 
-/* --- search view (slice 3) ---------------------------------------- */
+/* --- search view ------------------------------------------------- */
 
 .search-bar {
   position: sticky;
@@ -343,7 +343,7 @@ nav.routes a:hover {
   color: #b00020;
 }
 
-/* --- version-drift banner (slice 7) ------------------------------- */
+/* --- version-drift banner ---------------------------------------- */
 /* Mounted by app/version.js when the served admin-version meta differs
    from the in-memory one. Non-dismissable on purpose — user clicks
    Reload to clear it. */
@@ -379,7 +379,7 @@ nav.routes a:hover {
   background: #f0f0f0;
 }
 
-/* --- station detail (slice 4) ------------------------------------- */
+/* --- station detail ---------------------------------------------- */
 
 .station-detail {
   display: flex;

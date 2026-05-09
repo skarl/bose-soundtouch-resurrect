@@ -1,9 +1,9 @@
-// search — TuneIn search + empty-state landing (slice 3).
+// search — TuneIn search + empty-state landing.
 //
 // Sticky input at top, debounced 300ms. Results render via
 // stationCard(). Empty state shows "Recently viewed" (from
-// state.caches.recentlyViewed, owned by slice 4) and "Popular"
-// (Browse.ashx?c=local via the tunein CGI).
+// state.caches.recentlyViewed) and "Popular" (Browse.ashx?c=local via
+// the tunein CGI).
 //
 // Render strategy (see admin/PLAN.md § Render strategy):
 //   init() mounts the static frame and a results container; the input

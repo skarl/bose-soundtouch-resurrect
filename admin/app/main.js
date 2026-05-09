@@ -1,6 +1,5 @@
 // Entry point. Wires the hash router to the view modules and the
-// observable store. Slice 1 only — slice 6+ adds REST polling /
-// WebSocket bootstrapping here.
+// observable store.
 // See admin/PLAN.md § Routing and § State management.
 
 import { store } from './state.js';
@@ -14,8 +13,9 @@ import station    from './views/station.js';
 
 import { installVersionDriftCheck } from './version.js';
 
-// #/preset/N is a 0.3 modal triggered from now-playing. For 0.2 slice 1
-// we render a tiny inline placeholder so the route doesn't 404.
+// #/preset/N is reserved for the 0.3 "replace this preset" modal
+// triggered from now-playing. Until then, render a tiny inline
+// placeholder so the route doesn't 404.
 const presetPlaceholder = {
   init(root, _store, ctx) {
     const slot = (ctx && ctx.params && ctx.params.slot) || '?';

@@ -1,4 +1,4 @@
-// browse — TuneIn taxonomy browser (slice 2).
+// browse — TuneIn taxonomy browser.
 //
 // Two modes:
 //   1. Root view (#/browse): three tabs (Genre / Location / Language).

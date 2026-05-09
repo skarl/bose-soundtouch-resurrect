@@ -44,7 +44,7 @@ async function pollOnce() {
     store.set('speaker', { ...store.state.speaker, nowPlaying: np });
   } catch (_err) {
     // Network blip / proxy error / parse error — leave previous state
-    // visible. Slice 7 (toasts) will surface persistent errors.
+    // visible. Persistent errors surface via the toast layer.
   } finally {
     inFlight = false;
     if (!document.hidden && pollTimer != null) {

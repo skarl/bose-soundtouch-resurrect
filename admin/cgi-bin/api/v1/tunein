@@ -4,7 +4,7 @@
 #
 # Switches on PATH_INFO. Pipes raw TuneIn JSON back verbatim — no
 # {ok, data} envelope, no CGI-side classification. The browser parses
-# the response (see admin/app/reshape.js, slice 4).
+# the response (see admin/app/reshape.js).
 #
 # See admin/PLAN.md § REST API → tunein.
 #

@@ -21,7 +21,7 @@
 #      <meta name="admin-version"> tag.
 #
 # Does NOT reboot. Does NOT touch resolver files. To remove the admin,
-# use admin/uninstall.sh (lands in slice 7).
+# use admin/uninstall.sh.
 
 set -eu
 
