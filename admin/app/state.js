@@ -66,10 +66,20 @@ export const store = observable({
   ui: { toast: null, testPlaying: null },
 });
 
+// Reconcile state.speaker.presets from the presets CGI envelope's
+// `data` array. Defensive — the CGI guarantees a length-6 array, but
+// store the value verbatim so any missing slots surface as `undefined`
+// rather than masked. Notifies 'speaker' subscribers (now-playing).
+export function setPresets(list) {
+  if (!Array.isArray(list)) return;
+  store.state.speaker.presets = list;
+  store.touch('speaker');
+}
+
 // Prepend an entry to state.caches.recentlyViewed, dedupe by sid, cap
 // at RECENT_MAX, persist to localStorage, and notify 'caches'
-// subscribers. Slice 4 calls this when the station detail view loads;
-// slice 3 reads the array for its empty-state list.
+// subscribers. Station view calls this on entry; search empty state
+// reads the array.
 export function addRecentlyViewed({ sid, name, art }) {
   if (typeof sid !== 'string' || !sid) return;
   if (typeof name !== 'string' || !name) return;

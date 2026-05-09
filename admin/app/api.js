@@ -1,18 +1,18 @@
 // REST client for /cgi-bin/api/v1/*. Thin wrappers around fetch().
 // See admin/PLAN.md § REST API.
 //
-// 0.2 contributors:
-//   slice 2 — TuneIn forwarder (search / browse / station / probe)
-//   slice 6 — speaker proxy reads + <nowPlaying> XML parser
-//   slices 4, 5 will add presets and reshape contract usage.
+// Surface:
+//   tunein*       — TuneIn forwarder (search / browse / station / probe)
+//   speakerNowPlaying() — speaker proxy /now_playing parser
+//   presetsList(), presetsAssign() — presets CGI envelope client
 
 export const apiBase = '/cgi-bin/api/v1';
 
-// --- TuneIn forwarder (slice 2) -------------------------------------
+// --- TuneIn forwarder -----------------------------------------------
 //
 // All four methods return the raw TuneIn JSON body, verbatim. No
 // envelope; classification (gated / dark / playable) lives in
-// app/reshape.js and lands in slice 4.
+// app/reshape.js.
 
 async function getJson(path) {
   const res = await fetch(`${apiBase}${path}`, {
@@ -51,7 +51,7 @@ export function tuneinProbe(sid) {
   return getJson(`/tunein/probe/${encodeURIComponent(sid)}`);
 }
 
-// --- speaker proxy (slice 6) ----------------------------------------
+// --- speaker proxy --------------------------------------------------
 
 // GET /cgi-bin/api/v1/speaker/now_playing → parsed nowPlaying object.
 export async function speakerNowPlaying() {
@@ -67,7 +67,7 @@ export async function speakerNowPlaying() {
   return parseNowPlayingXml(text);
 }
 
-// --- XML parsing (slice 6) ------------------------------------------
+// --- XML parsing ----------------------------------------------------
 
 // Parse the speaker's <nowPlaying> XML into:
 //   { source, sourceAccount, item: {name, location, type}, track,
@@ -117,4 +117,50 @@ export function parseNowPlayingXml(xmlText) {
     art:        text('art'),
     playStatus: text('playStatus'),
   };
+}
+
+// --- presets --------------------------------------------------------
+//
+// Both methods return the parsed CGI envelope. Transport errors throw;
+// `{ok:false, error}` envelopes resolve normally so the caller can route
+// the structured error to a toast and decide whether to refetch.
+
+// GET /presets → { ok:true, data:[6 slots] } | { ok:false, error }
+export async function presetsList() {
+  const res = await fetch(`${apiBase}/presets`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    cache: 'no-store',
+  });
+  // Even on 4xx/5xx the CGI emits a JSON envelope, so we parse rather
+  // than treat HTTP status as the only signal.
+  let body;
+  try {
+    body = await res.json();
+  } catch (err) {
+    throw new Error(`presetsList: malformed response (HTTP ${res.status})`);
+  }
+  return body;
+}
+
+// POST /presets/:slot with {id, slot, name, kind, json}.
+// Slot is 1..6; payload must include matching `slot` and `kind:"playable"`
+// (the CGI rejects anything else with a structured error).
+export async function presetsAssign(slot, payload) {
+  const res = await fetch(`${apiBase}/presets/${encodeURIComponent(slot)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+  });
+  let body;
+  try {
+    body = await res.json();
+  } catch (err) {
+    throw new Error(`presetsAssign: malformed response (HTTP ${res.status})`);
+  }
+  return body;
 }
