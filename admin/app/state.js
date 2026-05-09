@@ -4,6 +4,27 @@
 
 const TOP_LEVEL_KEYS = ['speaker', 'caches', 'ws', 'ui'];
 
+// localStorage key + cap for the recently-viewed station list.
+// Owned by station.js (slice 4); read by search.js (slice 3) for its
+// empty state. Shape: Array<{ sid, name, art? }>, most-recent first.
+const RECENT_KEY = 'admin.recentlyViewed';
+const RECENT_MAX = 20;
+
+function loadRecentlyViewed() {
+  try {
+    if (typeof localStorage === 'undefined') return [];
+    const raw = localStorage.getItem(RECENT_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    // Defensive: drop anything missing the required {sid, name} pair so
+    // search.js can render via stationCard() without null checks.
+    return parsed.filter((e) => e && typeof e.sid === 'string' && typeof e.name === 'string');
+  } catch (_err) {
+    return [];
+  }
+}
+
 function observable(initial) {
   const subs = new Map(TOP_LEVEL_KEYS.map((k) => [k, new Set()]));
   const notify = (key) => {
@@ -38,9 +59,34 @@ export const store = observable({
     sources:    null,   // 0.3+
   },
   caches: {
-    probe:          new Map(),  // sid -> {ok, kind, url, expires}
-    recentlyViewed: [],         // station ids, persisted in localStorage
+    probe:          new Map(),               // sid -> {kind, streams?, reason?, expires}
+    recentlyViewed: loadRecentlyViewed(),    // [{sid, name, art?}], persisted in localStorage
   },
   ws: { connected: false, lastEvent: null },   // 0.3+
   ui: { toast: null, testPlaying: null },
 });
+
+// Prepend an entry to state.caches.recentlyViewed, dedupe by sid, cap
+// at RECENT_MAX, persist to localStorage, and notify 'caches'
+// subscribers. Slice 4 calls this when the station detail view loads;
+// slice 3 reads the array for its empty-state list.
+export function addRecentlyViewed({ sid, name, art }) {
+  if (typeof sid !== 'string' || !sid) return;
+  if (typeof name !== 'string' || !name) return;
+  const entry = { sid, name };
+  if (typeof art === 'string' && art) entry.art = art;
+
+  const current = store.state.caches.recentlyViewed || [];
+  const deduped = current.filter((e) => e.sid !== sid);
+  const next = [entry, ...deduped].slice(0, RECENT_MAX);
+
+  store.state.caches.recentlyViewed = next;
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+    }
+  } catch (_err) {
+    // Storage quota / private mode — non-fatal; in-memory list still works.
+  }
+  store.touch('caches');
+}
