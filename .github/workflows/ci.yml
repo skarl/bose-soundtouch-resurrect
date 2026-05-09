@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run shellcheck on every shell script
+        uses: ludeeus/action-shellcheck@2.0.0
+        env:
+          SHELLCHECK_OPTS: --severity=warning
+        with:
+          scandir: ./scripts
+
+  resolver-build:
+    name: resolver/build.py
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile-check resolver/build.py
+        run: python -m py_compile resolver/build.py
+
+      - name: Verify the no-stations.json error path
+        # `build.py` should exit non-zero with a helpful message when run
+        # without a stations.json. This protects the contract documented
+        # in resolver/README.md and docs/installation.md.
+        run: |
+          set +e
+          cd resolver
+          python build.py >out.txt 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "BUG: build.py succeeded without stations.json"
+            cat out.txt
+            exit 1
+          fi
+          grep -q "stations.json doesn't exist" out.txt || {
+            echo "BUG: missing-stations.json error message changed"
+            cat out.txt
+            exit 1
+          }
+          echo "OK — build.py errors as documented when stations.json is missing"

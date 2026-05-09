@@ -56,7 +56,7 @@ $SSH root@"$SPEAKER" 'true' \
 say "Building station files (TuneIn → Bose JSON)"
 ( cd "$ROOT/resolver" && rm -f s* 2>/dev/null; python3 build.py )
 
-STATION_COUNT=$(ls "$ROOT/resolver/" 2>/dev/null | grep -c '^s[0-9]' || true)
+STATION_COUNT=$(find "$ROOT/resolver" -maxdepth 1 -type f -name 's[0-9]*' 2>/dev/null | wc -l | tr -d ' ')
 [ "$STATION_COUNT" -gt 0 ] \
   || fail "build.py produced no station files. See above for errors."
 echo "Built $STATION_COUNT station file(s)."
