@@ -191,28 +191,60 @@ LAN IP.
 
 ## WebSocket events (port 8080)
 
-Connect to `ws://<speaker-ip>:8080/` (no path). The speaker streams XML
-events in real time:
+Connect to `ws://<speaker-ip>:8080/` with the **`gabbo` subprotocol**:
+
+```bash
+wscat -s gabbo -c ws://<speaker-ip>:8080/
+```
+
+```js
+new WebSocket("ws://<speaker-ip>:8080/", "gabbo")
+```
+
+**The subprotocol is mandatory.** A connection without it succeeds
+and returns the `<SoundTouchSdkInfo>` hello frame, but the speaker
+never pushes state-change events afterwards. With `gabbo`, events
+flow on any state change — no application-level subscribe message
+required.
+
+Events arrive wrapped in `<updates deviceID="…">…</updates>`. The
+inner element is the actual event:
 
 - `<volumeUpdated>` — volume changed
-- `<nowPlayingUpdated>` — track changed / source changed
+- `<nowPlayingUpdated>` — track changed / source changed (incl. STANDBY transition)
+- `<nowSelectionUpdated>` — preset selected (reports which slot, which station)
 - `<sourcesUpdated>` — source list changed
-- `<keyEvent>` — physical button pressed
+- `<keyEvent>` — key press/release (may fire only for some keys; not reliably observed for preset buttons)
 - `<bassUpdated>` / `<balanceUpdated>` / etc.
 - `<connectionStateUpdated>` — Wi-Fi state changed
 - `<presetsUpdated>` — preset stored / removed
 - `<zoneUpdated>` — multi-room zone changed
 
-Subscribe once, receive forever. This is how you'd build a controller
-that reacts to physical button presses.
+Two events arrive **outside** the `<updates>` envelope (self-closing,
+top-level):
+
+- `<SoundTouchSdkInfo serverVersion="…" serverBuild="…"/>` — hello
+  frame on connect; useful as a "WS is truly ready" readiness signal.
+- `<userActivityUpdate deviceID="…" />` — heartbeat-style ping
+  whenever the user does something on the speaker.
+
+Confirmed by two open-source SoundTouch clients that Home Assistant
+and others use:
+[CharlesBlonde/libsoundtouch](https://github.com/CharlesBlonde/libsoundtouch)
+and
+[thlucas1/bosesoundtouchapi](https://github.com/thlucas1/bosesoundtouchapi).
+Bose's own Webservices PDF specifies `gabbo` as the WebSocket
+subprotocol name.
 
 ## The `sender` attribute on `/key`
 
 The `sender` attribute on `<key>` requests is validated by the firmware.
-**`Gabbo` is accepted** — it's the name the SoundTouch app uses
-internally (no, we don't know why). Random strings like `api` get
-rejected with HTTP 400. The full whitelist isn't documented; if you
-discover other accepted values, please open an issue.
+**`Gabbo` is accepted** — it's a magic word baked into the firmware,
+also required as the WebSocket subprotocol on port 8080 (see above).
+Bose's internal SoundTouch SDK uses it in both contexts. Random strings
+like `api` get rejected with HTTP 400. The full whitelist of accepted
+`<key sender="…">` values isn't documented; if you discover other
+accepted values, please open an issue.
 
 ## Useful one-liners
 
@@ -232,8 +264,10 @@ curl -X POST -H 'Content-Type: application/xml' \
   -d '<key state="release" sender="Gabbo">PRESET_3</key>' \
   http://$SPEAKER:8090/key
 
-# Stream events (requires websocat or wscat)
-websocat ws://$SPEAKER:8080/
+# Stream events (gabbo subprotocol is required)
+wscat -s gabbo -c ws://$SPEAKER:8080/
+# or with websocat:
+websocat --protocol gabbo ws://$SPEAKER:8080/
 
 # Push a notification banner
 curl -X POST -H 'Content-Type: application/xml' \
