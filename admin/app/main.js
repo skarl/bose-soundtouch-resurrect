@@ -12,6 +12,8 @@ import browse     from './views/browse.js';
 import search     from './views/search.js';
 import station    from './views/station.js';
 
+import { installVersionDriftCheck } from './version.js';
+
 // #/preset/N is a 0.3 modal triggered from now-playing. For 0.2 slice 1
 // we render a tiny inline placeholder so the route doesn't 404.
 const presetPlaceholder = {
@@ -72,6 +74,7 @@ function boot() {
     store,
   });
   router.start();
+  installVersionDriftCheck();
 }
 
 if (document.readyState === 'loading') {

@@ -62,3 +62,37 @@ nav.routes a {
 nav.routes a:hover {
   text-decoration: underline;
 }
+
+/* Version-drift banner. Mounted by app/version.js when the served
+   admin-version meta differs from the in-memory one. Non-dismissable
+   on purpose — user clicks Reload to clear it. */
+#version-drift-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: #fff8c5;
+  color: #111;
+  border-bottom: 1px solid #d4c95a;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+#version-drift-banner button {
+  font: inherit;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid #111;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#version-drift-banner button:hover {
+  background: #f0f0f0;
+}
