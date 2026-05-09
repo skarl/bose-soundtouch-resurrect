@@ -1,0 +1,25 @@
+# Code owners.
+#
+# GitHub uses this file together with branch-protection rules
+# (Settings → Branches → main → Require review from Code Owners)
+# to ensure every PR touching the listed paths is reviewed by an
+# explicit maintainer before merging.
+#
+# Add more handles or org/teams as the project grows. Everyone listed
+# here is auto-requested as a reviewer on matching PRs; branch
+# protection's "Require review from Code Owners" then makes their
+# approval mandatory before merge.
+#
+# Syntax: <pattern>  <owner1> <owner2> ...
+# See https://docs.github.com/articles/about-code-owners
+
+# Default owner for everything in the repo.
+*                       @skarl
+
+# Tighter ownership on the things that affect speakers in the field —
+# the deploy / install paths and the resolver code itself. Add
+# additional reviewers here as the project grows.
+/resolver/              @skarl
+/scripts/               @skarl
+/docs/installation.md   @skarl
+/docs/opening-up-your-speaker.md  @skarl
