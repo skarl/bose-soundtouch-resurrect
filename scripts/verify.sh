@@ -92,6 +92,40 @@ esac
 check "resolver services endpoint still serves" \
     $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/bmx/registry/v1/services | grep -q "{"'
 
+printf '\n=== Admin CGIs (skipped if not deployed) ===\n'
+# Each probe HEADs first to see if the CGI exists; only then asserts
+# the response shape. This keeps the script useful while the 0.2
+# slices land out of order — slice 5 ships presets, slice 2 ships
+# tunein/browse. Until then, both probes skip cleanly.
+
+presets_status=$($SSH root@"$SPEAKER" \
+    'wget -q -S -O /dev/null http://127.0.0.1:8181/cgi-bin/api/v1/presets 2>&1 | grep -E "HTTP/" | tail -1' \
+    2>/dev/null || true)
+
+case "$presets_status" in
+    *" 200"*)
+        check "presets CGI returns ok-envelope" \
+            $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/cgi-bin/api/v1/presets | grep -q "\"ok\":true"'
+        ;;
+    *)
+        printf '  [SKIP] presets CGI not deployed (slice 5+)\n'
+        ;;
+esac
+
+tunein_status=$($SSH root@"$SPEAKER" \
+    'wget -q -S -O /dev/null http://127.0.0.1:8181/cgi-bin/api/v1/tunein/browse 2>&1 | grep -E "HTTP/" | tail -1' \
+    2>/dev/null || true)
+
+case "$tunein_status" in
+    *" 200"*)
+        check "tunein CGI returns JSON or array" \
+            $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/cgi-bin/api/v1/tunein/browse | head -c 1 | grep -qE "[\\[{]"'
+        ;;
+    *)
+        printf '  [SKIP] tunein CGI not deployed (slice 2+)\n'
+        ;;
+esac
+
 printf '\n=== Summary: %d ok, %d failed ===\n' "$ok" "$fail"
 
 if [ "$fail" -gt 0 ]; then
