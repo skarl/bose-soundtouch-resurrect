@@ -368,68 +368,100 @@ equivalent of `python3 build.py` from a laptop.
 
 ## Live updates — WebSocket (0.3)
 
-### Pre-spike — do this before 0.2 starts
+### Pre-spike — VERIFIED 2026-05-10
 
-The plan assumes `ws://<speaker>:8080/` accepts browser-origin
-connections. **This is not yet verified.** From any LAN browser dev
-console:
+Spike done against firmware `trunk r46330 v4 epdbuild hepdswbld04`.
+**WebSocket works, but only when the client negotiates the `gabbo`
+subprotocol on the handshake.** Without it, the connection succeeds
+and the speaker emits its `<SoundTouchSdkInfo>` hello frame, but no
+state-change events flow afterwards — which is what the original
+`docs/api-reference.md` got wrong with its "subscribe once, receive
+forever" claim. (`docs/api-reference.md` has been corrected.)
 
-```js
-new WebSocket('ws://<speaker>:8080/').addEventListener(
-  'message', e => console.log(e.data));
+```bash
+# Reproduce:
+wscat -s gabbo -c ws://<speaker-ip>:8080/
 ```
 
-If frames arrive while you fiddle with the speaker, ship 0.3 as
-designed. If the connection closes immediately, try
-`wscat -c ws://<speaker>:8080/ -H 'Origin: http://<speaker>:8080'`
-to see whether an Origin tweak unblocks it.
-
-### Kill criterion
-
-If browser→WS doesn't work and no Origin header tweak fixes it:
-**drop WS-dependent features from 0.3 entirely.** Don't build a
-separate WS-proxy daemon — busybox httpd doesn't proxy WS, and a new
-Python/Lua daemon is more moving parts than the value justifies for a
-remote that's already 90% useful with REST polling.
-
-Dropped features in this case: "pressed on speaker" toasts, the live
-VU dot, the connection-state pill's "live" mode.
-
-REST polling becomes primary instead of fallback: poll
-`/cgi-bin/api/v1/speaker/now_playing` every 2s while the now-playing
-tab is visible, plus on-demand on user actions.
-
-### If the spike succeeds
-
-The SPA opens a connection on load:
-
 ```js
-// app/ws.js
-const ws = new WebSocket(`ws://${location.hostname}:8080/`);
-ws.addEventListener('message', e => handleSpeakerEvent(e.data));
+// In the SPA:
+const ws = new WebSocket(`ws://${location.hostname}:8080/`, 'gabbo');
 ```
 
-Events handled:
+The `gabbo` magic string is the same one already required as the
+`<key sender="Gabbo">` value (Bose's internal SDK uses it in both
+contexts). Confirmed in two open-source clients:
+[CharlesBlonde/libsoundtouch](https://github.com/CharlesBlonde/libsoundtouch/blob/master/libsoundtouch/device.py)
+and
+[thlucas1/bosesoundtouchapi](https://github.com/thlucas1/bosesoundtouchapi/blob/main/bosesoundtouchapi/ws/soundtouchwebsocket.py).
 
-| Event                          | State update                  |
-| ------------------------------ | ----------------------------- |
-| `<volumeUpdated>`              | `state.speaker.volume`        |
-| `<bassUpdated>`                | `state.speaker.bass` (0.4)    |
-| `<balanceUpdated>`             | `state.speaker.balance` (0.4) |
-| `<nowPlayingUpdated>`          | `state.speaker.nowPlaying`    |
-| `<sourcesUpdated>`             | `state.speaker.sources`       |
-| `<presetsUpdated>`             | `state.speaker.presets` + toast "Presets changed" |
-| `<keyEvent>`                   | toast "Preset N pressed on speaker" |
-| `<connectionStateUpdated>`     | `state.ws` plus header pill   |
-| `<zoneUpdated>` (0.4)          | `state.speaker.zone`          |
-| `<recentsUpdated>` (0.4)       | `state.speaker.recents`       |
+### Event envelope
+
+Events arrive wrapped in `<updates deviceID="…">…</updates>`. The
+inner element is the actual event. `app/ws.js`'s parser must unwrap
+before dispatching:
+
+```js
+function handleSpeakerEvent(xmlText) {
+  const doc  = new DOMParser().parseFromString(xmlText, 'application/xml');
+  const root = doc.documentElement;
+  if (root.tagName === 'updates') {
+    for (const inner of root.children) dispatchEvent(inner);
+  } else {
+    dispatchEvent(root);   // <userActivityUpdate/>, <SoundTouchSdkInfo/> are unwrapped
+  }
+}
+```
+
+### Events handled
+
+| Event (inside `<updates>` unless noted) | State update                                                       |
+| --------------------------------------- | ------------------------------------------------------------------ |
+| `<volumeUpdated>`                       | `state.speaker.volume`                                             |
+| `<bassUpdated>` (0.4)                   | `state.speaker.bass`                                               |
+| `<balanceUpdated>` (0.4)                | `state.speaker.balance`                                            |
+| `<nowPlayingUpdated>`                   | `state.speaker.nowPlaying` (incl. STANDBY transitions)             |
+| `<nowSelectionUpdated>`                 | "Preset N selected" toast + reconcile `state.speaker.presets`       |
+| `<sourcesUpdated>`                      | `state.speaker.sources`                                            |
+| `<presetsUpdated>`                      | `state.speaker.presets` + toast "Presets changed"                  |
+| `<keyEvent>`                            | toast "Preset N pressed on speaker" — see note below               |
+| `<connectionStateUpdated>`              | `state.ws` plus header pill                                        |
+| `<zoneUpdated>` (0.4)                   | `state.speaker.zone`                                               |
+| `<recentsUpdated>` (0.4)                | `state.speaker.recents`                                            |
+| `<userActivityUpdate />` (unwrapped)    | Optional: feed a "user is active" timer for screen-wake heuristics |
+| `<SoundTouchSdkInfo>` (unwrapped)       | Set `state.ws.connected = true` — readiness signal (stronger than TCP-open) |
+
+`<userActivityUpdate />` and `<SoundTouchSdkInfo>` arrive **outside**
+the `<updates>` envelope. Treat them as top-level cases in the parser.
+
+**Note on `<keyEvent>`:** the spike observed `<nowSelectionUpdated>`
+on physical preset-button presses but no `<keyEvent>`. `<keyEvent>`
+may fire only for some keys, or only on hardware-button press without
+release. Investigate during 0.3 build; if it doesn't fire reliably,
+source the "pressed on speaker" toast from `<nowSelectionUpdated>`
+(preset) + `<volumeUpdated>` (volume) — those *do* fire reliably.
+
+### Reconnect + fallback
 
 Reconnect with exponential backoff capped at 30s. If WS drops, the
-SPA falls back to REST polling at 2s while a tab is visible.
+SPA falls back to REST polling at 2s while a tab is visible. Re-fetch
+full state on reconnect (the speaker doesn't replay missed events).
 
-A minimal `admin/ws-test.html` (~20 lines) ships with 0.2's deploy as
-a diagnostic page — open in any browser to check WS health on a given
-speaker, or to debug after a firmware-update incident.
+A minimal `admin/ws-test.html` (~20 lines, must use the `gabbo`
+subprotocol) ships with 0.2's deploy as a diagnostic page — open in
+any browser to check WS health on a given speaker, or to debug after
+a firmware-update incident.
+
+### Kill criterion (kept as a contingency)
+
+If a future firmware update breaks the gabbo subprotocol or any
+similar protocol-level regression makes events stop flowing, apply
+the kill criterion: **drop WS-dependent features.** Don't build a
+WS-proxy daemon. REST polling becomes primary; "pressed on speaker"
+toasts and the live VU dot are cut. The plan was originally drafted
+with this contingency for the case where the spike failed; the spike
+passed, but the criterion remains useful documentation if the
+firmware ever changes.
 
 ## View specs
 
@@ -709,20 +741,25 @@ A `mock-speaker.py` for offline iteration is **out of scope** for
 | Release | Includes | Days |
 | ------- | -------- | ---- |
 | **0.2** | Hash router, state.js, dom.js, api client, tunein forwarder CGI, presets CGI, speaker GET-only proxy, fixtures + CI tests, browse/search/station views, thin polled now-playing header, deploy.sh, verify.sh extension, ws-test.html | ~3 |
-| **0.3** | WebSocket + reconnect (or, if pre-spike fails, REST-polling-primary path), full now-playing view (transport, volume, source, preset row), speaker proxy POST endpoints, "pressed on speaker" toasts (if WS works), connection pill, dark mode, factory reset | ~2.5 |
+| **0.3** | WebSocket (gabbo subprotocol) + reconnect, full now-playing view (transport, volume, source, preset row), speaker proxy POST endpoints, "pressed on speaker" toasts, connection pill, live VU dot, dark mode, factory reset | ~2.5 |
 | **0.4** | Settings view (7 sub-sections), refresh-all CGI, album-art tint, mobile-remote container queries, accessibility pass | ~3 (wide error bars) |
 | **Total** | | **~8.5** |
 
 ## Open questions to resolve during build
 
-1. **WebSocket Origin acceptance — pre-spike before 0.2 starts.**
-   See *Live updates* § *Pre-spike*. Kill criterion documented.
-2. **busybox httpd CGI behaviour:** verify shell scripts in
+1. **busybox httpd CGI behaviour:** verify shell scripts in
    `cgi-bin/` execute without explicit `httpd.conf` config. If they
    need shaping, ship an `httpd.conf` alongside.
-3. **Speaker WS reliability** (if the spike succeeded): how often
-   does it drop? How does it behave during STANDBY? Tune reconnect
-   backoff accordingly.
+2. **Speaker WS reliability:** how often does the connection drop?
+   How does it behave during STANDBY (the `<nowPlayingUpdated
+   source="STANDBY">` event was observed in the spike — does the WS
+   stay open when the speaker sleeps)? Tune reconnect backoff
+   accordingly.
+3. **`<keyEvent>` payload variance:** the spike showed
+   `<nowSelectionUpdated>` on physical preset-button presses but no
+   `<keyEvent>`. Characterise which keys do/don't emit `<keyEvent>`,
+   and decide whether to source the "pressed on speaker" toast from
+   `<nowSelectionUpdated>` + `<volumeUpdated>` instead.
 4. **`<presetsUpdated>` payload shape:** not documented; capture one
    to confirm.
 5. **Speaker `/storePreset` side effects:** the audit found
