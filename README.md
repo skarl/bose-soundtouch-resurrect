@@ -88,8 +88,9 @@ Five steps. Each one links to the full doc.
 
 3. **Install the resolver** —
    [docs/installation.md](docs/installation.md). Push static files to
-   `/mnt/nv/resolver/`, drop a daemon config, point the speaker at
-   `127.0.0.1:8181`, reboot.
+   `/mnt/nv/resolver/`, drop a daemon config that binds `0.0.0.0:8181`
+   (loopback for the speaker's SDK; LAN-reachable for the admin SPA),
+   point the speaker at `127.0.0.1:8181`, reboot.
 
 4. **Customise your presets** —
    [docs/customizing-presets.md](docs/customizing-presets.md). Find your

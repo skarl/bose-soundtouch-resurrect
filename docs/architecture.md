@@ -68,7 +68,7 @@ asked once per preset switch, not continuously.
             │  │   │ HTTP to URLs in                    │  │
             │  │   │ /mnt/nv/OverrideSdkPrivateCfg.xml  │  │
             │  │   ▼                                    │  │
-            │  │ 127.0.0.1:8181  busybox httpd          │  │
+            │  │ 0.0.0.0:8181    busybox httpd          │  │
             │  │   │                                    │  │
             │  │   │ serves static JSON/XML from        │  │
             │  │   ▼                                    │  │

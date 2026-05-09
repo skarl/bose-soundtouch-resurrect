@@ -2,7 +2,7 @@
   <daemon name="/bin/httpd">
     <arg>-f</arg>
     <arg>-p</arg>
-    <arg>127.0.0.1:8181</arg>
+    <arg>0.0.0.0:8181</arg>
     <arg>-h</arg>
     <arg>/mnt/nv/resolver</arg>
   </daemon>
