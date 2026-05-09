@@ -69,6 +69,29 @@ check "port 8090 /info returns XML" \
 check "port 8090 /now_playing returns XML" \
     $SSH root@"$SPEAKER" 'curl -s http://localhost:8090/now_playing | grep -q "<nowPlaying"'
 
+printf '\n=== Admin SPA (skipped if not deployed) ===\n'
+# Probe via the speaker (matches the existing wget/curl-through-ssh
+# pattern). The admin is optional in 0.2 slice 1: skip cleanly if
+# index.html isn't served, but if it IS served, assert the meta tag.
+# Also assert the resolver's services endpoint still serves — admin
+# install must not break the resolver tree.
+admin_status=$($SSH root@"$SPEAKER" \
+    'wget -q -S -O /dev/null http://127.0.0.1:8181/ 2>&1 | grep -E "HTTP/" | tail -1' \
+    2>/dev/null || true)
+
+case "$admin_status" in
+    *" 200"*)
+        check "admin index has admin-version meta tag" \
+            $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/ | grep -q "admin-version"'
+        ;;
+    *)
+        printf '  [SKIP] admin shell not deployed (slice 1+)\n'
+        ;;
+esac
+
+check "resolver services endpoint still serves" \
+    $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/bmx/registry/v1/services | grep -q "{"'
+
 printf '\n=== Summary: %d ok, %d failed ===\n' "$ok" "$fail"
 
 if [ "$fail" -gt 0 ]; then
