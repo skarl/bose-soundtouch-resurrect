@@ -1,36 +1,75 @@
 # Admin web UI — design plan
 
-A full speaker dashboard, hosted on the speaker itself. The admin replaces
-not just the `build.py` + `scp` + `curl /storePreset` flow, but everything
-the original SoundTouch app could do over the LAN: now-playing, transport,
-volume, source switching, presets, search & browse, settings.
+A full speaker dashboard, hosted on the speaker itself. The admin
+replaces the `build.py` + `scp` + `curl /storePreset` flow and grows
+to cover everything the original SoundTouch app could do over the
+LAN: now-playing, transport, volume, source switching, presets,
+search & browse, settings.
 
-**Status:** plan only. No implementation yet. This document is the spec
-for that implementation.
+**Status:** plan only. No implementation yet. This document is the
+spec for that implementation.
 
-## Goals (v1.0)
+**Release shape:** the admin ships across three minor releases —
+**0.2 / 0.3 / 0.4** — instead of a single v1.0. Each is independently
+deployable and useful on its own. Slips on later releases never block
+earlier ones. See *Release seams* below.
 
-1. **Replace the SoundTouch app for everything LAN-side.** Pairing, volume,
-   source switching, presets, current track display, bass/balance,
-   Bluetooth pairing, multi-room.
-2. **Browse and search TuneIn from the speaker.** Genre tree, location
-   tree, language tree, search, station detail, assign-to-preset.
-3. **Live updates from the speaker** via the firmware's existing
-   WebSocket on TCP 8080.
-4. **Run entirely on the speaker.** No laptop dependency once deployed.
-   Reachable at `http://<speaker-name>/` (port 80) so any browser on the
-   LAN — phone, tablet, laptop — opens it without remembering a port.
+## Release seams
 
-Out of scope for v1.0:
+### 0.2 — preset workflow with a UI (~3 days)
+
+The minimum that replaces `python3 build.py` + `scp` +
+`curl /storePreset`. The original pain.
+
+- **Views:** browse (Genre / Location / Language trees), search,
+  station detail, preset assignment.
+- **Now-playing:** thin read-only header strip — current station name +
+  art + slot 1–6 row, polled every 2s via REST. No transport, no
+  volume, no source switching.
+- **CGIs:** `tunein` (search/browse/probe forwarder), `presets`
+  (GET + POST), `speaker` proxy with `/now_playing` + `/presets` only.
+- **No WebSocket.** REST-only.
+- Hash router, observable store, vanilla CSS, no build step.
+
+### 0.3 — live remote (~2.5 days)
+
+Promotes now-playing from header strip to interactive home view; adds
+the speaker as a live-controlled surface.
+
+- **WebSocket** with reconnect + REST polling fallback (subject to the
+  pre-spike — see *Live updates*).
+- **Now-playing view:** transport, volume slider, source picker,
+  preset row tap-to-play, long-press → assign flow.
+- Speaker proxy CGI grows: `/volume`, `/key`, `/select`,
+  `/selectLocalSource`.
+- WS-driven feel: "pressed on speaker" toasts, connection-state pill,
+  live VU dot, dark mode.
+- **Factory reset** (single button + confirm dialog) — promoted from
+  0.4 because it's the recovery hatch when anything goes wrong.
+
+### 0.4 — settings + high-variance polish (~3 days, wide error bars)
+
+The long tail. Each settings sub-section is empirical
+(test-on-real-speaker, fix surprises) — its own release where slips
+don't block 0.2 / 0.3.
+
+- Settings view: Speaker (name, power, sleep timer, low-power),
+  Audio (bass, balance, mono/stereo), Bluetooth, Multi-room, Network
+  (read-only), System (firmware, capabilities), Notifications gizmo.
+- `refresh-all` CGI — on-speaker `build.py` equivalent.
+- Polish: album-art-tinted hero (CORS-on-canvas risk),
+  mobile-remote container queries, accessibility pass.
+
+Out of scope across all three:
 
 - Wi-Fi reconfiguration (deliberately not exposed — too easy to lock
   yourself out).
 - Firmware updates (deliberately blocked).
 - Spotify account binding (cloud-coupled; gone).
 - Authentication (LAN trust model — see `../SECURITY.md`).
-- Multi-speaker control (one speaker per admin instance for v1).
-- Internationalisation (English-only strings; the architecture won't
-  block adding more later).
+- Multi-speaker control (one speaker per admin instance).
+- Internationalisation (English-only strings; the architecture
+  doesn't block adding more later).
 
 ## Architecture
 
@@ -38,203 +77,154 @@ Out of scope for v1.0:
 Browser (any LAN device)
   │
   │  Static SPA + REST CGIs (HTTP)
-  │  WebSocket (live updates)
+  │  WebSocket (live updates, 0.3+)
   │
   ▼
-Speaker, port 80 (LAN-exposed)
- ┌─────────────────────────────────────────────────┐
- │  port80-router.sh                               │
- │   ├─ if hostapd / setup-AP-IP detected:         │
- │   │    exec /opt/Bose/PtsServer pts-handler 80  │  ← captive portal
- │   └─ else:                                       │   preserved
- │        exec busybox httpd -h /mnt/nv/resolver   │  ← admin SPA + CGIs
- └─────────────────────────────────────────────────┘
-                              │
-                              ▼
-                /mnt/nv/resolver/  (single docroot, two purposes)
-                ├── index.html          ← admin SPA shell
-                ├── style.css
-                ├── app/                ← ES module tree
-                │   ├── main.js
-                │   ├── router.js
-                │   ├── state.js
-                │   ├── api.js
-                │   ├── reshape.js
-                │   ├── dom.js
-                │   ├── ws.js
-                │   └── views/
-                │       ├── now-playing.js
-                │       ├── browse.js
-                │       ├── search.js
-                │       ├── station.js
-                │       └── settings.js
-                ├── cgi-bin/api/v1/     ← REST endpoints (shell CGIs)
-                │   ├── tunein
-                │   ├── presets
-                │   ├── speaker
-                │   └── refresh-all
-                └── bmx/, marge/, v1/   ← existing resolver tree
-                                            (loopback-only via :8181)
-
-Speaker, port 8181 (loopback only)  ← unchanged: BoseApp's metadata calls
-Speaker, port 8090 (LAN-exposed)    ← unchanged: speaker's own local API
-Speaker, port 8080 (LAN-exposed)    ← unchanged: WebSocket events
+Speaker, port 8181 (LAN-exposed)  ← admin SPA + CGIs + resolver tree
+Speaker, port 8090 (LAN-exposed)  ← speaker's own local API
+                                    (only via the speaker proxy CGI;
+                                     never direct from browser)
+Speaker, port 8080 (LAN-exposed)  ← WebSocket events (0.3+)
+Speaker, port 80   (LAN-exposed)  ← UNCHANGED — Bose's PtsServer keeps
+                                    serving captive portal in setup
+                                    mode. We don't touch port 80.
 ```
 
-### The two HTTP servers
+### Single HTTP server, single docroot
 
-After the admin is installed, the speaker runs **two** busybox httpd
-processes plus the existing port-80 router:
+The admin lives at `http://<speaker>:8181/`, served by the **same**
+busybox httpd that already serves the resolver tree. The docroot
+gains admin files alongside the existing resolver paths:
 
-| Port              | Listener                  | Purpose                                                                   |
-| ----------------- | ------------------------- | ------------------------------------------------------------------------- |
-| `0.0.0.0:80`      | port80-router.sh wrapper  | Admin in connected mode; falls back to PtsServer in setup-AP mode |
-| `127.0.0.1:8181`  | busybox httpd (resolver)  | BoseApp's metadata lookups (loopback only — never LAN-exposed) |
-| `0.0.0.0:8080`    | speaker firmware          | WebSocket events (consumed by admin)                                      |
-| `0.0.0.0:8090`    | speaker firmware          | Local control API (consumed by admin)                                     |
-
-The admin SPA talks to all three of those last entries. The port-80 admin
-serves the SPA and proxies TuneIn calls; the SPA talks directly to 8090
-and 8080 from the browser.
-
-## Port-80 takeover with captive-portal preservation
-
-`PtsServer` (the firmware's port-80 listener) serves three things:
-
-1. The **"SoundTouch Access Point Setup"** captive portal — used during
-   initial Wi-Fi onboarding and after factory reset. Critical.
-2. AirPlay2 album-art at `/var/run/AirPlay2/*.jpg` — minor side feature.
-3. Diagnostic log dumps (`/logread.dat`, `/pts.dat`) — only available in
-   setup mode; only meaningful for Bose support.
-
-The speaker's `pts-handler` script has an `is_setup_mode()` function that
-distinguishes between AP setup mode and normal connected mode. Our
-wrapper replicates it:
-
-```sh
-#!/bin/sh
-# /mnt/nv/bin/port80-router.sh
-#
-# Replaces the firmware's PtsServer entry. Decides at boot whether the
-# speaker is in AP-setup mode (in which case Bose's captive portal is
-# critical for re-onboarding Wi-Fi) or normal connected mode (in which
-# case we serve the admin UI). Replicates pts-handler's is_setup_mode.
-
-sleep 3   # let networking settle
-
-is_setup_mode() {
-    local module_type
-    read module_type < /proc/module_type 2>/dev/null
-    if [ "$module_type" = scm ]; then
-        # Older "scm" hardware: AP-side IP on eth0
-        ip addr show eth0 2>/dev/null | grep -q ' inet 192.168.1.1'
-    else
-        # Newer "sm2" / others: hostapd presence
-        pgrep hostapd >/dev/null
-    fi
-}
-
-if is_setup_mode; then
-    exec /opt/Bose/PtsServer /opt/Bose/pts-handler 80
-else
-    exec /bin/httpd -f -p 0.0.0.0:80 -h /mnt/nv/resolver
-fi
+```
+/mnt/nv/resolver/
+├── index.html              ← admin SPA shell             (admin)
+├── style.css               ← vanilla CSS                  (admin)
+├── app/                    ← ES module tree               (admin)
+│   ├── main.js
+│   ├── router.js
+│   ├── state.js
+│   ├── api.js
+│   ├── reshape.js
+│   ├── dom.js
+│   ├── ws.js                                              (0.3+)
+│   └── views/
+│       ├── browse.js
+│       ├── search.js
+│       ├── station.js
+│       ├── now-playing.js                                 (0.3+)
+│       └── settings.js                                    (0.4)
+├── cgi-bin/api/v1/         ← REST endpoints (shell CGIs)
+│   ├── tunein
+│   ├── presets
+│   ├── speaker
+│   └── refresh-all                                        (0.4)
+├── ws-test.html            ← WS diagnostic page          (0.2)
+└── bmx/, marge/, v1/       ← existing resolver tree
+                              (unchanged; same docroot)
 ```
 
-To replace PtsServer with this wrapper, override `/opt/Bose/etc/Shepherd-core.xml`
-by writing a real `/mnt/nv/shepherd/Shepherd-core.xml` file (currently a
-symlink) that drops the `<daemon name="PtsServer">` block, and add the
-new daemon to `/mnt/nv/shepherd/Shepherd-resolver.xml`:
+The admin paths (`/`, `/style.css`, `/app/*`,
+`/cgi-bin/api/v1/*`, `/ws-test.html`) and the resolver paths
+(`/bmx/*`, `/marge/*`, `/v1/*`) don't collide. No URL rewriting, no
+`httpd.conf` shaping.
 
-```xml
-<ShepherdConfig>
-  <daemon name="/bin/httpd">
-    <arg>-f</arg>
-    <arg>-p</arg>
-    <arg>127.0.0.1:8181</arg>
-    <arg>-h</arg>
-    <arg>/mnt/nv/resolver</arg>
-  </daemon>
-  <daemon name="/bin/sh">
-    <arg>/mnt/nv/bin/port80-router.sh</arg>
-  </daemon>
-</ShepherdConfig>
-```
-
-In normal connected mode, the LAN sees the admin at `http://<speaker>/`
-(port 80) and `http://<speaker>:8181/` is loopback-only. In AP-setup mode,
-the wrapper hands off to PtsServer and the captive portal works exactly
-as it always did.
-
-**Trade-off:** AirPlay2 album-art-via-HTTP at `/var/run/AirPlay2/*` is no
-longer served in normal mode. Album art for AirPlay sessions can still
-be fetched via the speaker's port-8090 `/art` endpoint, which the admin
-uses.
-
-**Reversal:** uninstall removes the wrapper and the Shepherd-core
-override. shepherdd reads the original `/opt/Bose/etc/Shepherd-core.xml`
-again on next boot. PtsServer is back. Factory reset has the same
-effect (it wipes `/mnt/nv` entirely).
+**Port 80 is intentionally not touched.** The firmware's `PtsServer`
+keeps doing its captive-portal job during AP-setup mode; we don't
+replicate `is_setup_mode()` or override Shepherd configs. Users
+bookmark `http://<speaker>:8181/` once. The complexity of port-80
+takeover is not justified by the bookmark-once ergonomic win, and
+getting the setup-mode detection wrong would block Wi-Fi
+re-onboarding.
 
 ## Routing — hash-based
 
 The SPA uses URL hashes for navigation. busybox httpd doesn't do URL
-rewrites, and we don't want to ship `httpd.conf` shaping. Hash routing
-means a single `index.html` + JS reading `location.hash`; deep links and
+rewrites, and we don't ship `httpd.conf` shaping. Hash routing means
+a single `index.html` + JS reading `location.hash`; deep links and
 browser back/forward work; no server config.
 
-| Hash route                 | View                          | Notes |
-| -------------------------- | ----------------------------- | ----- |
-| `#/`                       | now-playing                   | Default; what's playing now + transport + presets row + volume + source picker |
-| `#/browse`                 | browse root                   | Tabs: Genre / Location / Language. Initial drilling target. |
-| `#/browse?id=<g\|c\|r>NN`  | browse drill                  | Children of any TuneIn taxonomy node. Breadcrumb. |
-| `#/search`                 | search empty                  | Empty input + "what's popular" suggestions |
-| `#/search?q=...`           | search results                | Debounced; shows mixed-type results filtered to stations |
-| `#/station/sNNN`           | station detail                | Full Describe.ashx info + probe state + 6 assign buttons + test-play |
-| `#/preset/N`               | preset modal                  | Triggered from now-playing's preset row; opens search/browse to replace this slot |
-| `#/settings`               | settings                      | Sub-sections (Speaker / Audio / Bluetooth / Multi-room / Network / System / Notifications) |
+| Hash route                 | View              | Release    | Notes |
+| -------------------------- | ----------------- | ---------- | ----- |
+| `#/`                       | now-playing       | 0.2 / 0.3  | 0.2: thin read-only header. 0.3: full transport + volume + source + preset row. |
+| `#/browse`                 | browse root       | 0.2        | Tabs: Genre / Location / Language. |
+| `#/browse?id=<g\|c\|r>NN`  | browse drill      | 0.2        | Children of any TuneIn taxonomy node. Breadcrumb. |
+| `#/search`                 | search empty      | 0.2        | Empty input + "popular" suggestions. |
+| `#/search?q=...`           | search results    | 0.2        | Debounced; results filtered to stations. |
+| `#/station/sNNN`           | station detail    | 0.2        | Describe.ashx info + probe state + 6 assign buttons + test-play. |
+| `#/preset/N`               | preset modal      | 0.3        | Triggered from now-playing's preset row; opens search/browse to replace this slot. |
+| `#/settings`               | settings          | 0.4        | Sub-sections; collapsible. |
 
 ## State management
 
-A single observable store. Each view is `render(state) → HTML string`.
-State change → re-render the active view. No virtual DOM, no diffing —
-fast enough for ~30 cards on screen at a time.
+**Split observable store.** Global state is bounded to four top-level
+keys. Transient view state lives in the view module, derived from URL
+hash where possible.
 
 ```js
-// app/state.js
+// app/state.js (global store)
 export const state = observable({
-  // From the speaker (live via WebSocket; initial via REST)
   speaker: {
-    info:     null,   // {deviceID, name, type, firmwareVersion, ...}
-    nowPlaying: null, // {source, item, track, artist, art, playStatus}
-    presets:  null,   // [{slot, source, type, location, itemName, art}, ...] (length 6)
-    volume:   null,   // {actualVolume, targetVolume, muteEnabled}
-    bass:     null,   // {actualBass, targetBass, range}
-    sources:  null,   // [{source, status: READY|UNAVAILABLE, ...}]
-    zone:     null,   // {master, members[]} or null if solo
-    bluetooth: null,  // {paired[], state}
-    network:  null,   // {ssid, ip, mac, ...}
+    info:       null,   // {deviceID, name, type, firmwareVersion, ...}
+    nowPlaying: null,   // {source, item, track, artist, art, playStatus}
+    presets:    null,   // [{slot, source, type, location, itemName, art}, ...] (length 6)
+    volume:     null,   // {actualVolume, targetVolume, muteEnabled}    (0.3+)
+    sources:    null,   // [{source, status: READY|UNAVAILABLE, ...}]    (0.3+)
+    bass:       null,   // {actualBass, targetBass, range}               (0.4)
+    balance:    null,   // (0.4)
+    zone:       null,   // (0.4)
+    bluetooth:  null,   // (0.4)
+    network:    null,   // (0.4)
+    recents:    null,   // (0.4)
   },
-
-  // Browse + search transient state
-  browse: { id: null, items: null, breadcrumbs: [], loading: false },
-  search: { q: '', results: null, loading: false, error: null },
-  station: { id: null, detail: null, probe: null, loading: false },
-
-  // Per-session probe cache (10 min TTL) so flipping back to a station
-  // doesn't re-probe Tune.ashx every time
-  probeCache: new Map(), // id -> {ok, kind, url, expires}
-
-  // UI bits
-  ws: { connected: false, lastEvent: null },
-  toast: null,
-  testPlaying: null,    // station ID currently in test-play
+  caches: {
+    probe:          new Map(),  // sid → {ok, kind, url, expires} (10 min TTL, browser-local)
+    recentlyViewed: [],         // most-recent station IDs, persisted in localStorage
+  },
+  ws: { connected: false, lastEvent: null },   // 0.3+
+  ui: { toast: null, testPlaying: null },
 });
+```
+
+Per-view transient state (browse drill items, search query, station
+detail) lives as locals in the view module, cleared on `unmount()`.
+Hash routes (`#/browse?id=g22`, `#/search?q=jazz`) carry enough info
+to re-derive view state on re-entry — no stale store entries to
+clean up.
+
+### Subscription granularity
+
+**Coarse, top-level only.** Mutators subscribe to one of `speaker`,
+`caches`, `ws`, `ui`. The store emits `(state, changedTopLevelKey)`
+on any change beneath that key; mutators decide what changed and
+update their DOM. Keeps `state.js` ~30 lines instead of a path-walker.
+
+### Render strategy — init-once + per-view mutators
+
+Each view module exports `{ init(root, state), update(state, changedKey) }`:
+
+- `init` mounts a static DOM tree once, using `html\`...\`` tagged
+  templates from `app/dom.js`. Returns the rendered subtree.
+- `update` is a `switch (changedKey) { ... }` that mutates only the
+  affected DOM (`slider.value = state.speaker.volume.actualVolume`)
+  rather than re-rendering and re-parsing.
+
+This preserves input focus, scroll position, IME state, and `:active`
+across WS events. **No virtual DOM, no full re-render, no diffing.**
+Static views (browse, station detail) just don't subscribe — their
+`init` does the work and returns. Add this rule as a one-liner
+comment in `app/dom.js` so future contributors don't reinvent
+re-rendering:
+
+```
+// All views init once; reactivity is via per-view mutators on
+// state-path subscriptions, not via re-rendering. Re-rendering
+// inputs/sliders/scroll-containers breaks them.
 ```
 
 ## REST API — `/cgi-bin/api/v1/*`
 
-All endpoints return a consistent envelope:
+Most endpoints return a consistent envelope:
 
 ```json
 { "ok": true,  "data": ... }
@@ -242,94 +232,180 @@ All endpoints return a consistent envelope:
 ```
 
 Every CGI sets `Content-Type: application/json; charset=utf-8` and
-`Cache-Control: no-store`. Implemented as small busybox-shell CGIs
-(~30–60 lines each). Endpoints:
+`Cache-Control: no-store`. Implemented as small busybox-shell CGIs.
 
-### `tunein` — TuneIn proxy
+### `tunein` — dumb forwarder, no envelope
+
+A single ~30-line CGI switches on `PATH_INFO` and forwards to TuneIn.
+Adds magic params (`formats=mp3,aac`, `lang=de-de`, `render=json`)
+and `User-Agent: Bose_Lisa/27.0.6`. Pipes the response back verbatim
+with permissive CORS headers.
 
 ```
 GET /cgi-bin/api/v1/tunein/search?q=jazz&type=station
 GET /cgi-bin/api/v1/tunein/browse              → root nodes
 GET /cgi-bin/api/v1/tunein/browse?id=g22       → children of node
 GET /cgi-bin/api/v1/tunein/station/sNNN        → Describe.ashx
-GET /cgi-bin/api/v1/tunein/probe/sNNN          → Tune.ashx + classify
+GET /cgi-bin/api/v1/tunein/probe/sNNN          → Tune.ashx
 ```
 
-The proxy injects `formats=mp3,aac` and `lang=de-de` (the magic params)
-plus User-Agent `Bose_Lisa/27.0.6`. The `probe` endpoint classifies the
-result:
+**No `{ok, data}` envelope on `/tunein/*`.** The HTTP status + raw
+TuneIn JSON is the contract. **No CGI-side classification** — the
+browser parses the response and classifies in `app/reshape.js`:
 
-```json
-{ "ok": true, "data": { "kind": "playable", "streams": [...], "first": "..." } }
-{ "ok": true, "data": { "kind": "gated",   "reason": "notcompatible.enUS.mp3" } }
-{ "ok": true, "data": { "kind": "dark",    "reason": "nostream.enUS.mp3" } }
+```js
+// app/reshape.js
+export function classify(tuneinJson) {
+  const url = tuneinJson?.body?.[0]?.url ?? '';
+  if (url.includes('notcompatible')) return { kind: 'gated', reason: url };
+  if (url.includes('nostream'))      return { kind: 'dark',  reason: url };
+  return { kind: 'playable', streams: filterPlayable(tuneinJson.body) };
+}
 ```
 
-The browser caches probe results for 10 minutes per station ID so that
-clicking around doesn't re-probe Tune.ashx unnecessarily.
+Browser caches probe results 10 minutes per station ID
+(`state.caches.probe`).
 
-### `presets` — the preset list
+### `presets` — list + atomic save+store
 
 ```
-GET  /cgi-bin/api/v1/presets                       → 6 slots
+GET  /cgi-bin/api/v1/presets                       → 6 slots (envelope)
 POST /cgi-bin/api/v1/presets/:slot                 → save+store atomically
 ```
 
-`POST` body is `{id, name, json}` where `json` is the Bose-shaped
-station response (the SPA reshapes from the TuneIn probe; CGI doesn't
-parse it). The CGI:
+`GET` calls speaker `/presets` via the speaker-proxy machinery, parses
+XML in `app/api.js`, returns
+`{ok, data: [{slot, source, type, location, itemName, art}, ...]}`.
 
-1. Validates `id` matches `^s[0-9]+$` and `slot` is 1–6.
-2. Refuses if `kind` from the probe wasn't `playable` (probe required).
-3. Writes `json` atomically to `/mnt/nv/resolver/bmx/tunein/v1/playback/station/<id>`.
-4. Calls the speaker's port-8090 `/storePreset?id=<slot>` with the
-   correct `<preset id="N"><ContentItem .../></preset>` shape.
-5. Returns the new full presets list as `data`.
+`POST` body is `{id, slot, name, kind, json}`:
 
-### `speaker` — proxy to the speaker's port-8090 API
+- `id` matches `^s[0-9]+$` (validated)
+- `slot` is 1–6 (validated)
+- `kind` must be the literal `"playable"` (validated; gated/dark refused)
+- `name` is the display name (escaped for XML when calling storePreset)
+- `json` is the Bose-shaped station response (browser reshaped from the
+  TuneIn probe; CGI writes verbatim)
 
-The browser CAN call port 8090 directly when CORS permits. For some
-endpoints it doesn't (the speaker firmware is conservative with CORS
-headers). The `speaker` CGI is a permissive thin proxy that forwards the
-exact path and method, and adds proper CORS headers. JSON-on-XML
-translation isn't this CGI's job — the SPA is happy to parse XML.
+The CGI:
+
+1. Validates id, slot, kind, name.
+2. Writes `json` to `/mnt/nv/resolver/bmx/tunein/v1/playback/station/<id>.tmp`,
+   then `mv` (atomic on same fs).
+3. Calls speaker `/storePreset?id=<slot>` via wget with the
+   `<preset id="N"><ContentItem .../></preset>` shape.
+4. Returns the new full presets list as `data`.
+
+**No rollback on storePreset failure.** Failure modes:
+
+| Failure | Resulting state | Severity |
+|---|---|---|
+| File-write fails (disk full / IO) | No file change, no storePreset call | Clean abort, return error |
+| File-write OK, storePreset rejected (new station ID) | Stray JSON file in resolver, speaker unchanged | ~2 KB wasted NVRAM |
+| File-write OK, storePreset rejected (overwriting existing ID) | Refreshed JSON for that ID, speaker unchanged | Other slot pointing to that ID gets a free stream-URL refresh |
+
+In every case, the CGI returns
+`{ok: false, error: {code: "STOREPRESET_REJECTED", ...}}`; the browser
+refetches `/presets` to show actual speaker state. Implementing
+file-rollback is more code with more bugs than the failure mode
+justifies.
+
+### `speaker` — wildcard proxy with Origin check
+
+A single CGI proxies any path under `/cgi-bin/api/v1/speaker/X` to
+`http://localhost:8090/X`, forwarding method, query string, and body.
+Adds permissive CORS headers.
+
+**Browser never talks to speaker:8090 directly.** Every call is
+proxied. This sidesteps the firmware-CORS-posture unknown — same
+origin from the browser's POV.
+
+CSRF guard via `Origin` header on `POST` / `PUT` / `DELETE` only:
+
+```sh
+case "$REQUEST_METHOD" in
+  POST|PUT|DELETE)
+    case "${HTTP_ORIGIN:-}" in
+      "http://${HTTP_HOST}"|"") ;;        # same-origin or curl (no Origin)
+      *) emit_error 403 CSRF_BLOCKED \
+           "cross-origin mutating request rejected"; exit ;;
+    esac ;;
+esac
+```
+
+`GET` skips the Origin check (idempotent; cross-origin response is
+blocked by browser CORS default anyway).
+
+Endpoints used (all via the proxy):
 
 ```
-GET  /cgi-bin/api/v1/speaker/info             → /info passthrough
-GET  /cgi-bin/api/v1/speaker/now_playing      → /now_playing passthrough
-GET  /cgi-bin/api/v1/speaker/volume           → /volume passthrough
-POST /cgi-bin/api/v1/speaker/volume           → POST /volume passthrough
-GET  /cgi-bin/api/v1/speaker/bass             → ditto
-…and so on for: name, sources, key, select, setPower, getZone, setZone,
-bluetoothInfo, enterBluetoothPairing, clearBluetoothPaired, networkInfo,
-notification, capabilities, recents, balance, balanceCapabilities,
-DSPMonoStereo, systemtimeout, lowPowerStandby.
+GET  /cgi-bin/api/v1/speaker/now_playing       (0.2)
+GET  /cgi-bin/api/v1/speaker/presets           (0.2)
+GET  /cgi-bin/api/v1/speaker/info              (0.3)
+GET  /cgi-bin/api/v1/speaker/sources           (0.3)
+GET  /cgi-bin/api/v1/speaker/volume            (0.3)
+POST /cgi-bin/api/v1/speaker/volume            (0.3)
+POST /cgi-bin/api/v1/speaker/key               (0.3)
+POST /cgi-bin/api/v1/speaker/select            (0.3)
+POST /cgi-bin/api/v1/speaker/selectLocalSource (0.3)
+…plus name, bass, balance, balanceCapabilities, DSPMonoStereo,
+  systemtimeout, lowPowerStandby, getZone, setZone, bluetoothInfo,
+  enterBluetoothPairing, clearBluetoothPaired, networkInfo,
+  notification, capabilities, recents                          (0.4)
 ```
 
-The CGI takes the path under `/cgi-bin/api/v1/speaker/` and forwards
-verbatim to `localhost:8090`. The SPA then parses speaker XML using
-small dedicated parsers in `app/api.js` — speaker XML is shallow and
-predictable.
+Wildcard proxy means new endpoints work without CGI changes.
 
-### `refresh-all` — bulk stream-URL refresh
+### `refresh-all` — bulk stream-URL refresh (0.4)
 
 ```
 POST /cgi-bin/api/v1/refresh-all
 ```
 
 For each preset slot, fetch the current station ID, run probe, and
-rewrite the resolver JSON file if the streams changed. Returns
-`{updated: [...], unchanged: [...], failed: [...]}`. Equivalent of
-running `python3 build.py` from a laptop, but on-speaker.
+rewrite the resolver JSON file if streams changed. Returns
+`{updated: [...], unchanged: [...], failed: [...]}`. On-speaker
+equivalent of `python3 build.py` from a laptop.
 
-## Live updates — WebSocket
+## Live updates — WebSocket (0.3)
 
-The speaker firmware's WebSocket on `ws://<speaker>:8080/` streams XML
-events in real time. The SPA opens a connection on load:
+### Pre-spike — do this before 0.2 starts
+
+The plan assumes `ws://<speaker>:8080/` accepts browser-origin
+connections. **This is not yet verified.** From any LAN browser dev
+console:
+
+```js
+new WebSocket('ws://<speaker>:8080/').addEventListener(
+  'message', e => console.log(e.data));
+```
+
+If frames arrive while you fiddle with the speaker, ship 0.3 as
+designed. If the connection closes immediately, try
+`wscat -c ws://<speaker>:8080/ -H 'Origin: http://<speaker>:8080'`
+to see whether an Origin tweak unblocks it.
+
+### Kill criterion
+
+If browser→WS doesn't work and no Origin header tweak fixes it:
+**drop WS-dependent features from 0.3 entirely.** Don't build a
+separate WS-proxy daemon — busybox httpd doesn't proxy WS, and a new
+Python/Lua daemon is more moving parts than the value justifies for a
+remote that's already 90% useful with REST polling.
+
+Dropped features in this case: "pressed on speaker" toasts, the live
+VU dot, the connection-state pill's "live" mode.
+
+REST polling becomes primary instead of fallback: poll
+`/cgi-bin/api/v1/speaker/now_playing` every 2s while the now-playing
+tab is visible, plus on-demand on user actions.
+
+### If the spike succeeds
+
+The SPA opens a connection on load:
 
 ```js
 // app/ws.js
-const ws = new WebSocket(`ws://${speakerHost}:8080/`);
+const ws = new WebSocket(`ws://${location.hostname}:8080/`);
 ws.addEventListener('message', e => handleSpeakerEvent(e.data));
 ```
 
@@ -338,23 +414,31 @@ Events handled:
 | Event                          | State update                  |
 | ------------------------------ | ----------------------------- |
 | `<volumeUpdated>`              | `state.speaker.volume`        |
-| `<bassUpdated>`                | `state.speaker.bass`          |
-| `<balanceUpdated>`             | `state.speaker.balance`       |
+| `<bassUpdated>`                | `state.speaker.bass` (0.4)    |
+| `<balanceUpdated>`             | `state.speaker.balance` (0.4) |
 | `<nowPlayingUpdated>`          | `state.speaker.nowPlaying`    |
 | `<sourcesUpdated>`             | `state.speaker.sources`       |
 | `<presetsUpdated>`             | `state.speaker.presets` + toast "Presets changed" |
-| `<keyEvent>`                   | toast "Preset N pressed on speaker" — feels alive |
-| `<connectionStateUpdated>`     | `state.ws` plus a network-state pill in the header |
-| `<zoneUpdated>`                | `state.speaker.zone`          |
-| `<recentsUpdated>`             | `state.speaker.recents`       |
+| `<keyEvent>`                   | toast "Preset N pressed on speaker" |
+| `<connectionStateUpdated>`     | `state.ws` plus header pill   |
+| `<zoneUpdated>` (0.4)          | `state.speaker.zone`          |
+| `<recentsUpdated>` (0.4)       | `state.speaker.recents`       |
 
-**Fallback:** if WS connection fails or drops, the SPA polls
-`/now_playing` every 2 seconds while the now-playing tab is visible.
-WebSocket reconnect logic uses exponential backoff capped at 30s.
+Reconnect with exponential backoff capped at 30s. If WS drops, the
+SPA falls back to REST polling at 2s while a tab is visible.
+
+A minimal `admin/ws-test.html` (~20 lines) ships with 0.2's deploy as
+a diagnostic page — open in any browser to check WS health on a given
+speaker, or to debug after a firmware-update incident.
 
 ## View specs
 
 ### now-playing (`#/`)
+
+**0.2:** thin read-only header strip. Current station name + art +
+slot 1–6 row, polled every 2s. No transport/volume/source.
+
+**0.3:** full home view.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -383,27 +467,27 @@ WebSocket reconnect logic uses exponential backoff capped at 30s.
 
 State dependencies: `speaker.{nowPlaying, volume, sources, presets, info}`.
 
-Behaviours:
+Behaviours (0.3):
 
 - Active source highlighted; click changes source via `/select` or
   `/selectLocalSource`.
 - Volume slider sends throttled `POST /volume` with `<volume>NN</volume>`
   body; updates eagerly, reconciles via WS.
 - Preset card click → `POST /key PRESET_N press/release`.
-- Long-press / right-click on preset → modal: "Replace this preset" →
-  navigates to `#/search` with a `slot=N` context that comes back here
-  after assignment.
+- Long-press / right-click on preset → modal: "Replace this preset"
+  → navigates to `#/search` with a `slot=N` context that comes back
+  here after assignment.
 - Album art: tinted hero background (sample dominant colour from the
-  `<art>` URL via canvas; fall back to neutral if CORS blocks).
+  `<art>` URL via canvas; fall back to neutral if CORS blocks). (0.4)
 
-### browse (`#/browse`)
+### browse (`#/browse`) — 0.2
 
 Three tabs at the top (Genre / Location / Language). Each shows the
 top-level outline children. Click any item → drill via
-`#/browse?id=<id>` with breadcrumb. Each `audio`-typed leaf shows as a
-station card linking to `#/station/sNN`.
+`#/browse?id=<id>` with breadcrumb. Each `audio`-typed leaf shows as
+a station card linking to `#/station/sNNN`.
 
-### search (`#/search` and `#/search?q=...`)
+### search (`#/search` and `#/search?q=...`) — 0.2
 
 Sticky search input at top. Debounced 300ms. Hits
 `/cgi-bin/api/v1/tunein/search?q=...&type=station`. Results render as
@@ -412,7 +496,7 @@ the same cards as browse.
 Empty state (no `q` yet): show "Recently viewed" (from localStorage)
 and "Popular" (from `/Browse.ashx?c=local`).
 
-### station detail (`#/station/sNNN`)
+### station detail (`#/station/sNNN`) — 0.2
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -434,190 +518,214 @@ and "Popular" (from `/Browse.ashx?c=local`).
 ```
 
 On view entry:
+
 1. Fetch `Describe.ashx?id=<id>` → fill metadata.
 2. Fetch `Tune.ashx?id=<id>` → set probe state (cached for 10 min).
-3. If probe is **gated** or **dark**, replace the preset buttons with a
-   message "This station isn't available from this client right now."
-   plus a "More like this" link.
+3. If probe is **gated** or **dark**, replace the preset buttons
+   with a message "This station isn't available from this client
+   right now." plus a "More like this" link.
 
 Test-play: `POST /api/v1/speaker/select` with the speaker's
 `<ContentItem>` shape. Doesn't store as preset; doesn't touch
 `/mnt/nv/resolver/`. "Cancel test" sends `POST /key POWER` to standby.
 
-Set-as-preset: `POST /api/v1/presets/:slot` with the probed Bose JSON.
-The CGI does the resolver write + storePreset call atomically.
+Set-as-preset: `POST /api/v1/presets/:slot` with the probed Bose JSON
+plus `kind: "playable"`. The CGI does the resolver write +
+storePreset call atomically.
 
-### settings (`#/settings`)
+### settings (`#/settings`) — 0.4
 
-Single tab with collapsible sections. Each section reads its state via
-the speaker proxy at view-entry; writes go directly through the proxy
-too.
+Single page with collapsible sections. Each section reads its state
+via the speaker proxy on view-entry; writes go through the proxy too.
 
 | Section                | Content                                                                 |
 | ---------------------- | ----------------------------------------------------------------------- |
 | **Speaker**            | Name (editable), power state, sleep timer (`/systemtimeout`), low-power standby |
 | **Audio**              | Bass slider, balance slider, mono/stereo switch                         |
 | **Bluetooth**          | Paired devices list, "Enter pairing mode" button, "Clear pairings"      |
-| **Multi-room**         | Current zone (master/members), add/remove slaves (DLNA discovery list) |
+| **Multi-room**         | Current zone (master/members), add/remove slaves (DLNA discovery list)  |
 | **Network**            | SSID (read-only), IP, MAC, signal strength                              |
 | **System**             | Firmware version, MAC, capabilities, supported endpoints, "Send test notification", **Factory reset** (with confirm dialog showing what gets wiped) |
-| **Notifications gizmo**| Free-text input → `POST /notification` to the speaker. Banner appears on the speaker — pure delight |
+| **Notifications gizmo**| Free-text input → `POST /notification` to the speaker. Banner appears on the speaker. |
+
+Note: factory reset itself ships in **0.3** as a single button with
+confirm dialog (the recovery hatch). 0.4 wraps it into the settings
+view alongside the rest.
 
 ## Polish features ("the gizmos")
 
-- **Album-art-tinted hero.** Sample the dominant colour from the album
-  art via `Canvas.getImageData` and use it as the page accent (CSS
-  custom property updated). Falls back to a neutral default if the
-  image is CORS-blocked or unloaded.
-- **"Pressed on speaker" toasts.** `<keyEvent>` from WebSocket → toast
-  "Preset 3 pressed on the speaker" in the corner, fades after 4s.
-  Makes the admin feel connected to the physical hardware.
-- **Live VU dot on the now-playing card.** Subtle pulse while
-  `playStatus === "PLAY_STATE"`.
-- **Mobile-remote layout.** At narrow widths the now-playing view
-  collapses to a phone-remote shape: big art top, big buttons. Container
-  queries do this in CSS, no JS.
-- **Dark mode** — auto via `prefers-color-scheme` + manual toggle in
-  Settings.
-- **Connection-state pill** — "live" (WebSocket connected),
-  "reconnecting" (between WS attempts), "polling" (WS gave up,
-  REST-only), "speaker asleep" (now_playing returns STANDBY).
+| Feature | Release |
+|---|---|
+| "Pressed on speaker" toasts (`<keyEvent>` from WS → corner toast) | 0.3 (if WS spike succeeds) |
+| Connection-state pill ("live" / "reconnecting" / "polling" / "speaker asleep") | 0.3 |
+| Live VU dot — subtle pulse while `playStatus === "PLAY_STATE"` | 0.3 |
+| Dark mode (auto via `prefers-color-scheme` + manual toggle) | 0.3 |
+| Album-art-tinted hero (Canvas.getImageData → CSS custom property) | 0.4 (CORS-on-canvas risk) |
+| Mobile-remote layout (container queries; phone-shaped at narrow widths) | 0.4 |
+| Accessibility pass (focus rings, ARIA, keyboard nav) | 0.4 |
 
 ## File layout (repo source)
 
 ```
 admin/
 ├── PLAN.md                  ← this doc
-├── index.html               ← shell, links app/main.js + style.css
-├── style.css                ← vanilla, mobile-first, ~5 KB
+├── index.html               ← shell, references app/main.js + style.css
+│                              with ?v=$VERSION query strings
+├── style.css                ← vanilla, mobile-first
 ├── app/                     ← ES module tree, no build step
-│   ├── main.js              ← entry: wires router + state + WS
+│   ├── main.js              ← entry: wires router + state + (0.3+) WS
 │   ├── router.js            ← hash router (~50 lines)
-│   ├── state.js             ← observable store (~40 lines)
+│   ├── state.js             ← split observable store (~30 lines)
 │   ├── api.js               ← API client + speaker XML parsers
-│   ├── reshape.js           ← TuneIn → Bose JSON (mirrors resolver/build.py)
-│   ├── dom.js               ← html`...` tagged template + render helpers
-│   ├── ws.js                ← WebSocket client + reconnect
+│   ├── reshape.js           ← TuneIn JSON classify + → Bose JSON
+│   │                          (mirror of resolver/build.py;
+│   │                           drift caught by CI fixtures)
+│   ├── dom.js               ← html`...` tagged template + mount helper
+│   ├── ws.js                ← WebSocket client + reconnect (0.3+)
 │   └── views/
-│       ├── now-playing.js
 │       ├── browse.js
 │       ├── search.js
 │       ├── station.js
-│       └── settings.js
+│       ├── now-playing.js
+│       └── settings.js                                           (0.4)
 ├── cgi-bin/api/v1/
-│   ├── tunein               ← TuneIn proxy + classify
+│   ├── tunein               ← TuneIn forwarder
 │   ├── presets              ← list + atomic save+store
-│   ├── speaker              ← thin proxy to port 8090
-│   └── refresh-all          ← bulk re-probe + rewrite
-├── port80-router.sh         ← AP-mode-aware port-80 handoff
-├── shepherd-core-override.xml ← Shepherd-core sans PtsServer
-└── deploy.sh                ← installer (separate from scripts/deploy.sh)
+│   ├── speaker              ← wildcard proxy + Origin check
+│   └── refresh-all          ← bulk re-probe + rewrite             (0.4)
+├── ws-test.html             ← WS diagnostic page                  (0.2)
+├── test/
+│   ├── test_reshape.js      ← `node --test` against fixtures
+│   └── fixtures/            ← shared TuneIn↔Bose pairs
+│       ├── sNNNN.tunein.json
+│       └── sNNNN.bose.json
+├── deploy.sh                ← installer (separate from scripts/deploy.sh)
+└── uninstall.sh             ← partial uninstall (admin only)
 ```
 
 After deploy, the admin lands at:
 
 ```
-/mnt/nv/resolver/{index.html, style.css, app/, cgi-bin/api/v1/}
-/mnt/nv/bin/port80-router.sh
-/mnt/nv/shepherd/Shepherd-core.xml      ← real file, replacing the symlink
-/mnt/nv/shepherd/Shepherd-resolver.xml  ← updated to add port80-router daemon
+/mnt/nv/resolver/{index.html, style.css, app/, cgi-bin/api/v1/, ws-test.html}
 ```
+
+(No port-80 changes, no Shepherd modifications, no `port80-router.sh`.)
 
 ## Build, deploy, uninstall
 
-**No build step.** Pure static files + ES modules + shell CGIs. `git clone`
-and you can deploy.
+**No build step.** Pure static files + ES modules + shell CGIs.
+`git clone` and you can deploy.
 
-`admin/deploy.sh <speaker-ip>` does the full install:
+### `admin/deploy.sh <speaker-ip>`
 
-1. Sanity-check SSH access and the resolver is already deployed
-   (this admin is layered on top of `scripts/deploy.sh`).
-2. Push `admin/index.html`, `style.css`, `app/` to
+1. Sanity-check SSH access and that the resolver is already deployed
+   (`ssh <speaker> test -f /mnt/nv/resolver/bmx/registry/v1/services`).
+   The admin layers on top of `scripts/deploy.sh`.
+2. Substitute `?v=$VERSION` into `index.html` from `git describe --tags`.
+3. Push `index.html`, `style.css`, `app/`, `ws-test.html` to
    `/mnt/nv/resolver/`.
-3. Push `admin/cgi-bin/api/v1/*` to `/mnt/nv/resolver/cgi-bin/api/v1/`,
+4. Push `cgi-bin/api/v1/*` to `/mnt/nv/resolver/cgi-bin/api/v1/`,
    `chmod +x`.
-4. Push `admin/port80-router.sh` to `/mnt/nv/bin/port80-router.sh`,
-   `chmod +x`.
-5. Push `admin/shepherd-core-override.xml` to
-   `/mnt/nv/shepherd/Shepherd-core.xml`, replacing the symlink to
-   `/opt/Bose/etc/Shepherd-core.xml`.
-6. Update `/mnt/nv/shepherd/Shepherd-resolver.xml` to add the
-   port80-router daemon entry.
-7. Reboot.
-8. Verify `http://<speaker>/` returns the SPA shell HTML.
+5. Verify `http://<speaker>:8181/` returns the SPA shell (200 with
+   the `<meta name="admin-version">` tag present).
 
-`scripts/uninstall.sh` (the existing one) gets extended to also remove
-`/mnt/nv/bin/`, restore the `Shepherd-core.xml` symlink to the
-firmware version, and revert `Shepherd-resolver.xml` to just the
-loopback httpd.
+### `admin/uninstall.sh <speaker-ip>`
 
-`scripts/verify.sh` adds a check that `http://<speaker>:80/` returns
-the admin SPA shell (200 with `<title>` containing the speaker name).
+Removes the admin tree (`index.html`, `style.css`, `app/`,
+`cgi-bin/api/v1/`, `ws-test.html`) but leaves the resolver intact.
+The existing `scripts/uninstall.sh` continues to handle full project
+removal.
+
+### Cache busting + version drift
+
+`index.html` references `app/main.js?v=$VERSION` and
+`style.css?v=$VERSION`. Bumping `$VERSION` invalidates the browser
+cache for all references at once.
+
+A `<meta name="admin-version" content="$VERSION">` tag carries the
+version at runtime. On `visibilitychange → 'visible'`, the SPA
+fetches `/index.html?_=ts` (cache-busted), parses the meta tag, and
+shows a non-dismissable "new version available, reload to update"
+banner if it differs from the in-memory version. (Doesn't auto-reload
+— might interrupt the user mid-action.)
+
+### `scripts/verify.sh` extension
+
+Adds three probes:
+
+```sh
+# 1. admin shell
+curl -fsS "http://$SPEAKER:8181/" | grep -q 'admin-version'
+
+# 2. presets envelope
+curl -fsS "http://$SPEAKER:8181/cgi-bin/api/v1/presets" \
+  | grep -q '"ok":true'
+
+# 3. resolver still serving (admin didn't break the existing tree)
+curl -fsS "http://$SPEAKER:8181/bmx/registry/v1/services" \
+  | grep -q '{'
+```
 
 ## Testing strategy
 
 Three layers:
 
-1. **Unit-testable in node:** `app/reshape.js`, ID validators, URL
-   parsers in `app/router.js`. Ship a small `admin/test/` directory
-   with `*.test.js` files runnable via `node --test`.
-2. **CGI integration:** `cgi-bin/*` can be exercised with `curl` from a
-   laptop pointed at a deployed speaker. Document the curl invocations
-   in `admin/PLAN.md` § "API Reference" so contributors can test.
-3. **End-to-end UX:** manual on a real speaker. The repo's existing
-   audit/verify cycle (`scripts/verify.sh`) gets extended to probe the
-   admin URL.
+1. **Unit-testable in node + python:** ID validators, URL parsers,
+   reshape contract.
+   - `admin/test/test_reshape.js` (`node --test`) asserts
+     `reshape(tunein) === bose` for each fixture.
+   - `resolver/test_build.py` (`python -m unittest`) asserts
+     `make_bose(tunein) === bose` for the **same** fixtures.
+   - **CI runs both** and either fails individually if its output
+     doesn't match the fixture. Catches drift between
+     `app/reshape.js` and `resolver/build.py` as a red CI build, not
+     as a silent runtime bug.
+2. **CGI integration:** `cgi-bin/*` exercised with `curl` against a
+   deployed speaker. Document curl invocations in this doc.
+3. **End-to-end UX:** manual on a real speaker. `scripts/verify.sh`
+   probes the admin URL.
 
-A `mock-speaker.py` for offline iteration is **out of scope for v1.0**
-but a candidate for v1.x — would let contributors hack on the SPA
-without a real speaker.
+A `mock-speaker.py` for offline iteration is **out of scope** for
+0.2 / 0.3 / 0.4. Candidate for 1.x.
 
 ## Failure modes covered explicitly
 
-| Failure                                     | UX                                                                     |
-| ------------------------------------------- | ---------------------------------------------------------------------- |
-| WebSocket connect fails                     | Connection pill says "polling"; SPA falls back to REST polling       |
-| `Tune.ashx` returns `notcompatible`         | Station detail shows "Not available from this client" + "More like this" |
-| `Tune.ashx` returns `nostream`              | Station detail shows "This station is currently off-air"               |
-| Speaker port 8090 unreachable               | Blocking error screen "Speaker may be asleep or off-network"; retry   |
-| `save_station` fails (disk full / IO error) | Toast with the CGI error; preset assignment aborted before storePreset|
-| Speaker rejects storePreset                 | Toast "Speaker rejected the request"; resolver file is rolled back   |
-| Network slow                                | Skeleton loaders for cards; debounced search input                    |
-| Multiple admins open at once                | Each has its own WS; presetsUpdated WS event keeps them in sync       |
-| Speaker rebooted while admin open           | WS disconnects → reconnects on backoff; refresh state on reconnect    |
+| Failure                                          | UX                                                                  |
+| ------------------------------------------------ | ------------------------------------------------------------------- |
+| WebSocket connect fails (or pre-spike showed it can't work) | Connection pill says "polling"; SPA uses REST polling primarily |
+| `Tune.ashx` returns `notcompatible`              | Station detail shows "Not available from this client" + "More like this" |
+| `Tune.ashx` returns `nostream`                   | Station detail shows "This station is currently off-air"            |
+| Speaker port 8090 unreachable                    | Blocking error screen "Speaker may be asleep or off-network"; retry |
+| `presets` POST file-write fails (disk full / IO) | Toast with the CGI error code; preset assignment aborted            |
+| `presets` POST file-write OK, storePreset rejected | Toast `STOREPRESET_REJECTED`; SPA refetches `/presets`              |
+| Cross-origin POST attempt to speaker proxy       | CGI returns `CSRF_BLOCKED`; never reaches the speaker               |
+| Network slow                                     | Skeleton loaders for cards; debounced search input                  |
+| Multiple admins open at once                     | Each has its own WS; presetsUpdated event keeps them in sync        |
+| Speaker rebooted while admin open                | WS disconnects → reconnects on backoff; refresh state on reconnect  |
+| Stale tab after redeploy                         | Visibility-change banner: "new version available, reload to update" |
 
 ## Estimated effort
 
-| Phase | Includes | Days |
-| ----- | -------- | ---- |
-| Foundation | router, state, dom helpers, api client, WS + reconnect, port80-router + Shepherd overrides, deploy.sh, verify.sh extension | 1 |
-| now-playing view | the home view with WS-driven live updates, transport, volume, source, preset row | 1.5 |
-| Browse + search + station detail | three views, three CGI endpoints (tunein search/browse/probe), reshape, probe cache | 2 |
-| Settings — Speaker, Audio, BT, Multi-room | speaker proxy CGI, four sub-sections | 1.5 |
-| Settings — Network, System, Notifications, factory reset | three sub-sections + the gizmo | 0.5 |
-| Polish | album-art tint, mobile-remote layout, dark mode, "pressed on speaker" toasts, accessibility pass | 1.5 |
-| **Total** | | **~8 days** |
+| Release | Includes | Days |
+| ------- | -------- | ---- |
+| **0.2** | Hash router, state.js, dom.js, api client, tunein forwarder CGI, presets CGI, speaker GET-only proxy, fixtures + CI tests, browse/search/station views, thin polled now-playing header, deploy.sh, verify.sh extension, ws-test.html | ~3 |
+| **0.3** | WebSocket + reconnect (or, if pre-spike fails, REST-polling-primary path), full now-playing view (transport, volume, source, preset row), speaker proxy POST endpoints, "pressed on speaker" toasts (if WS works), connection pill, dark mode, factory reset | ~2.5 |
+| **0.4** | Settings view (7 sub-sections), refresh-all CGI, album-art tint, mobile-remote container queries, accessibility pass | ~3 (wide error bars) |
+| **Total** | | **~8.5** |
 
 ## Open questions to resolve during build
 
-1. **CORS from browser → speaker:8090**: speaker firmware's CORS
-   posture is unknown without testing. The plan assumes most endpoints
-   don't need preflight (GET / `application/xml` POST without custom
-   headers). If they do, the `speaker` CGI is the fallback for
-   everything.
-2. **CORS from browser → speaker:8080 WebSocket**: WS doesn't use CORS
-   the same way; the only requirement is that the WS handshake's
-   `Origin` is acceptable to the server. Bose's WS server doesn't
-   appear to validate Origin (untested but likely) — if it does, the
-   admin would proxy WS through a CGI, which is awkward but possible.
-3. **busybox httpd CGI behaviour**: verify scripts in `cgi-bin/`
-   execute without explicit `httpd.conf` config. If they don't, ship
-   an `httpd.conf` alongside.
-4. **Speaker WS reliability**: how often does it drop? How does it
-   behave during STANDBY? Test before relying on it.
-5. **PresetsUpdated WS event payload**: not documented; need to capture
-   one to confirm shape.
-6. **Speaker `/storePreset` side effects**: the audit found that
+1. **WebSocket Origin acceptance — pre-spike before 0.2 starts.**
+   See *Live updates* § *Pre-spike*. Kill criterion documented.
+2. **busybox httpd CGI behaviour:** verify shell scripts in
+   `cgi-bin/` execute without explicit `httpd.conf` config. If they
+   need shaping, ship an `httpd.conf` alongside.
+3. **Speaker WS reliability** (if the spike succeeded): how often
+   does it drop? How does it behave during STANDBY? Tune reconnect
+   backoff accordingly.
+4. **`<presetsUpdated>` payload shape:** not documented; capture one
+   to confirm.
+5. **Speaker `/storePreset` side effects:** the audit found
    `storePreset` can reorder/drop other slots when the speaker is
-   currently playing. Need to characterise and either work around or
-   warn users.
+   currently playing. Need to characterise and either work around
+   or warn users.
