@@ -60,3 +60,39 @@ jobs:
             exit 1
           }
           echo "OK — build.py errors as documented when stations.json is missing"
+
+  reshape-contract-js:
+    # Asserts admin/app/reshape.js produces the expected Bose JSON for
+    # each shared fixture. Paired with reshape-contract-py — drift
+    # between the two implementations becomes a red CI build.
+    name: admin/test/test_reshape.js
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run reshape contract tests
+        run: node --test admin/test
+
+  reshape-contract-py:
+    # Asserts resolver/build.py:make_bose produces the expected Bose
+    # JSON for each shared fixture. Paired with reshape-contract-js —
+    # drift between the two implementations becomes a red CI build.
+    name: resolver/test_build.py
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run reshape contract tests
+        run: python -m unittest discover resolver/
