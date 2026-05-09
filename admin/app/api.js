@@ -28,9 +28,18 @@ export function tuneinSearch(q) {
   return getJson(`/tunein/search?${qs}`);
 }
 
-export function tuneinBrowse(id) {
-  const path = id ? `/tunein/browse?id=${encodeURIComponent(id)}` : '/tunein/browse';
-  return getJson(path);
+// tuneinBrowse() with no args returns the root taxonomy.
+// tuneinBrowse('g22') drills into a genre/category/region node.
+// tuneinBrowse({ c: 'music' }) hits the c-style top-level (Browse.ashx
+// uses both `id=` and `c=`; see docs/tunein-api.md).
+export function tuneinBrowse(arg) {
+  let qs = '';
+  if (typeof arg === 'string') {
+    qs = `?id=${encodeURIComponent(arg)}`;
+  } else if (arg && typeof arg === 'object') {
+    qs = '?' + new URLSearchParams(arg).toString();
+  }
+  return getJson(`/tunein/browse${qs}`);
 }
 
 export function tuneinStation(sid) {

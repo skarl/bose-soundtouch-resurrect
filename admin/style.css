@@ -62,3 +62,133 @@ nav.routes a {
 nav.routes a:hover {
   text-decoration: underline;
 }
+
+/* --- browse view (slice 2) ---------------------------------------- */
+
+.browse-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.browse-tab {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.browse-tab.is-active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+.browse-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.browse-section {
+  margin: 0.5rem 0;
+}
+
+.browse-section h2 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.browse-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.browse-link {
+  display: block;
+  padding: 0.5rem 0.25rem;
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.browse-link.is-disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.browse-loading,
+.browse-empty,
+.browse-error {
+  color: var(--muted);
+  padding: 0.5rem 0;
+}
+
+.breadcrumb {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+}
+
+.breadcrumb a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+/* --- station card (slice 2; reused by slices 3 and 4) ------------- */
+
+.station-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  text-decoration: none;
+  color: inherit;
+  background: var(--bg);
+}
+
+.station-card:hover {
+  border-color: var(--accent);
+}
+
+.station-card__art {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.station-card__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.station-card__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.station-card__name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.station-card__meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
