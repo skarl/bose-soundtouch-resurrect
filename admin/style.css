@@ -65,6 +65,7 @@
   --fg:         #1b2026;
   --fg-muted:   #5a6672;
   --accent:     #2f6fde;
+  --accent-fg:  #ffffff;
   --border:     #d6dde3;
   --surface:    #eaeef2;
   --surface-hi: #dfe5eb;
@@ -87,6 +88,7 @@
   --fg:         #3a2a14;
   --fg-muted:   #806a4a;
   --accent:     #a8651f;
+  --accent-fg:  #f6efe1;
   --border:     #e3d6bd;
   --surface:    #efe5d0;
   --surface-hi: #e7dabd;
@@ -109,6 +111,7 @@
   --fg:         #c5f5c0;
   --fg-muted:   #6a8a68;
   --accent:     #3fdc62;
+  --accent-fg:  #07080a;
   --border:     #1c2a1d;
   --surface:    #0c1110;
   --surface-hi: #131c14;
@@ -134,6 +137,8 @@
   --fg-muted:   #666;
   --muted:      #666;     /* keep --muted as alias used widely in markup */
   --accent:     #0a66c2;
+  --accent-fg:  #ffffff;
+  --text-dim:   color-mix(in oklab, var(--fg-muted) 70%, transparent);
   --border:     #e3e3e3;
   --surface:    #fafafa;
   --surface-hi: #f5f5f5;
@@ -1875,11 +1880,25 @@ main {
   container-name: shell;
   display: grid;
   grid-template-rows: auto 1fr auto auto;
+  grid-template-areas:
+    "header"
+    "body"
+    "mini"
+    "tabs";
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--bg);
   color: var(--fg);
 }
+
+.shell-header { grid-area: header; }
+.shell-body   { grid-area: body; }
+.shell-mini   { grid-area: mini; }
+.shell-tabs   { grid-area: tabs; }
+/* The rail is desktop-only — collapse it to zero rows in mobile mode
+   instead of hiding via display:none, which would interfere with the
+   container-query-driven swap below. */
+.shell-rail   { display: none; }
 
 .shell-header {
   display: flex;
@@ -2041,6 +2060,104 @@ main {
   border-radius: 3px;
 }
 
+/* --- shell side rail (desktop) ----------------------------------- */
+/* Mobile keeps the four-zone stack (header/body/mini/tabs); on desktop
+   the four mobile zones collapse and the rail takes their place to the
+   left of the body. The rail card / nav / foot mirror the mockup
+   composition (admin/design-mockup/app/shell.css). */
+.shell-rail__card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem;
+  margin-bottom: 0.75rem;
+  background: var(--surface-hi);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.shell-rail__name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-rail__sub {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--text-dim, var(--fg-muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-rail__pill {
+  align-self: flex-start;
+}
+
+.shell-rail__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.shell-rail__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--fg-muted);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 120ms, color 120ms;
+}
+
+.shell-rail__item:hover {
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.shell-rail__item.is-active {
+  background: var(--accent);
+  color: var(--accent-fg, #ffffff);
+}
+
+.shell-rail__item.is-active:hover {
+  background: var(--accent);
+  color: var(--accent-fg, #ffffff);
+}
+
+.shell-rail__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shell-rail__foot {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--text-dim, var(--fg-muted));
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-rail__item { transition: none; }
+}
+
 /* --- desktop (≥960px container) — side rail layout --------------- */
 
 @container shell (min-width: 960px) {
@@ -2049,19 +2166,21 @@ main {
     grid-template-rows: 1fr;
     grid-template-areas: "rail body";
   }
-  .shell-header {
+  .shell-rail {
     grid-area: rail;
+    display: flex;
     flex-direction: column;
-    align-items: stretch;
-    justify-content: flex-start;
     border-right: 1px solid var(--border);
-    border-bottom: 0;
-    padding: 1rem;
+    background: var(--surface);
+    padding: 14px 12px;
+    overflow-y: auto;
   }
   .shell-body {
     grid-area: body;
-    max-width: 960px;
+    max-width: 880px;
+    overflow-y: auto;
   }
+  .shell-header,
   .shell-tabs,
   .shell-mini {
     display: none !important;

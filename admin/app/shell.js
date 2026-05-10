@@ -93,6 +93,101 @@ const TAB_DEFS = [
   { tab: 'settings', label: 'Settings', icon: 'settings' },
 ];
 
+function renderRail(railEl, store) {
+  if (!railEl) return;
+
+  const card = document.createElement('div');
+  card.className = 'shell-rail__card';
+
+  const nameLine = document.createElement('div');
+  nameLine.className = 'shell-rail__name';
+  const subLine = document.createElement('div');
+  subLine.className = 'shell-rail__sub';
+
+  const initial = computePillState(store.state);
+  const pillEl = pill({ tone: initial.tone, text: initial.text, pulse: initial.tone === 'live' });
+  pillEl.classList.add('shell-rail__pill');
+
+  card.appendChild(nameLine);
+  card.appendChild(subLine);
+  card.appendChild(pillEl);
+
+  const nav = document.createElement('nav');
+  nav.className = 'shell-rail__nav';
+  nav.setAttribute('role', 'tablist');
+
+  const railTabs = TAB_DEFS.map((d) => {
+    const a = document.createElement('a');
+    a.className = 'shell-rail__item';
+    a.href = `#${d.tab === 'now' ? '/' : '/' + d.tab}`;
+    a.dataset.tab = d.tab;
+    a.setAttribute('role', 'tab');
+
+    const ic = document.createElement('span');
+    ic.className = 'shell-rail__icon';
+    ic.appendChild(icon(d.icon, 18));
+
+    const lab = document.createElement('span');
+    lab.className = 'shell-rail__label';
+    lab.textContent = d.label;
+
+    a.appendChild(ic);
+    a.appendChild(lab);
+    nav.appendChild(a);
+    return a;
+  });
+
+  const foot = document.createElement('div');
+  foot.className = 'shell-rail__foot';
+  const fHost = document.createElement('div');
+  const fIp   = document.createElement('div');
+  const fRes  = document.createElement('div');
+  fRes.textContent = 'resolver :8181';
+  foot.appendChild(fHost);
+  foot.appendChild(fIp);
+  foot.appendChild(fRes);
+
+  railEl.replaceChildren(card, nav, foot);
+
+  function applyName() {
+    const info = store.state.speaker.info || {};
+    nameLine.textContent = info.name || '';
+    const sub = [info.type, info.firmwareVersion].filter(Boolean).join(' · ');
+    subLine.textContent = sub;
+  }
+
+  function applyPill() {
+    const next = computePillState(store.state);
+    pillEl.update({ tone: next.tone, text: next.text, pulse: next.tone === 'live' });
+  }
+
+  function applyActive() {
+    const active = store.state.ui.activeTab;
+    for (const a of railTabs) {
+      const on = a.dataset.tab === active;
+      a.setAttribute('aria-selected', on ? 'true' : 'false');
+      if (on) a.classList.add('is-active');
+      else    a.classList.remove('is-active');
+    }
+  }
+
+  function applyFoot() {
+    const net = store.state.speaker.network || {};
+    const info = store.state.speaker.info || {};
+    fHost.textContent = net.name || info.name || '';
+    fIp.textContent = net.ipAddress || '';
+  }
+
+  applyName();
+  applyPill();
+  applyActive();
+  applyFoot();
+
+  store.subscribe('speaker', () => { applyName(); applyPill(); applyFoot(); });
+  store.subscribe('ws',      applyPill);
+  store.subscribe('ui',      applyActive);
+}
+
 function renderHeader(headerEl, store) {
   const name = document.createElement('span');
   name.className = 'shell-header__name';
@@ -254,6 +349,7 @@ export function mountShell(store) {
   const tabsEl   = document.querySelector('.shell-tabs');
   const miniEl   = document.querySelector('.shell-mini');
   const bodyEl   = document.querySelector('.shell-body');
+  const railEl   = document.querySelector('.shell-rail');
   if (!headerEl || !tabsEl || !miniEl || !bodyEl) {
     throw new Error('shell: missing zone element(s) in index.html');
   }
@@ -265,6 +361,7 @@ export function mountShell(store) {
   renderHeader(headerEl, store);
   renderTabs(tabsEl, store);
   renderMini(miniEl, store);
+  if (railEl) renderRail(railEl, store);
 
   return bodyEl;
 }

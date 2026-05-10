@@ -109,6 +109,15 @@ if (!ElementProto.replaceChildren) {
   };
 }
 
+// xmldom omits .className — back it with the `class` attribute so
+// imperative `el.className = 'foo'` round-trips through getAttribute.
+if (!Object.getOwnPropertyDescriptor(ElementProto, 'className')) {
+  Object.defineProperty(ElementProto, 'className', {
+    get() { return this.getAttribute('class') || ''; },
+    set(v) { this.setAttribute('class', String(v)); },
+  });
+}
+
 // xmldom omits Element.dataset. Back it with data-* attributes so
 // reads round-trip through getAttribute and writes via setAttribute.
 if (!Object.getOwnPropertyDescriptor(ElementProto, 'dataset')) {
@@ -262,8 +271,12 @@ function setupShellDOM() {
   shell.setAttribute('class', 'shell');
   shell.setAttribute('data-vp', 'mobile');
 
-  for (const cls of ['shell-header', 'shell-body', 'shell-mini', 'shell-tabs']) {
-    const z = doc.createElement(cls === 'shell-tabs' ? 'nav' : (cls === 'shell-body' ? 'main' : 'div'));
+  for (const cls of ['shell-rail', 'shell-header', 'shell-body', 'shell-mini', 'shell-tabs']) {
+    const tag = cls === 'shell-tabs' ? 'nav'
+      : cls === 'shell-body' ? 'main'
+      : cls === 'shell-rail' ? 'aside'
+      : 'div';
+    const z = doc.createElement(tag);
     z.setAttribute('class', cls);
     if (cls === 'shell-mini') z.setAttribute('hidden', '');
     shell.appendChild(z);
@@ -338,7 +351,15 @@ test('routing rule: tab bar hides entirely on preset modal', async () => {
   const { mountShell } = await import('../app/shell.js');
   mountShell(store);
 
-  const tabs = shell.getElementsByTagName('nav').item(0);
+  // Pick the outer .shell-tabs nav rather than the first tag match; the
+  // rail aside also nests its own <nav> for keyboard semantics.
+  const navs = shell.getElementsByTagName('nav');
+  let tabs = null;
+  for (let i = 0; i < navs.length; i++) {
+    const cls = navs.item(i).getAttribute('class') || '';
+    if (cls.includes('shell-tabs')) { tabs = navs.item(i); break; }
+  }
+  assert.ok(tabs, 'shell-tabs nav resolved');
   assert.equal(tabs.hidden, false, 'tabs visible on home');
 
   fireHashChange('#/preset/3');
@@ -365,6 +386,47 @@ test('mini player visibility: hidden on #/, visible on #/browse', async () => {
 
   fireHashChange('#/preset/2');
   assert.equal(mini.hidden, true, 'hidden on preset modal');
+});
+
+test('side rail: card / nav / foot mount with speaker chrome', async () => {
+  const shell = setupShellDOM();
+  globalThis.location.hash = '#/';
+  const store = makeStore({
+    speaker: {
+      info: { name: 'Bo', type: 'SoundTouch 10', firmwareVersion: '27.0.6' },
+      nowPlaying: { playStatus: 'PLAY_STATE' },
+      network: { name: 'bo-host', ipAddress: '192.168.178.36' },
+    },
+    ws: { mode: 'ws' },
+    ui: { activeTab: 'now' },
+    caches: {},
+  });
+  const { mountShell } = await import('../app/shell.js');
+  mountShell(store);
+
+  const rail = shell.getElementsByTagName('aside').item(0);
+  assert.ok(rail, 'rail aside exists');
+  const card = rail.getElementsByTagName('*');
+  let foundCard = false;
+  let foundNav = false;
+  let foundFoot = false;
+  for (let i = 0; i < card.length; i++) {
+    const cls = card.item(i).getAttribute('class') || '';
+    if (cls.includes('shell-rail__card')) foundCard = true;
+    if (cls.includes('shell-rail__nav'))  foundNav  = true;
+    if (cls.includes('shell-rail__foot')) foundFoot = true;
+  }
+  assert.ok(foundCard, 'rail card rendered');
+  assert.ok(foundNav,  'rail nav rendered');
+  assert.ok(foundFoot, 'rail foot rendered');
+
+  // Active tab from store drives the is-active class on the matching item.
+  let activeCount = 0;
+  for (let i = 0; i < card.length; i++) {
+    const cls = card.item(i).getAttribute('class') || '';
+    if (cls.includes('shell-rail__item') && cls.includes('is-active')) activeCount++;
+  }
+  assert.equal(activeCount, 1, 'exactly one rail item carries is-active');
 });
 
 test('mini player: standby tap fires actions.pressKey("POWER")', async () => {
