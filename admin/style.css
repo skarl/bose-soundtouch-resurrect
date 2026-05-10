@@ -1,13 +1,83 @@
 /* SoundTouch admin — vanilla, mobile-first. */
 
+/* --- colour tokens ------------------------------------------------ */
+/* Applied via [data-theme] on <html>; init() in theme.js sets the
+   attribute synchronously before any paint, so there is no FOWT.     */
+
+[data-theme="light"] {
+  --bg:         #fff;
+  --fg:         #111;
+  --fg-muted:   #666;
+  --accent:     #0a66c2;
+  --border:     #e3e3e3;
+  --surface:    #fafafa;
+  --surface-hi: #f5f5f5;
+  --stream-sel: #e7f3ff;
+  --warn-bg:    #fff8c5;
+  --warn-border:#d4c95a;
+  --error-bg:   #fde4e4;
+  --error-border:#d49a9a;
+  --error-fg:   #7a1f1f;
+  --search-err: #b00020;
+  --pill-amber: #b07000;
+  --pill-green: #1a7f37;
+  --pill-red:   #b00020;
+  --toast-bg:   #222;
+  --toast-fg:   #fff;
+}
+
+[data-theme="dark"] {
+  --bg:         #15171a;
+  --fg:         #e8eaed;
+  --fg-muted:   #8b949e;
+  --accent:     #4d9cf8;
+  --border:     #30363d;
+  --surface:    #1c1f23;
+  --surface-hi: #21262d;
+  --stream-sel: #1b3554;
+  --warn-bg:    #2d2300;
+  --warn-border:#6b5a00;
+  --error-bg:   #2d0f0f;
+  --error-border:#6b2a2a;
+  --error-fg:   #f08080;
+  --search-err: #f08080;
+  --pill-amber: #d4a000;
+  --pill-green: #3fb950;
+  --pill-red:   #f85149;
+  --toast-bg:   #e8eaed;
+  --toast-fg:   #1c1f23;
+}
+
+/* Fallback: honour legacy :root custom properties for any env that
+   renders before theme.js runs (e.g. prerender, print). Light values. */
 :root {
-  --bg: #fff;
-  --fg: #111;
-  --muted: #666;
-  --accent: #0a66c2;
-  --border: #e3e3e3;
+  --bg:         #fff;
+  --fg:         #111;
+  --fg-muted:   #666;
+  --muted:      #666;     /* keep --muted as alias used widely in markup */
+  --accent:     #0a66c2;
+  --border:     #e3e3e3;
+  --surface:    #fafafa;
+  --surface-hi: #f5f5f5;
+  --stream-sel: #e7f3ff;
+  --warn-bg:    #fff8c5;
+  --warn-border:#d4c95a;
+  --error-bg:   #fde4e4;
+  --error-border:#d49a9a;
+  --error-fg:   #7a1f1f;
+  --search-err: #b00020;
+  --pill-amber: #b07000;
+  --pill-green: #1a7f37;
+  --pill-red:   #b00020;
+  --toast-bg:   #222;
+  --toast-fg:   #fff;
   font-size: 16px;
 }
+
+/* Keep --muted in sync with --fg-muted inside each theme block so
+   existing rules that reference var(--muted) still resolve correctly. */
+[data-theme="light"] { --muted: var(--fg-muted); }
+[data-theme="dark"]  { --muted: var(--fg-muted); }
 
 * { box-sizing: border-box; }
 
@@ -51,7 +121,7 @@ main {
   color: var(--muted);
 }
 
-/* --- app header (speaker name + connection pill) ------------------ */
+/* --- app header (speaker name + connection pill + theme toggle) --- */
 
 .app-header {
   display: flex;
@@ -94,16 +164,26 @@ main {
   background: currentColor;
 }
 
-.conn-pill[data-state="connecting"] {
-  color: #b07000;
+.conn-pill[data-state="connecting"] { color: var(--pill-amber); }
+.conn-pill[data-state="ws"]         { color: var(--pill-green); }
+.conn-pill[data-state="offline"]    { color: var(--pill-red);   }
+
+/* Theme-toggle button. Icon-only, no visible border at rest. */
+.theme-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  flex-shrink: 0;
 }
 
-.conn-pill[data-state="ws"] {
-  color: #1a7f37;
-}
-
-.conn-pill[data-state="offline"] {
-  color: #b00020;
+.theme-btn:hover {
+  border-color: var(--border);
+  color: var(--fg);
 }
 
 nav.routes {
@@ -332,7 +412,7 @@ nav.routes a:hover {
 
 .preset-slot.empty {
   color: var(--muted);
-  background: #fafafa;
+  background: var(--surface);
 }
 
 .preset-num {
@@ -420,7 +500,7 @@ nav.routes a:hover {
 }
 
 .search-error {
-  color: #b00020;
+  color: var(--search-err);
 }
 
 /* --- version-drift banner ---------------------------------------- */
@@ -439,9 +519,9 @@ nav.routes a:hover {
   justify-content: center;
   gap: 0.75rem;
   padding: 0.5rem 1rem;
-  background: #fff8c5;
-  color: #111;
-  border-bottom: 1px solid #d4c95a;
+  background: var(--warn-bg);
+  color: var(--fg);
+  border-bottom: 1px solid var(--warn-border);
   font-size: 0.9rem;
   text-align: center;
 }
@@ -449,14 +529,15 @@ nav.routes a:hover {
 #version-drift-banner button {
   font: inherit;
   padding: 0.25rem 0.75rem;
-  border: 1px solid #111;
-  background: #fff;
+  border: 1px solid var(--fg);
+  background: var(--bg);
+  color: var(--fg);
   border-radius: 4px;
   cursor: pointer;
 }
 
 #version-drift-banner button:hover {
-  background: #f0f0f0;
+  background: var(--surface-hi);
 }
 
 /* --- station detail ---------------------------------------------- */
@@ -525,15 +606,15 @@ nav.routes a:hover {
 
 .station-verdict.is-gated,
 .station-verdict.is-dark {
-  background: #fff8c5;
-  border-color: #d4c95a;
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
   color: var(--fg);
 }
 
 .station-verdict.is-error {
-  background: #fde4e4;
-  border-color: #d49a9a;
-  color: #7a1f1f;
+  background: var(--error-bg);
+  border-color: var(--error-border);
+  color: var(--error-fg);
 }
 
 /* --- stream chooser ---------------------------------------------- */
@@ -562,11 +643,11 @@ nav.routes a:hover {
 }
 
 .station-stream:hover {
-  background: #f5f5f5;
+  background: var(--surface-hi);
 }
 
 .station-stream.is-selected {
-  background: #e7f3ff;
+  background: var(--stream-sel);
   outline: 1px solid var(--accent);
 }
 
@@ -625,6 +706,7 @@ nav.routes a:hover {
   padding: 0.75rem 0;
   border: 1px solid var(--border);
   background: var(--bg);
+  color: var(--fg);
   border-radius: 6px;
   cursor: pointer;
 }
@@ -636,7 +718,7 @@ nav.routes a:hover {
 
 .station-assign-btn:disabled {
   color: var(--muted);
-  background: #fafafa;
+  background: var(--surface);
   cursor: not-allowed;
 }
 
@@ -669,8 +751,8 @@ nav.routes a:hover {
 }
 
 .toast {
-  background: #222;
-  color: #fff;
+  background: var(--toast-bg);
+  color: var(--toast-fg);
   padding: 0.5rem 0.75rem;
   border-radius: 6px;
   font-size: 0.9rem;

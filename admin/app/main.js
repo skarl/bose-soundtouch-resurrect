@@ -13,8 +13,11 @@ import station    from './views/station.js';
 
 import { installVersionDriftCheck } from './version.js';
 import { getSpeakerInfo } from './api.js';
-import { connectionPill, updatePill } from './components.js';
+import { connectionPill, updatePill, themeToggle } from './components.js';
 import * as ws from './ws.js';
+import * as theme from './theme.js';
+
+theme.init();
 
 // #/preset/N is reserved for the 0.3 "replace this preset" modal
 // triggered from now-playing. Until then, render a tiny inline
@@ -54,11 +57,13 @@ const routes = [
 ];
 
 function renderShell(appRoot) {
-  const pill = connectionPill(store.state);
+  const pill   = connectionPill(store.state);
+  const toggle = themeToggle();
   mount(appRoot, html`
     <header class="app-header">
       <span class="app-speaker-name"></span>
       ${pill}
+      ${toggle}
     </header>
     <nav class="routes" aria-label="primary">
       <a href="#/">Now playing</a>

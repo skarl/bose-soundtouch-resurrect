@@ -6,6 +6,7 @@
 // href/src/dataset on real elements.
 
 import { setArt } from './art.js';
+import * as theme from './theme.js';
 
 // Connection-state pill. Returns a <span> node with data-state reflecting
 // state.ws.mode. The caller is responsible for subscribing to 'ws' and
@@ -36,6 +37,34 @@ export function updatePill(pill, state) {
   const mode = (state && state.ws && state.ws.mode) || 'offline';
   pill.dataset.state = mode;
   pill.textContent = PILL_LABELS[mode] || mode;
+}
+
+// Theme-toggle button for the app header. Clicking cycles the preference
+// (auto → light → dark → auto) and updates its own label. Does NOT
+// subscribe to any store key — theme is a pre-mount global, not reactive
+// store state.
+const THEME_GLYPHS = { auto: '◑', light: '☀', dark: '☾' };
+
+export function themeToggle() {
+  const btn = document.createElement('button');
+  btn.className = 'theme-btn';
+  btn.type = 'button';
+  btn.setAttribute('aria-label', 'Toggle colour theme');
+
+  function sync() {
+    const { preference } = theme.current();
+    btn.dataset.pref = preference;
+    btn.textContent = THEME_GLYPHS[preference] || preference;
+    btn.title = preference;
+  }
+
+  btn.addEventListener('click', () => {
+    theme.toggle();
+    sync();
+  });
+
+  sync();
+  return btn;
 }
 
 // Build a clickable card for a TuneIn station. `sid` is the only
