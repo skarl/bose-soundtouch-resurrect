@@ -86,3 +86,15 @@ test('sourcesUpdated hint-only event does not throw and triggers refetch (async)
   const store = makeStore();
   assert.doesNotThrow(() => dispatch(xml, store));
 });
+
+test('presetsUpdated does not throw and triggers async refetch', async () => {
+  const xml = await fixture('presets-updated.xml');
+  const store = makeStore();
+  assert.doesNotThrow(() => dispatch(xml, store));
+});
+
+test('nowSelectionUpdated does not throw', async () => {
+  const xml = await fixture('now-selection-updated.xml');
+  const store = makeStore();
+  assert.doesNotThrow(() => dispatch(xml, store));
+});

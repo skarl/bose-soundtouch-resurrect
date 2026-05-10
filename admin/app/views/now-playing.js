@@ -14,6 +14,7 @@ import { postKey, makeVolumeSender } from '../transport.js';
 import { setVolumeConfirmFn } from '../ws.js';
 
 const POLL_MS = 2000;
+const PRESET_SLOTS = 6;
 
 // Cached DOM refs — populated by init(), used by update().
 let artEl      = null;
@@ -24,6 +25,8 @@ let cardEl     = null;
 let asleepEl   = null;
 let transportEl = null;
 let sourcesEl  = null;
+let presetsEl  = null;   // .np-presets container
+let presetBtns = [];     // [btn0, btn1, …, btn5] — index = slot - 1
 let btnPrev    = null;
 let btnPlay    = null;
 let btnNext    = null;
@@ -186,6 +189,65 @@ function applyNowPlaying(np) {
   syncPlayBtn(np);
 }
 
+// --- preset card row -----------------------------------------------
+
+// Mutate only the DOM nodes for slots that changed. Compare previous
+// slot data (stored in dataset) against the new list so unaffected
+// buttons are left untouched — preserves :active state mid-press.
+function applyPresets(presets) {
+  if (!presetBtns.length) return;
+  for (let i = 0; i < PRESET_SLOTS; i++) {
+    const btn = presetBtns[i];
+    if (!btn) continue;
+    const p = presets && presets[i] ? presets[i] : null;
+    const empty = !p || !!p.empty;
+
+    // Compare against the last-rendered values stored in dataset to
+    // skip DOM writes when nothing changed (e.g. on unrelated updates).
+    const newName = empty ? '' : (p.itemName || `Preset ${i + 1}`);
+    const newArt  = (!empty && typeof p.art === 'string' && p.art.startsWith('http')) ? p.art : '';
+
+    if (btn.dataset.renderedEmpty === String(empty)
+        && btn.dataset.renderedName === newName
+        && btn.dataset.renderedArt === newArt) {
+      continue;
+    }
+
+    btn.dataset.renderedEmpty = String(empty);
+    btn.dataset.renderedName  = newName;
+    btn.dataset.renderedArt   = newArt;
+
+    btn.disabled = empty;
+    btn.classList.toggle('np-preset--empty', empty);
+
+    const nameEl = btn.querySelector('.np-preset-name');
+    const imgEl  = btn.querySelector('.np-preset-art');
+
+    if (nameEl) nameEl.textContent = empty ? 'Empty' : newName;
+    if (imgEl) {
+      if (newArt) {
+        imgEl.src = newArt;
+        imgEl.removeAttribute('hidden');
+      } else {
+        imgEl.removeAttribute('src');
+        imgEl.setAttribute('hidden', '');
+      }
+    }
+  }
+}
+
+async function onPresetClick(evt) {
+  const btn = evt.currentTarget;
+  const slot = btn.dataset.slot;
+  if (!slot || btn.disabled) return;
+  try {
+    await postKey(`PRESET_${slot}`);
+  } catch (_err) {
+    // Non-fatal — the next nowPlayingUpdated / nowSelectionUpdated will
+    // confirm or deny the switch.
+  }
+}
+
 // --- source picker pills -------------------------------------------
 
 // Active source comes from state.speaker.nowPlaying.source.
@@ -289,6 +351,7 @@ export default {
           <button class="np-mute" type="button" title="Mute" aria-pressed="false">&#x1F507;</button>
         </div>
         <div class="np-sources"></div>
+        <div class="np-presets"></div>
         <div class="np-asleep" hidden>
           <p>Speaker is asleep</p>
           <p class="np-asleep-hint">Press Play to wake it up.</p>
@@ -303,10 +366,41 @@ export default {
     metaEl     = root.querySelector('.np-meta');
     transportEl = root.querySelector('.np-transport');
     sourcesEl  = root.querySelector('.np-sources');
+    presetsEl  = root.querySelector('.np-presets');
     asleepEl   = root.querySelector('.np-asleep');
     volumeRowEl = root.querySelector('.np-volume');
     sliderEl   = root.querySelector('.np-slider');
     muteEl     = root.querySelector('.np-mute');
+
+    // Build 6 preset buttons init-once; mutated in place by applyPresets().
+    presetBtns = [];
+    for (let i = 0; i < PRESET_SLOTS; i++) {
+      const btn = document.createElement('button');
+      btn.className = 'np-preset np-preset--empty';
+      btn.type = 'button';
+      btn.dataset.slot = String(i + 1);
+      btn.disabled = true;
+
+      const num = document.createElement('span');
+      num.className = 'np-preset-num';
+      num.textContent = String(i + 1);
+      btn.appendChild(num);
+
+      const img = document.createElement('img');
+      img.className = 'np-preset-art';
+      img.alt = '';
+      img.setAttribute('hidden', '');
+      btn.appendChild(img);
+
+      const label = document.createElement('span');
+      label.className = 'np-preset-name';
+      label.textContent = 'Empty';
+      btn.appendChild(label);
+
+      btn.addEventListener('click', onPresetClick);
+      presetsEl.appendChild(btn);
+      presetBtns.push(btn);
+    }
 
     const btns = root.querySelectorAll('.np-btn');
     btnPrev = btns[0];
@@ -337,6 +431,7 @@ export default {
     applyNowPlaying(sp.nowPlaying);
     applyVolume(sp.volume);
     applySourcePills(sp.sources, sp.nowPlaying && sp.nowPlaying.source);
+    applyPresets(sp.presets);
 
     bindVisibilityOnce();
     if (!document.hidden) startPolling();
@@ -349,13 +444,16 @@ export default {
     applyVolume(state.speaker.volume);
     const activeSource = state.speaker.nowPlaying && state.speaker.nowPlaying.source;
     applySourcePills(state.speaker.sources, activeSource);
+    applyPresets(state.speaker.presets);
   },
 
   _teardown() {
     clearPoll();
     cardEl = artEl = nameEl = trackEl = metaEl = null;
-    transportEl = sourcesEl = asleepEl = btnPrev = btnPlay = btnNext = null;
+    transportEl = sourcesEl = presetsEl = asleepEl = null;
+    btnPrev = btnPlay = btnNext = null;
     sliderEl = muteEl = volumeRowEl = null;
+    presetBtns = [];
     volumeSender = null;
     setVolumeConfirmFn(null);
   },

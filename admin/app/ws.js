@@ -9,9 +9,15 @@ import {
   getSources, parseSourcesEl,
 } from './api.js';
 import { setNowPlaying, setPresets } from './state.js';
+import { showToast } from './toast.js';
 
 let socket = null;
 let userInitiatedClose = false;
+
+// Throttle "Presets changed" toasts — the firmware can emit several
+// presetsUpdated events in quick succession when reordering slots.
+let lastPresetsToastAt = 0;
+const PRESETS_TOAST_GAP_MS = 1500;
 
 // Injected by now-playing.js after it creates its volume sender.
 // Called by volumeUpdated so the sender can suppress redundant POSTs
@@ -145,8 +151,18 @@ const ENVELOPE_HANDLERS = {
     store.state.speaker.nowPlaying = parsed;
     store.touch('speaker');
   },
-  nowSelectionUpdated(el, store) {       // TODO slice 6
-    void el; void store;
+  nowSelectionUpdated(el, store) {
+    // <nowSelectionUpdated><preset id="N"><ContentItem …/></preset></nowSelectionUpdated>
+    // The id attribute is the preset slot number (1-based). Emit a toast
+    // so the user knows which preset is now active regardless of whether
+    // the trigger was a hardware button, another tab, or this tab's tap.
+    const presets = el.getElementsByTagName('preset');
+    const preset = presets && presets[0];
+    if (preset) {
+      const slot = preset.getAttribute('id');
+      if (slot) showToast(`Preset ${slot} selected`);
+    }
+    void store;
   },
   sourcesUpdated(el, store) {
     // The firmware sends <sourcesUpdated deviceID="…"/> as a hint-only
@@ -168,7 +184,20 @@ const ENVELOPE_HANDLERS = {
       store.touch('speaker');
     }).catch(() => {});
   },
-  presetsUpdated(el, store) {            // TODO slice 6
+  presetsUpdated(el, store) {
+    // <presetsUpdated/> is a hint-only event (parallel to sourcesUpdated).
+    // Refetch /presets via the existing CGI parser — one source of truth
+    // for slot ordering, art enrichment, and empty-slot detection.
+    presetsList().then((env) => {
+      if (!env || !env.ok || !Array.isArray(env.data)) return;
+      setPresets(env.data);
+    }).catch(() => {});
+
+    const now = Date.now();
+    if (now - lastPresetsToastAt >= PRESETS_TOAST_GAP_MS) {
+      lastPresetsToastAt = now;
+      showToast('Presets changed');
+    }
     void el; void store;
   },
   keyEvent(el, store) {                  // TODO slice 8
