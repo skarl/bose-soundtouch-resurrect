@@ -5,7 +5,6 @@
 // parseListMediaServersXml), actions (setZone / addZoneSlave /
 // removeZoneSlave), and tests are all retained in the codebase so a
 // future release can revive the picker without re-deriving the seam.
-// See issue #35.
 
 import { html, mount, defineView } from '../../dom.js';
 

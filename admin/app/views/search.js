@@ -1,7 +1,7 @@
 // search — TuneIn search + empty-state landing.
 //
 // Sticky input at top, debounced 300ms. Results render via
-// resultCard() (#59 visual station card). Empty state shows two
+// resultCard() — the shared visual station card. Empty state shows two
 // columns: "Recently viewed" (from state.caches.recentlyViewed, last
 // 10 entries) and "Popular" (Browse.ashx?c=local via the tunein CGI).
 // CSS grid in style.css collapses the two columns into a single stack

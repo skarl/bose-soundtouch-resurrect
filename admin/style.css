@@ -1989,7 +1989,7 @@ nav.routes a:hover {
   display: block;
 }
 
-/* --- shell (#57) -------------------------------------------------- */
+/* --- shell -------------------------------------------------------- */
 
 .shell {
   container-type: inline-size;
@@ -2189,7 +2189,7 @@ nav.routes a:hover {
   }
 }
 
-/* --- station detail v2 (#60) -------------------------------------- */
+/* --- station detail v2 -------------------------------------------- */
 /* Three-up preset grid replaces the inline 6-button assign row; each
    cell shows slot number, current occupant, and a small genre tag.
    Long names truncate. The full-width gradient Test play CTA sits
@@ -2333,7 +2333,7 @@ nav.routes a:hover {
   }
 }
 
-/* --- result card (#59 — browse drill + search results) ----------- */
+/* --- result card (browse drill + search results) ----------------- */
 
 .result-card {
   display: grid;

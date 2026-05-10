@@ -106,8 +106,7 @@ export const FIELDS = [
       return lists && lists[0] ? parseSourcesEl(lists[0]) : null;
     },
   },
-  // Settings-section fields. Real fetchers and WS plumbing land in the
-  // slices that wire each section (#35/#37/#38/#39/#42).
+  // Settings-section fields wired by their respective sub-views.
   {
     name: 'bass',
     fetcher: getBass,

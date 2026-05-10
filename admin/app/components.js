@@ -435,7 +435,7 @@ export function stationCard({ sid, name, art, location, format }) {
 }
 
 // resultCard({ sid, name, art, location, genre, bitrate, codec }) —
-// browse-drill / search result card. Visual layout (#59):
+// browse-drill / search result card. Visual layout:
 //   [stationArt 48] semibold name (single-line, ellipsis on overflow)
 //                   location · genre · <pill kbps codec>
 // All metadata fields are optional; the metadata line is omitted

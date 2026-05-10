@@ -258,8 +258,8 @@ export function mountShell(store) {
     throw new Error('shell: missing zone element(s) in index.html');
   }
 
-  // theme.js stays imported (auto-applies on init) but the toggle UI
-  // is gone from the header — it returns in #61 inside Settings.
+  // theme.js stays imported (auto-applies on init); the user-facing
+  // theme picker lives inside the Settings → Appearance sub-view.
   void theme;
 
   renderHeader(headerEl, store);
