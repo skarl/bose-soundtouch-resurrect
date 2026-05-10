@@ -4,73 +4,92 @@ Bring your Bose SoundTouch back to life after the 2026-05-06 cloud
 shutdown — without depending on Bose, without depending on a separate
 PC or Pi, without ongoing infrastructure to maintain.
 
-This project replaces the four cloud services your speaker still
-expects to talk to with a tiny static HTTP responder running **on the
-speaker itself**. The speaker resolves preset stations from its own
-filesystem and streams audio directly from the radio station's CDN.
-
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## What this gets you back
+The speaker still expects to talk to four Bose-hosted services to
+resolve preset stations. This project replaces all four with a tiny
+static HTTP responder running **on the speaker itself** under the
+existing busybox httpd. Once installed, the speaker streams audio
+directly from the radio station's CDN — no external host involved.
 
-| Feature                                     | After install      |
-| ------------------------------------------- | ------------------ |
-| 6 preset buttons (TuneIn radio)             | ✅ working          |
-| Bose SoundTouch app — pairing, presets, vol | ✅ working          |
-| Spotify Connect, AUX, Bluetooth             | ✅ working (always was) |
-| Browser admin (any LAN device)              | ✅ now-playing, transport, volume, source, presets, browse, search, settings |
-| Bose SoundTouch app — in-app station browse | ⚠ partial — see [docs/compatibility.md](docs/compatibility.md) |
-| Stereo pair / multi-room                    | ⚠ partial — untested |
-| Firmware updates                            | ❌ blocked — speaker firmware is frozen forever |
+## What you get back
+
+| Capability                                  | After install     |
+| ------------------------------------------- | ----------------- |
+| 6 preset buttons → TuneIn radio stations    | ✅ working         |
+| Spotify Connect, AUX, Bluetooth             | ✅ unchanged       |
+| Browser admin on any LAN device             | ✅ full UI         |
+| Bose SoundTouch mobile app                  | ❌ end-of-life — see [docs/compatibility.md](docs/compatibility.md) |
+| Stereo pair / multi-room                    | ⚠ partial — single-speaker test rig only |
+| Firmware updates                            | ❌ frozen forever  |
+
+## The browser admin
+
+Open `http://<speaker>:8181/` from any browser on the same LAN. The
+admin SPA is the everyday interface — the SoundTouch mobile app is
+no longer viable post-cloud-shutdown.
+
+- **Now playing** — compact card with album art, transport, dynamic
+  source switcher, and a 3×2 grid of art-style preset cards
+- **Search + Browse** — search TuneIn directly; browse by genre /
+  location / language; recently-viewed cache
+- **Station detail** — preview-play, assign to a preset slot, see
+  available stream URLs and probe state (playable / gated / off-air)
+- **Settings** — seven collapsibles (Appearance, Speaker, Audio,
+  Bluetooth, Multi-room, Network, System) with a four-way theme
+  picker (auto / graphite / cream / terminal) and a live WebSocket
+  event log
+- Mobile shell at narrow widths (sticky mini-player + bottom tabs);
+  desktop side-rail at ≥960px
+- Self-hosted Geist fonts; zero CDN dependencies — works whether or
+  not your home internet is up
+
+See [CHANGELOG.md](CHANGELOG.md) for the full v0.4 surface.
 
 ## How it works
 
 ```
-                ┌──────────────────────────────┐
-                │ Bose SoundTouch              │
-                │   BoseApp                    │
-                │     │                        │
-                │     │ resolves URLs from     │
-                │     │ /mnt/nv/OverrideSdk... │
-                │     ▼                        │
-                │   busybox httpd  (localhost) │
-                │     │                        │
-                │     │ serves static JSON/XML │
-                │     ▼                        │
-                │   /mnt/nv/resolver/          │
-                │     ├── bmx/...              │
-                │     ├── marge/...            │
-                │     └── v1/...               │
-                │                              │
-                │   audio out                  │
-                └─────────┬────────────────────┘
-                          │ HTTP audio stream
-                          ▼
-                    ┌────────────┐
-                    │ TuneIn CDN │
-                    └────────────┘
+       ┌────────────────────────────┐
+       │  Bose SoundTouch           │
+       │   BoseApp (closed-source)  │
+       │      │ resolves URLs from  │
+       │      │ /mnt/nv/Override*   │
+       │      ▼                     │
+       │   busybox httpd            │
+       │      │ serves JSON + XML   │
+       │      ▼                     │
+       │   /mnt/nv/resolver/        │
+       │      └── presets, registry │
+       │                            │
+       │   audio out                │
+       └─────────┬──────────────────┘
+                 │ HTTP audio stream
+                 ▼
+           ┌────────────┐
+           │ TuneIn CDN │
+           └────────────┘
 ```
 
-The speaker's audio path is **direct to the radio CDN**. Only metadata
-("what URL plays for preset 1?") goes through the on-speaker resolver.
-Once the speaker has the URL, it streams from the public internet
-itself.
+The speaker streams audio direct to the radio CDN. Only metadata
+("which URL plays for preset 1?") flows through the on-speaker
+resolver. The Bose cloud is not in the path.
 
 For the longer story see [docs/architecture.md](docs/architecture.md).
 
-## Compatibility — does this work for me?
+## Compatibility
 
 Confirmed on **Bose SoundTouch 10, firmware 27.0.6**.
 
 Likely to work on other ST-family models that share the same Linux /
 shepherdd architecture (ST 20, ST 30, similar Wave variants), but
-unverified. See [docs/compatibility.md](docs/compatibility.md) for the
-full list and how to confirm yours.
+unverified. See [docs/compatibility.md](docs/compatibility.md) for
+the full list and how to confirm yours.
 
 ## Prerequisites
 
-- A SoundTouch speaker that's been online recently enough to have stored
-  preset stations locally (the speaker's port-8090 API exposes them).
+- A SoundTouch speaker that's been online recently enough to have
+  stored preset stations locally (the speaker's port-8090 API
+  exposes them).
 - A laptop with `python3`, `ssh`, and `scp`.
 - A **micro-USB OTG adapter** (~€3) and a small **FAT32 USB stick** —
   needed once to enable SSH on the speaker.
@@ -82,115 +101,83 @@ Five steps. Each one links to the full doc.
 
 1. **Confirm your speaker is supported** —
    [docs/compatibility.md](docs/compatibility.md).
-
 2. **Open up your speaker** (one-time, enables SSH) —
    [docs/opening-up-your-speaker.md](docs/opening-up-your-speaker.md).
-   Format USB stick FAT32, drop a marker file, plug into speaker, boot.
-
+   Format USB stick FAT32, drop a marker file, plug in, boot.
 3. **Install the resolver** —
-   [docs/installation.md](docs/installation.md). Push static files to
-   `/mnt/nv/resolver/`, drop a daemon config that binds `0.0.0.0:8181`
-   (loopback for the speaker's SDK; LAN-reachable for the admin SPA),
-   point the speaker at `127.0.0.1:8181`, reboot.
-
+   [docs/installation.md](docs/installation.md). Pushes static files
+   to `/mnt/nv/resolver/`, drops a daemon config that binds
+   `0.0.0.0:8181` (loopback for the SDK; LAN-reachable for the admin
+   SPA), points the speaker at `127.0.0.1:8181`, reboots.
 4. **Customise your presets** —
-   [docs/customizing-presets.md](docs/customizing-presets.md). Find your
-   stations on tunein.com, edit `resolver/stations.example.json`, run
-   `python3 resolver/build.py`, redeploy.
+   [docs/customizing-presets.md](docs/customizing-presets.md). Either
+   edit `resolver/stations.example.json` and run `build.py`, or use
+   the browser admin: search → assign to slot.
+5. **Verify** with `scripts/verify.sh <speaker-ip>` and press a
+   preset button on the speaker.
 
-5. **Verify** with `scripts/verify.sh <speaker-ip>` and press a preset
-   button on the speaker.
+## The recurring chore
 
-## When things go wrong
+TuneIn rotates partner-routed stream URLs every so often. When a
+preset suddenly stops playing, run `./scripts/refresh-streams.sh
+<speaker-ip>` (or click *Refresh stream URLs* in the admin's System
+settings). Roughly two minutes of work per drift.
 
-[docs/troubleshooting.md](docs/troubleshooting.md) — the most common
-failures and how to diagnose. If you're stuck, open an issue with the
-output of `scripts/verify.sh`.
+## What this doesn't do
 
-## What's in this repo
+The 0.4 release surfaced several Bose-firmware constraints that
+shape what's feasible. Calling them out so you know what to expect:
+
+- **No firmware patches.** Bose stopped shipping updates. If a
+  security issue surfaces in the speaker's firmware, this project
+  can't ship a fix.
+- **No `/lowPowerStandby` toggle.** Enabling deep standby drops the
+  speaker's WiFi radio — recovery requires a hardware power-cycle.
+  The admin deliberately omits the control.
+- **No on-speaker notifications gizmo.** The `/notification`
+  endpoint returns HTTP 500 for every body shape we (and the wider
+  open-source ecosystem: libsoundtouch, bosesoundtouchapi, openHAB,
+  Home Assistant) have tried.
+- **No factory reset from the admin.** Use the on-speaker hardware
+  button sequence.
+- **Multi-room view is parked.** State, parsers, and actions all
+  ship; the picker UI awaits a multi-speaker test rig.
+- **Bose mobile app remains end-of-life.** Pairing and per-app
+  features depend on the cloud services that went away. The browser
+  admin is now the supported interface.
+
+If you specifically want the SoundTouch mobile app's catalogue
+back, run an external SoundCork-style emulator alongside this
+project. See [docs/architecture.md](docs/architecture.md).
+
+## Repo layout
 
 ```
 .
-├── docs/                         User-facing documentation.
-│   ├── compatibility.md
-│   ├── opening-up-your-speaker.md   The USB-OTG SSH-enable trick.
-│   ├── installation.md
-│   ├── customizing-presets.md
-│   ├── troubleshooting.md
-│   ├── architecture.md
-│   ├── api-reference.md          The speaker's local port-8090 API.
-│   ├── tunein-api.md             TuneIn's OPML API, as used by build.py + admin.
-│   └── history.md                How this project came about.
-│
-├── resolver/                     The on-speaker resolver.
-│   ├── build.py                  Fetch fresh stream URLs from TuneIn.
-│   ├── stations.example.json     Example preset list — edit for yours.
-│   ├── responses/                Static templates (registry, etc.).
-│   └── shepherd-resolver.xml     Daemon config for auto-start at boot.
-│
-├── admin/                        Browser-based admin UI.
-│   ├── PLAN.md                   Original design plan (historical).
-│   ├── index.html                SPA shell + four-zone layout.
-│   ├── style.css                 Vanilla, mobile-first, container-query layout.
-│   ├── app/                      ES module tree — router, store, views, WS client.
-│   ├── cgi-bin/api/v1/           Shell CGIs: tunein / presets / speaker proxy / refresh-all.
-│   ├── fonts/                    Self-hosted Geist + Geist Mono.
-│   ├── deploy.sh                 Push the admin tree to a speaker.
-│   └── uninstall.sh              Remove the admin tree (resolver stays).
-│
-└── scripts/                      Helpers.
-    ├── enable-ssh-stick.sh        Prep a USB stick for the SSH-enable trick.
-    ├── deploy.sh                  End-to-end install on a speaker.
-    ├── verify.sh                  Post-install sanity check.
-    ├── refresh-streams.sh         Re-fetch stream URLs and push (the recurring chore).
-    ├── store-preset.sh            Assign a station to preset slot 1..6 via the speaker API.
-    ├── backup-presets.sh          Capture current speaker state to a local timestamped folder.
-    ├── uninstall.sh               Remove the resolver, roll back to stock config.
-    └── ssh-speaker.sh             SSH wrapper with the right flags.
+├── docs/         User-facing documentation + ADRs
+├── resolver/     The on-speaker static-file resolver + build script
+├── admin/        Browser admin SPA (HTML / CSS / ES modules / shell CGIs)
+└── scripts/      Install, verify, deploy, refresh, backup, ssh helpers
 ```
-
-## Limitations
-
-- **Stream URLs occasionally rotate.** TuneIn changes the partner-routed
-  stream URL for a given station every so often. When a preset suddenly
-  stops playing, run `./scripts/refresh-streams.sh <speaker-ip>`. About
-  two minutes of work.
-- **In-app station browse / search** (in the SoundTouch mobile app)
-  isn't fully covered — the on-speaker resolver answers preset
-  playback but not the `/v1/navigate` and `/v1/search` calls the app
-  uses to browse the catalogue. The browser admin at
-  `http://<speaker>:8181/` covers browse and search end-to-end via
-  TuneIn directly, so for most users that's the path of least
-  resistance. If you specifically want the mobile app's catalogue,
-  run an external SoundCork-style emulator alongside this project.
-  See [docs/architecture.md](docs/architecture.md).
-- **No firmware patches.** Bose stopped issuing updates. If a security
-  issue surfaces in the speaker's firmware, this project can't ship a
-  fix.
-
-## Status
-
-Working in production on a SoundTouch 10. All six preset buttons drive
-TuneIn streams via the on-speaker resolver. The browser admin at
-`http://<speaker>:8181/` covers now-playing, transport, volume, source
-switching, presets, station browse + search, and a settings page
-(speaker, audio, bluetooth, multi-room, network, system). No external
-host required.
 
 ## Project documents
 
-- [LICENSE](LICENSE) — MIT.
-- [CHANGELOG.md](CHANGELOG.md) — release notes.
-- [CONTRIBUTING.md](CONTRIBUTING.md) — bug reports, PRs, compat reports.
-  Outside contributors fork-and-PR; only listed maintainers merge.
-- [MAINTAINING.md](MAINTAINING.md) — for maintainers: branch protection
-  setup, release process, adding new maintainers.
-- [SECURITY.md](SECURITY.md) — threat model and how to disclose.
+- [CHANGELOG.md](CHANGELOG.md) — release notes, including the
+  firmware quirks discovered along the way
+- [CONTRIBUTING.md](CONTRIBUTING.md) — bug reports, PRs, compat
+  reports
+- [MAINTAINING.md](MAINTAINING.md) — release process, branch
+  protection, adding maintainers
+- [SECURITY.md](SECURITY.md) — threat model and disclosure
+- [LICENSE](LICENSE) — MIT
+- [docs/troubleshooting.md](docs/troubleshooting.md) — when things
+  go wrong
 
 ## Acknowledgements
 
 Builds on prior community work on the SoundTouch platform — chiefly
 SoundCork-style emulators, the various reverse-engineering writeups
-that documented the speaker's local API and the override-XML mechanism,
-and TuneIn's public OPML API (`opml.radiotime.com`) which provides the
-stream URLs the speaker would otherwise have asked the Bose cloud for.
+that documented the speaker's local API and the override-XML
+mechanism, and TuneIn's public OPML API
+(`opml.radiotime.com`) which provides the stream URLs the speaker
+would otherwise have asked the Bose cloud for.
