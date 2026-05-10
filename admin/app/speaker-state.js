@@ -33,7 +33,7 @@ import {
   parseRecentsEl,
   parseZoneEl,
 } from './speaker-xml.js';
-import * as actions from './actions/index.js';
+import { controllerFor as sliderControllerFor } from './sliders.js';
 
 // Field entry shape:
 //   name        — key in state.speaker
@@ -41,7 +41,8 @@ import * as actions from './actions/index.js';
 //   eventTag?   — child tag inside <updates> that carries this field's event
 //   parseInline — (el) => value | null. Null means hint-only: fall back to fetcher().
 //   apply?      — (state, value) => void. Default: state.speaker[name] = value
-//   afterApply? — (value) => void. Optional side-effect (volume WS confirm).
+//                 Slider fields (volume/bass/balance) delegate to the slider
+//                 controller, which owns the apply-merge + confirm in one place.
 export const FIELDS = [
   {
     name: 'info',
@@ -78,25 +79,7 @@ export const FIELDS = [
       const vols = el.getElementsByTagName('volume');
       return vols && vols[0] ? parseVolumeEl(vols[0]) : null;
     },
-    apply(state, value) {
-      if (!value) return;
-      const prev = state.speaker.volume;
-      // While the user has a queued/in-flight volume command, the WS
-      // event's targetVolume may still reflect the previous level —
-      // overwriting would yank the slider thumb back. Keep our eager
-      // targetVolume; only update what the speaker uniquely owns.
-      if (prev && actions.hasPending('volume')) {
-        state.speaker.volume = {
-          ...value,
-          targetVolume: prev.targetVolume,
-        };
-      } else {
-        state.speaker.volume = value;
-      }
-    },
-    afterApply(value) {
-      if (value) actions._confirmSlider('volume', value.actualVolume);
-    },
+    apply(state, value) { sliderControllerFor('volume').applyIncoming(state, value); },
   },
   {
     name: 'sources',
@@ -117,21 +100,7 @@ export const FIELDS = [
       const els = el.getElementsByTagName('bass');
       return els && els[0] ? parseBassEl(els[0]) : null;
     },
-    apply(state, value) {
-      if (!value) return;
-      const prev = state.speaker.bass;
-      if (prev && actions.hasPending('bass')) {
-        state.speaker.bass = {
-          ...value,
-          targetBass: prev.targetBass,
-        };
-      } else {
-        state.speaker.bass = value;
-      }
-    },
-    afterApply(value) {
-      if (value) actions._confirmSlider('bass', value.actualBass);
-    },
+    apply(state, value) { sliderControllerFor('bass').applyIncoming(state, value); },
   },
   {
     name: 'balance',
@@ -141,21 +110,7 @@ export const FIELDS = [
       const els = el.getElementsByTagName('balance');
       return els && els[0] ? parseBalanceEl(els[0]) : null;
     },
-    apply(state, value) {
-      if (!value) return;
-      const prev = state.speaker.balance;
-      if (prev && actions.hasPending('balance')) {
-        state.speaker.balance = {
-          ...value,
-          targetBalance: prev.targetBalance,
-        };
-      } else {
-        state.speaker.balance = value;
-      }
-    },
-    afterApply(value) {
-      if (value) actions._confirmSlider('balance', value.actualBalance);
-    },
+    apply(state, value) { sliderControllerFor('balance').applyIncoming(state, value); },
   },
   { name: 'dspMonoStereo', fetcher: getDSPMonoStereo },
   {
@@ -219,7 +174,6 @@ export async function dispatch(envelopeChild, store) {
   if (inline != null) {
     applyEntry(entry, store.state, inline);
     store.touch('speaker');
-    if (entry.afterApply) entry.afterApply(inline);
   } else {
     // Hint-only: no inline data — fall back to fetcher().
     let value;
@@ -231,6 +185,5 @@ export async function dispatch(envelopeChild, store) {
     if (value == null) return;
     applyEntry(entry, store.state, value);
     store.touch('speaker');
-    if (entry.afterApply) entry.afterApply(value);
   }
 }

@@ -15,7 +15,7 @@ import {
   postRemoveZoneSlave,
 } from '../api.js';
 import { recordOutgoing, wasRecent } from './ledger.js';
-import { controllerFor, volumeCtl, bassCtl, balanceCtl } from './sliders.js';
+import { controllerFor, volumeCtl, bassCtl, balanceCtl } from '../sliders.js';
 
 function kindForKey(key) {
   if (/^PRESET_\d+$/.test(key)) return 'preset';
@@ -108,9 +108,4 @@ export { wasRecent };
 export function hasPending(kind) {
   const ctl = controllerFor(kind);
   return ctl ? ctl.hasPending() : false;
-}
-
-export function _confirmSlider(kind, actualValue) {
-  const ctl = controllerFor(kind);
-  if (ctl) ctl.confirm(actualValue);
 }

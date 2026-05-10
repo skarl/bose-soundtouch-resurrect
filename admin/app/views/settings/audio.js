@@ -1,6 +1,6 @@
 // audio — settings sub-view: bass, balance, mono/stereo.
 //
-// Bass and balance ride the slider factory in app/actions/sliders.js
+// Bass and balance ride the slider factory in app/sliders.js
 // (eager update + single in-flight + trailing coalesce). WS
 // bassUpdated/balanceUpdated events mutate the slider thumb in place
 // via the {speaker(state)} updater.

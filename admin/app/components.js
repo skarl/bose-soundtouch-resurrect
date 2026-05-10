@@ -170,7 +170,7 @@ export function switchEl({ checked = false, label = '', onChange } = {}) {
 // onChange — fires immediately on the first move so volume feels live,
 // then trails the final value at the end of the throttle window so the
 // resting position is never lost. 50ms matches the existing volume-POST
-// cadence (admin/app/actions/sliders.js).
+// cadence (admin/app/sliders.js).
 export function slider({
   min = 0,
   max = 100,

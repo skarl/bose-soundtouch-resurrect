@@ -1,6 +1,6 @@
-import { store } from '../state.js';
-import { postVolume, postBass, postBalance } from '../api.js';
-import { recordOutgoing } from './ledger.js';
+import { store } from './state.js';
+import { postVolume, postBass, postBalance } from './api.js';
+import { recordOutgoing } from './actions/ledger.js';
 
 export function makeSliderController({ field, postFn, eventTag, targetProperty }) {
   const targetProp = targetProperty ?? `target${field[0].toUpperCase()}${field.slice(1)}`;
@@ -21,6 +21,10 @@ export function makeSliderController({ field, postFn, eventTag, targetProperty }
         await flush(next);
       }
     }
+  }
+
+  function hasPending() {
+    return inFlight || queued !== null;
   }
 
   return {
@@ -49,8 +53,27 @@ export function makeSliderController({ field, postFn, eventTag, targetProperty }
       confirmed = actualValue;
     },
 
-    hasPending() {
-      return inFlight || queued !== null;
+    hasPending,
+
+    // Reconcile an incoming WS value into state.speaker[field]. While the
+    // user has a queued/in-flight command, the speaker's targetXxx in the
+    // event may still reflect the previous level — overwriting would yank
+    // the slider thumb back. Keep our eager targetXxx; only update what
+    // the speaker uniquely owns. Then confirm the actual value so a
+    // matching follow-up set() is gated as a no-op.
+    applyIncoming(state, value) {
+      if (!value) return;
+      const prev = state.speaker[field];
+      if (prev && hasPending()) {
+        state.speaker[field] = {
+          ...value,
+          [targetProp]: prev[targetProp],
+        };
+      } else {
+        state.speaker[field] = value;
+      }
+      const actualKey = `actual${field[0].toUpperCase()}${field.slice(1)}`;
+      if (value[actualKey] != null) confirmed = value[actualKey];
     },
   };
 }

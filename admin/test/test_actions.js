@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 
 import { recordOutgoing, wasRecent } from '../app/actions/ledger.js';
-import { makeSliderController } from '../app/actions/sliders.js';
+import { makeSliderController } from '../app/sliders.js';
 
 function tick() { return new Promise((resolve) => setImmediate(resolve)); }
 
