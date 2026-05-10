@@ -6,6 +6,7 @@
     "test": "node --test admin/test/*.js"
   },
   "devDependencies": {
-    "@xmldom/xmldom": "^0.9.5"
+    "@xmldom/xmldom": "^0.9.5",
+    "jsdom": "^24.0.0"
   }
 }
