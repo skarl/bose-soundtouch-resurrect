@@ -2,11 +2,17 @@
 // Owns the WebSocket lifecycle; internals are not exported.
 // See admin/PLAN.md § Live updates and § State management.
 
-import { getSpeakerInfo, getNowPlaying, presetsList, parseNowPlayingEl } from './api.js';
+import { getSpeakerInfo, getNowPlaying, presetsList, parseNowPlayingEl, getVolume, parseVolumeEl } from './api.js';
 import { setNowPlaying, setPresets } from './state.js';
 
 let socket = null;
 let userInitiatedClose = false;
+
+// Injected by now-playing.js after it creates its volume sender.
+// Called by volumeUpdated so the sender can suppress redundant POSTs
+// when the speaker already reflects the queued level.
+let volumeConfirmFn = null;
+export function setVolumeConfirmFn(fn) { volumeConfirmFn = fn; }
 
 // --- Backoff sequencer ----------------------------------------------
 
@@ -33,10 +39,11 @@ async function pollTick() {
   if (!storeRef) return;
   if (typeof document !== 'undefined' && document.hidden) return;
   try {
-    const [info, np, env] = await Promise.allSettled([
+    const [info, np, env, vol] = await Promise.allSettled([
       getSpeakerInfo(),
       getNowPlaying(),
       presetsList(),
+      getVolume(),
     ]);
     if (info.status === 'fulfilled' && info.value) {
       storeRef.state.speaker.info = info.value;
@@ -47,6 +54,10 @@ async function pollTick() {
     }
     if (env.status === 'fulfilled' && env.value && env.value.ok && Array.isArray(env.value.data)) {
       setPresets(env.value.data);
+    }
+    if (vol.status === 'fulfilled' && vol.value) {
+      storeRef.state.speaker.volume = vol.value;
+      storeRef.touch('speaker');
     }
   } catch (_err) {
     // Network errors are non-fatal; next tick will retry.
@@ -69,10 +80,11 @@ function stopPolling() {
 async function refetchAll() {
   if (!storeRef) return;
   try {
-    const [info, np, env] = await Promise.allSettled([
+    const [info, np, env, vol] = await Promise.allSettled([
       getSpeakerInfo(),
       getNowPlaying(),
       presetsList(),
+      getVolume(),
     ]);
     if (info.status === 'fulfilled' && info.value) {
       storeRef.state.speaker.info = info.value;
@@ -83,6 +95,10 @@ async function refetchAll() {
     }
     if (env.status === 'fulfilled' && env.value && env.value.ok && Array.isArray(env.value.data)) {
       setPresets(env.value.data);
+    }
+    if (vol.status === 'fulfilled' && vol.value) {
+      storeRef.state.speaker.volume = vol.value;
+      storeRef.touch('speaker');
     }
   } catch (_err) {
     // Non-fatal; state was already live via WS events.
@@ -95,8 +111,15 @@ async function refetchAll() {
 // Each handler receives (innerElement, store). Returning early on an
 // unknown tag is safe — the firmware freely adds tags we haven't mapped yet.
 const ENVELOPE_HANDLERS = {
-  volumeUpdated(el, store) {             // TODO slice 3
-    void el; void store;
+  volumeUpdated(el, store) {
+    const volEls = el.getElementsByTagName('volume');
+    const volEl = volEls && volEls[0];
+    if (!volEl) return;
+    const parsed = parseVolumeEl(volEl);
+    if (!parsed) return;
+    store.state.speaker.volume = parsed;
+    store.touch('speaker');
+    if (volumeConfirmFn) volumeConfirmFn(parsed.actualVolume);
   },
   nowPlayingUpdated(el, store) {
     const nps = el.getElementsByTagName('nowPlaying');

@@ -14,14 +14,19 @@ globalThis.DOMParser = class extends XmldomDOMParser {
   constructor() { super({ onError: () => {} }); }
 };
 
-import { parseNowPlayingXml, parseNowPlayingEl } from '../app/api.js';
+import { parseNowPlayingXml, parseNowPlayingEl, parseVolumeXml, parseVolumeEl } from '../app/api.js';
 import { dispatch } from '../app/ws.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, 'fixtures', 'api');
+const WS_FIXTURES = join(HERE, 'fixtures', 'ws');
 
 async function fixture(name) {
   return readFile(join(FIXTURES, name), 'utf8');
+}
+
+async function wsFixture(name) {
+  return readFile(join(WS_FIXTURES, name), 'utf8');
 }
 
 function makeStore(initial = {}) {
@@ -110,4 +115,61 @@ test('nowPlayingUpdated dispatch: STANDBY sets source=STANDBY', async () => {
   assert.ok(np, 'nowPlaying is set even for STANDBY');
   assert.equal(np.source, 'STANDBY');
   assert.ok(store._touched.includes('speaker'));
+});
+
+// --- parseVolumeXml -------------------------------------------------
+
+test('parseVolumeXml: normal volume returns expected fields', async () => {
+  const xml = await fixture('volume.xml');
+  const vol = parseVolumeXml(xml);
+  assert.ok(vol, 'returns a non-null object');
+  assert.equal(vol.targetVolume, 32);
+  assert.equal(vol.actualVolume, 32);
+  assert.equal(vol.muteEnabled, false);
+});
+
+test('parseVolumeXml: muted volume sets muteEnabled=true', async () => {
+  const xml = await fixture('volume-muted.xml');
+  const vol = parseVolumeXml(xml);
+  assert.ok(vol, 'returns a non-null object');
+  assert.equal(vol.targetVolume, 20);
+  assert.equal(vol.actualVolume, 20);
+  assert.equal(vol.muteEnabled, true);
+});
+
+test('parseVolumeXml: empty string returns null', () => {
+  assert.equal(parseVolumeXml(''), null);
+});
+
+test('parseVolumeXml: non-volume XML returns null', () => {
+  assert.equal(parseVolumeXml('<nowPlaying source="STANDBY"/>'), null);
+});
+
+test('parseVolumeEl: null input returns null', () => {
+  assert.equal(parseVolumeEl(null), null);
+});
+
+test('parseVolumeEl: parses a DOM element directly', async () => {
+  const xml = await fixture('volume.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const els = doc.getElementsByTagName('volume');
+  const vol = parseVolumeEl(els && els[0]);
+  assert.ok(vol, 'returns a non-null object');
+  assert.equal(vol.targetVolume, 32);
+  assert.equal(vol.actualVolume, 32);
+  assert.equal(vol.muteEnabled, false);
+});
+
+// --- WS dispatch: volumeUpdated -------------------------------------
+
+test('volumeUpdated dispatch sets state.speaker.volume and touches speaker', async () => {
+  const xml = await wsFixture('volume-updated.xml');
+  const store = makeStore();
+  dispatch(xml, store);
+  const vol = store.state.speaker.volume;
+  assert.ok(vol, 'volume is set');
+  assert.equal(vol.targetVolume, 32);
+  assert.equal(vol.actualVolume, 32);
+  assert.equal(vol.muteEnabled, false);
+  assert.ok(store._touched.includes('speaker'), 'speaker key was touched');
 });
