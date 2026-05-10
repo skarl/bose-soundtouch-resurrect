@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<updates deviceID="1234567890AB">
+  <nowPlayingUpdated>
+    <nowPlaying source="TUNEIN" sourceAccount="">
+      <ContentItem source="TUNEIN" type="stationurl"
+                   location="/v1/playback/station/s12345"
+                   isPresetable="true">
+        <itemName>Example Radio</itemName>
+      </ContentItem>
+      <track>Sweet Dreams</track>
+      <artist>La Bouche</artist>
+      <art artImageStatus="IMAGE_PRESENT">http://cdn.example.com/logo.png</art>
+      <playStatus>PLAY_STATE</playStatus>
+    </nowPlaying>
+  </nowPlayingUpdated>
+</updates>

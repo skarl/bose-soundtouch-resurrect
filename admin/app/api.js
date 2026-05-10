@@ -2,8 +2,11 @@
 // See admin/PLAN.md § REST API.
 //
 // Surface:
-//   tunein*       — TuneIn forwarder (search / browse / station / probe)
-//   speakerNowPlaying() — speaker proxy /now_playing parser
+//   tunein*              — TuneIn forwarder (search / browse / station / probe)
+//   speakerNowPlaying()  — speaker proxy /now_playing
+//   getNowPlaying()      — alias of speakerNowPlaying() (canonical 0.3+ name)
+//   parseNowPlayingXml() — shared parser used by REST and WS paths
+//   parseNowPlayingEl()  — same parser for an already-parsed DOM element
 //   presetsList(), presetsAssign() — presets CGI envelope client
 
 export const apiBase = '/cgi-bin/api/v1';
@@ -55,20 +58,6 @@ export function tuneinProbe(sid) {
 
 // --- speaker proxy --------------------------------------------------
 
-// GET /cgi-bin/api/v1/speaker/now_playing → parsed nowPlaying object.
-// getNowPlaying is the canonical name used by ws.js polling; speakerNowPlaying
-// is kept for now-playing.js (0.2 name) which slice 4 will consolidate.
-export async function getNowPlaying() {
-  const res = await fetch(`${apiBase}/speaker/now_playing`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getNowPlaying: HTTP ${res.status}`);
-  const text = await res.text();
-  return parseNowPlayingXml(text);
-}
-
 export async function speakerNowPlaying() {
   const res = await fetch(`${apiBase}/speaker/now_playing`, {
     method: 'GET',
@@ -106,16 +95,34 @@ export function parseNowPlayingXml(xmlText) {
   if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
 
   const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.querySelector('parsererror')) return null;
+  // Browser signals parse failure via a <parsererror> child; @xmldom/xmldom
+  // (test runtime) does not have querySelector, so check getElementsByTagName.
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
 
-  const np = doc.querySelector('nowPlaying');
+  const nps = doc.getElementsByTagName('nowPlaying');
+  if (!nps || !nps[0]) return null;
+
+  return parseNowPlayingEl(nps[0]);
+}
+
+// Parse an already-resolved <nowPlaying> DOM element — used by the WS
+// dispatch path (nowPlayingUpdated handler) so both REST and WS converge
+// on the same field mapping.
+// Uses getElementsByTagName so it works in both browser (DOMParser) and
+// @xmldom/xmldom (test runtime, which lacks querySelector).
+export function parseNowPlayingEl(np) {
   if (!np) return null;
 
-  const ci = np.querySelector('ContentItem');
-  const itemName = ci && ci.querySelector('itemName');
+  const g = (parent, tag) => {
+    const col = parent.getElementsByTagName(tag);
+    return col && col[0] ? col[0] : null;
+  };
 
-  const text = (sel) => {
-    const el = np.querySelector(sel);
+  const ci = g(np, 'ContentItem');
+  const itemNameEl = ci ? g(ci, 'itemName') : null;
+
+  const text = (tag) => {
+    const el = g(np, tag);
     return el && el.textContent != null ? el.textContent : '';
   };
 
@@ -123,7 +130,7 @@ export function parseNowPlayingXml(xmlText) {
     source:        np.getAttribute('source') || '',
     sourceAccount: np.getAttribute('sourceAccount') || '',
     item: {
-      name:     itemName && itemName.textContent ? itemName.textContent : '',
+      name:     itemNameEl ? (itemNameEl.textContent || '') : '',
       location: ci ? (ci.getAttribute('location') || '') : '',
       type:     ci ? (ci.getAttribute('type') || '') : '',
     },
@@ -133,6 +140,10 @@ export function parseNowPlayingXml(xmlText) {
     playStatus: text('playStatus'),
   };
 }
+
+// Canonical 0.3+ name; speakerNowPlaying kept as the legacy alias the
+// 0.2 polling code in views/now-playing.js still imports.
+export { speakerNowPlaying as getNowPlaying };
 
 // --- presets --------------------------------------------------------
 //
