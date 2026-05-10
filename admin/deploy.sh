@@ -73,6 +73,11 @@ say "Pushing admin shell to /mnt/nv/resolver/"
 $SCP "$STAGE/index.html" root@"$SPEAKER":/mnt/nv/resolver/index.html
 $SCP "$STAGE/style.css"  root@"$SPEAKER":/mnt/nv/resolver/style.css
 
+# httpd.conf teaches busybox httpd the right MIME types. Without it,
+# every unknown extension is served as application/octet-stream, which
+# breaks ES module loading in browsers.
+$SCP "$ADMIN/httpd.conf" root@"$SPEAKER":/mnt/nv/resolver/httpd.conf
+
 # Recreate app/ on the speaker, then push every file under it. Doing it
 # in two steps (mkdir + scp -r) keeps shellcheck happy and survives
 # busybox's quirkier ssh.
@@ -90,6 +95,12 @@ if [ -d "$ADMIN/cgi-bin/api/v1" ]; then
        root@"$SPEAKER":/mnt/nv/resolver/cgi-bin/api/v1/
   $SSH root@"$SPEAKER" 'chmod +x /mnt/nv/resolver/cgi-bin/api/v1/*'
 fi
+
+# busybox httpd reads httpd.conf once at startup, not per request, so
+# bounce it to pick up MIME-type changes. shepherdd respawns it within
+# a second; CGI invocations during the gap return connection-refused.
+say "Reloading httpd (shepherdd respawns it)"
+$SSH root@"$SPEAKER" 'killall httpd 2>/dev/null; sleep 1' || true
 
 say "Verifying admin shell at http://$SPEAKER:8181/"
 # Fetch from the laptop. busybox httpd is already serving the resolver
