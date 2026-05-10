@@ -69,3 +69,80 @@ export function mount(root, fragment) {
   root.replaceChildren(fragment);
   return root;
 }
+
+// View shell: defineView({ mount }) → { init(root, store, ctx) → destroy }.
+//
+// `mount(root, store, ctx, env)` builds DOM once and returns an updaters
+// object whose keys are top-level store keys to subscribe to. `env`
+// carries an AbortSignal for async work and an `onCleanup(fn)` register
+// that fires LIFO on unmount.
+const ALLOWED_UPDATER_KEYS = new Set(['speaker', 'ws', 'ui', 'caches']);
+
+function makeEnv(controller, cleanups) {
+  return {
+    signal: controller.signal,
+    onCleanup(fn) {
+      if (typeof fn !== 'function') return;
+      cleanups.push(fn);
+    },
+  };
+}
+
+function runCleanups(cleanups) {
+  while (cleanups.length) {
+    const fn = cleanups.pop();
+    try { fn(); } catch (_err) { /* swallow — one bad cleanup shouldn't strand others */ }
+  }
+}
+
+function wireUpdaters(store, updaters) {
+  const unsubs = [];
+  if (!updaters || typeof updaters !== 'object') return unsubs;
+  for (const key of Object.keys(updaters)) {
+    if (!ALLOWED_UPDATER_KEYS.has(key)) {
+      throw new Error(`defineView: unknown updater key "${key}"`);
+    }
+    const fn = updaters[key];
+    if (typeof fn !== 'function') continue;
+    unsubs.push(store.subscribe(key, (state) => fn(state)));
+  }
+  return unsubs;
+}
+
+export function defineView({ mount: mountFn }) {
+  if (typeof mountFn !== 'function') {
+    throw new Error('defineView: mount must be a function');
+  }
+  return {
+    init(root, store, ctx) {
+      const controller = new AbortController();
+      const cleanups = [];
+      const env = makeEnv(controller, cleanups);
+      const updaters = mountFn(root, store, ctx, env) || {};
+      let unsubs;
+      try {
+        unsubs = wireUpdaters(store, updaters);
+      } catch (err) {
+        controller.abort();
+        runCleanups(cleanups);
+        throw err;
+      }
+      return function destroy() {
+        controller.abort();
+        for (const u of unsubs) { try { u(); } catch (_err) { /* keep going */ } }
+        runCleanups(cleanups);
+      };
+    },
+  };
+}
+
+// mountChild(node, subview, store, ctx, parentEnv) — same wiring on a
+// sub-DOM, with the child's destroy registered against the parent env so
+// unmount cascades from the outer view.
+export function mountChild(node, subview, store, ctx, parentEnv) {
+  const destroy = subview.init(node, store, ctx);
+  if (parentEnv && typeof parentEnv.onCleanup === 'function') {
+    parentEnv.onCleanup(destroy);
+  }
+  return destroy;
+}

@@ -38,7 +38,7 @@ export function _setDeps(overrides) {
 // Cache hit (not expired) → return cached. Cache hit (expired) → re-fetch.
 // Cache miss → fetch via tuneinProbe, classify, store, return.
 // Transport errors propagate; no cache write on error.
-export async function probe(sid) {
+export async function probe(sid, opts) {
   const cache = store.state.caches.probe;
 
   const hit = cache.get(sid);
@@ -47,7 +47,7 @@ export async function probe(sid) {
     cache.delete(sid);
   }
 
-  const tuneinJson = await deps.tuneinProbe(sid);
+  const tuneinJson = await deps.tuneinProbe(sid, opts);
   const verdict = classify(tuneinJson);
   const entry = { sid, verdict, tuneinJson, expires: Date.now() + PROBE_TTL_MS };
   cache.set(sid, entry);

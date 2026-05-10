@@ -1,5 +1,6 @@
 // Hash router. Reads location.hash, matches against registered routes,
-// invokes the matched view's { init(root, store), update(state, key) }.
+// invokes the matched view's `init(root, store, ctx)` and stashes the
+// destroy function it returns so the next dispatch can unmount cleanly.
 // See admin/PLAN.md § Routing.
 
 function parseHash(hash) {
@@ -26,25 +27,19 @@ function matchRoute(routes, path) {
 
 export function createRouter({ root, routes, fallback, store }) {
   let active = null;
-  let unsubscribe = null;
+  let destroy = null;
 
   function dispatch() {
     const { path, query } = parseHash(location.hash);
     const matched = matchRoute(routes, path) || { route: fallback, params: {} };
     const view = matched.route.view;
 
-    if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    if (destroy) { try { destroy(); } catch (_err) { /* keep dispatching */ } destroy = null; }
     root.replaceChildren();
     root.removeAttribute('aria-busy');
 
     active = view;
-    view.init(root, store, { params: matched.params, query, path });
-
-    if (typeof view.update === 'function' && matched.route.subscribe) {
-      unsubscribe = store.subscribe(matched.route.subscribe, (state, key) => {
-        view.update(state, key);
-      });
-    }
+    destroy = view.init(root, store, { params: matched.params, query, path }) || null;
   }
 
   return {

@@ -1,105 +1,21 @@
 // now-playing — live home view.
 // Art + station name + track/artist + source metadata + transport.
 // REST polling runs as a fallback; the primary update path is the WS
-// 'speaker' subscription set up by the router for the #/ route.
+// 'speaker' subscription wired by the view shell.
 //
-// Render strategy: init() builds the DOM once; update() mutates cached
-// refs in place — never re-renders. See admin/app/dom.js.
+// Render strategy: mount() builds the DOM once; updaters mutate cached
+// refs in place — never re-rendering. See admin/app/dom.js.
 
-import { html, mount } from '../dom.js';
+import { html, mount, defineView } from '../dom.js';
 import { store } from '../state.js';
 import { speakerNowPlaying, presetsList } from '../api.js';
 import { setArt } from '../art.js';
 import * as actions from '../actions/index.js';
-import { vuDot, updateVuDot } from '../components.js';
+import { vuDot, updateVuDot, connectionPill, updatePill } from '../components.js';
 
 const POLL_MS = 2000;
 const PRESET_SLOTS = 6;
-
-// Long-press state — one timer per active press; shared across all preset buttons.
-let longPressTimer    = null;
-let longPressCancelled = false;
-const LONG_PRESS_MS   = 600;
-
-// Cached DOM refs — populated by init(), used by update().
-let artEl      = null;
-let nameEl     = null;
-let trackEl    = null;
-let metaEl     = null;
-let cardEl     = null;
-let asleepEl   = null;
-let transportEl = null;
-let sourcesEl  = null;
-let presetsEl  = null;   // .np-presets container
-let presetBtns = [];     // [btn0, btn1, …, btn5] — index = slot - 1
-let btnPrev    = null;
-let btnPlay    = null;
-let btnNext    = null;
-let sliderEl   = null;
-let muteEl     = null;
-let volumeRowEl = null;
-let vuDotEl    = null;
-
-// Polling state
-let pollTimer       = null;
-let inFlight        = false;
-let visibilityBound = false;
-
-function clearPoll() {
-  if (pollTimer != null) {
-    clearTimeout(pollTimer);
-    pollTimer = null;
-  }
-}
-
-async function pollOnce() {
-  if (inFlight) return;
-  if (document.hidden) return;
-  inFlight = true;
-  try {
-    const np = await speakerNowPlaying();
-    store.update('speaker', (s) => { s.speaker.nowPlaying = np; });
-  } catch (_err) {
-    // Network blip — leave previous state visible.
-  } finally {
-    inFlight = false;
-    if (!document.hidden && pollTimer != null) {
-      pollTimer = setTimeout(pollOnce, POLL_MS);
-    }
-  }
-}
-
-async function fetchPresetsOnce() {
-  try {
-    const env = await presetsList();
-    if (env && env.ok && Array.isArray(env.data)) {
-      store.update('speaker', (s) => { s.speaker.presets = env.data; });
-    }
-  } catch (_err) {
-    // Non-fatal.
-  }
-}
-
-function startPolling() {
-  if (pollTimer != null) return;
-  pollTimer = setTimeout(pollOnce, 0);
-}
-
-function onVisibilityChange() {
-  if (document.hidden) {
-    clearPoll();
-  } else if (nameEl) {
-    startPolling();
-  }
-}
-
-function bindVisibilityOnce() {
-  if (visibilityBound) return;
-  document.addEventListener('visibilitychange', onVisibilityChange);
-  visibilityBound = true;
-}
-
-// --- text helpers ---------------------------------------------------
+const LONG_PRESS_MS = 600;
 
 function renderName(np) {
   if (!np) return '';
@@ -131,260 +47,14 @@ function pickMetaLine(np) {
   if (!np) return '';
   const parts = [];
   if (np.source && np.source !== 'STANDBY') parts.push(np.source);
-  // ContentItem type carries the stream type (liveRadio, podcast, etc.)
   const type = np.item && np.item.type;
   if (type) parts.push(type);
   return parts.join(' · ');
 }
 
-// --- play-pause icon -----------------------------------------------
-
-function syncPlayBtn(np) {
-  if (!btnPlay) return;
-  const playing = np && np.playStatus === 'PLAY_STATE';
-  btnPlay.textContent = playing ? '⏸' : '▶';
-  btnPlay.title       = playing ? 'Pause' : 'Play';
-  btnPlay.dataset.playing = playing ? '1' : '';
-}
-
-// --- volume mutator -------------------------------------------------
-
-function applyVolume(vol) {
-  if (!sliderEl) return;
-  const muted = vol && vol.muteEnabled;
-  const level = vol ? vol.targetVolume : 0;
-  // Only update slider if the value differs — avoid stomping on an
-  // active drag (the user's thumb should stay under their finger).
-  if (sliderEl.value !== String(level)) {
-    sliderEl.value = String(level);
-  }
-  if (muteEl) {
-    muteEl.textContent = muted ? '🔊̸' : '🔇';
-    muteEl.title = muted ? 'Unmute' : 'Mute';
-    muteEl.setAttribute('aria-pressed', muted ? 'true' : 'false');
-  }
-  if (volumeRowEl) volumeRowEl.hidden = !vol;
-}
-
-// --- mutator --------------------------------------------------------
-
-function applyNowPlaying(np) {
-  if (!cardEl) return;
-
-  const standby = np && np.source === 'STANDBY';
-  cardEl.hidden    = standby;
-  asleepEl.hidden  = !standby;
-  transportEl.hidden = standby;
-
-  if (standby) return;
-
-  const name = renderName(np);
-  nameEl.textContent  = name;
-  trackEl.textContent = np ? pickTrackLine(np, name) : '';
-  trackEl.toggleAttribute('hidden', !trackEl.textContent);
-  metaEl.textContent  = np ? pickMetaLine(np) : '';
-  metaEl.toggleAttribute('hidden', !metaEl.textContent);
-
-  const artUrl = np && typeof np.art === 'string' && np.art.startsWith('http')
-    ? np.art : '';
-  setArt(artEl, artUrl, name);
-
-  syncPlayBtn(np);
-}
-
-// --- preset card row -----------------------------------------------
-
-// Mutate only the DOM nodes for slots that changed. Compare previous
-// slot data (stored in dataset) against the new list so unaffected
-// buttons are left untouched — preserves :active state mid-press.
-function applyPresets(presets) {
-  if (!presetBtns.length) return;
-  for (let i = 0; i < PRESET_SLOTS; i++) {
-    const btn = presetBtns[i];
-    if (!btn) continue;
-    const p = presets && presets[i] ? presets[i] : null;
-    const empty = !p || !!p.empty;
-
-    // Compare against the last-rendered values stored in dataset to
-    // skip DOM writes when nothing changed (e.g. on unrelated updates).
-    const newName = empty ? '' : (p.itemName || `Preset ${i + 1}`);
-    const newArt  = (!empty && typeof p.art === 'string' && p.art.startsWith('http')) ? p.art : '';
-
-    if (btn.dataset.renderedEmpty === String(empty)
-        && btn.dataset.renderedName === newName
-        && btn.dataset.renderedArt === newArt) {
-      continue;
-    }
-
-    btn.dataset.renderedEmpty = String(empty);
-    btn.dataset.renderedName  = newName;
-    btn.dataset.renderedArt   = newArt;
-
-    btn.disabled = empty;
-    btn.classList.toggle('np-preset--empty', empty);
-
-    const nameEl = btn.querySelector('.np-preset-name');
-    const imgEl  = btn.querySelector('.np-preset-art');
-
-    if (nameEl) nameEl.textContent = empty ? 'Empty' : newName;
-    if (imgEl) {
-      if (newArt) {
-        imgEl.src = newArt;
-        imgEl.removeAttribute('hidden');
-      } else {
-        imgEl.removeAttribute('src');
-        imgEl.setAttribute('hidden', '');
-      }
-    }
-  }
-}
-
-async function onPresetClick(evt) {
-  const btn = evt.currentTarget;
-  const slot = btn.dataset.slot;
-  // Swallow the click that follows a long-press.
-  if (longPressCancelled) {
-    longPressCancelled = false;
-    return;
-  }
-  if (!slot || btn.disabled) return;
-  // Bo's firmware silently ignores `/key PRESET_N` press+release and
-  // returns 400 on `/selectPreset`. The reliable recall path is
-  // `/select` with the preset's stored ContentItem (verified on
-  // firmware trunk r46330; same path the Test-play button uses in
-  // views/station.js).
-  const idx = Number(slot) - 1;
-  const p = store.state.speaker.presets && store.state.speaker.presets[idx];
-  if (!p || p.empty) return;
-  try {
-    await actions.selectPreset(Number(slot), {
-      source:        p.source,
-      sourceAccount: p.sourceAccount || '',
-      type:          p.type || '',
-      location:      p.location || '',
-    });
-  } catch (_err) {
-    // Non-fatal — the next nowPlayingUpdated / nowSelectionUpdated will
-    // confirm or deny the switch.
-  }
-}
-
-function clearLongPress() {
-  if (longPressTimer != null) {
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
-  }
-}
-
-function onPresetPointerDown(evt) {
-  // Only primary pointer (left button / single touch).
-  if (evt.button !== undefined && evt.button !== 0) return;
-  const btn = evt.currentTarget;
-  const slot = btn.dataset.slot;
-  if (!slot || btn.disabled) return;
-  clearLongPress();
-  longPressCancelled = false;
-  longPressTimer = setTimeout(() => {
-    longPressTimer = null;
-    longPressCancelled = true;
-    location.hash = `#/preset/${slot}`;
-  }, LONG_PRESS_MS);
-}
-
-function onPresetPointerUp()     { clearLongPress(); }
-function onPresetPointerCancel() { clearLongPress(); }
-
-function onPresetContextMenu(evt) {
-  evt.preventDefault();
-  const btn = evt.currentTarget;
-  const slot = btn.dataset.slot;
-  if (!slot || btn.disabled) return;
-  clearLongPress();
-  longPressCancelled = false;
-  location.hash = `#/preset/${slot}`;
-}
-
-// --- source picker pills -------------------------------------------
-
-// Active source comes from state.speaker.nowPlaying.source.
-// Render once on init (empty); mutate pill attributes on each update.
-function applySourcePills(sources, activeSource) {
-  if (!sourcesEl) return;
-
-  const existing = sourcesEl.querySelectorAll('.np-source-pill');
-  const sourcesArr = Array.isArray(sources) ? sources : [];
-
-  if (existing.length !== sourcesArr.length) {
-    // Sources list changed length — rebuild the pill row.
-    sourcesEl.textContent = '';
-    for (const src of sourcesArr) {
-      const btn = document.createElement('button');
-      btn.className = 'np-source-pill';
-      btn.type = 'button';
-      btn.dataset.source = src.source;
-      btn.dataset.account = src.sourceAccount || '';
-      btn.dataset.status = src.status;
-      btn.dataset.local = src.isLocal ? 'true' : 'false';
-      btn.textContent = src.displayName || src.source;
-      btn.addEventListener('click', onSourceClick);
-      sourcesEl.appendChild(btn);
-    }
-  }
-
-  // Mutate active/disabled state on existing pill nodes.
-  const pills = sourcesEl.querySelectorAll('.np-source-pill');
-  for (const pill of pills) {
-    const src = pill.dataset.source;
-    const unavail = pill.dataset.status === 'UNAVAILABLE';
-    pill.disabled = unavail;
-    pill.dataset.active = (src === activeSource) ? 'true' : 'false';
-  }
-}
-
-async function onSourceClick(evt) {
-  const btn = evt.currentTarget;
-  const source = btn.dataset.source;
-  const sourceAccount = btn.dataset.account || '';
-  const isLocal = btn.dataset.local === 'true';
-  try {
-    if (isLocal) {
-      await actions.selectLocalSource(source);
-    } else {
-      await actions.selectSource({ source, sourceAccount });
-    }
-  } catch (_err) {
-    // Switch errors are non-fatal — the source pill state will self-correct
-    // when the next nowPlaying update arrives.
-  }
-}
-
-// --- transport click handlers --------------------------------------
-
-let keyInFlight = false;
-
-async function sendKey(key) {
-  if (keyInFlight) return;
-  keyInFlight = true;
-  try {
-    await actions.pressKey(key);
-  } finally {
-    keyInFlight = false;
-  }
-}
-
-function onPrev()  { sendKey('PREV_TRACK'); }
-function onNext()  { sendKey('NEXT_TRACK'); }
-function onPlayPause() {
-  const np = store.state.speaker.nowPlaying;
-  const playing = np && np.playStatus === 'PLAY_STATE';
-  sendKey(playing ? 'PAUSE' : 'PLAY');
-}
-
-// --- view lifecycle -------------------------------------------------
-
-export default {
-  init(root) {
-    vuDotEl = vuDot();
+export default defineView({
+  mount(root, _store, _ctx, env) {
+    const vuDotEl = vuDot();
 
     mount(root, html`
       <section class="np-view" data-view="now-playing">
@@ -418,21 +88,180 @@ export default {
       </section>
     `);
 
-    cardEl     = root.querySelector('.np-card');
-    artEl      = root.querySelector('.np-art');
-    nameEl     = root.querySelector('.np-name');
-    trackEl    = root.querySelector('.np-track');
-    metaEl     = root.querySelector('.np-meta');
-    transportEl = root.querySelector('.np-transport');
-    sourcesEl  = root.querySelector('.np-sources');
-    presetsEl  = root.querySelector('.np-presets');
-    asleepEl   = root.querySelector('.np-asleep');
-    volumeRowEl = root.querySelector('.np-volume');
-    sliderEl   = root.querySelector('.np-slider');
-    muteEl     = root.querySelector('.np-mute');
+    const cardEl     = root.querySelector('.np-card');
+    const artEl      = root.querySelector('.np-art');
+    const nameEl     = root.querySelector('.np-name');
+    const trackEl    = root.querySelector('.np-track');
+    const metaEl     = root.querySelector('.np-meta');
+    const transportEl = root.querySelector('.np-transport');
+    const sourcesEl  = root.querySelector('.np-sources');
+    const presetsEl  = root.querySelector('.np-presets');
+    const asleepEl   = root.querySelector('.np-asleep');
+    const volumeRowEl = root.querySelector('.np-volume');
+    const sliderEl   = root.querySelector('.np-slider');
+    const muteEl     = root.querySelector('.np-mute');
 
-    // Build 6 preset buttons init-once; mutated in place by applyPresets().
-    presetBtns = [];
+    // Connection pill — was previously a shell-level subscriber in main.js.
+    // Owned here so the routes table can drop subscribe: 'ws'.
+    const pill = connectionPill(store.state);
+    pill.classList.add('np-conn-pill');
+    cardEl.appendChild(pill);
+
+    // Long-press state — closure-local.
+    let longPressTimer    = null;
+    let longPressCancelled = false;
+
+    function clearLongPress() {
+      if (longPressTimer != null) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    }
+    env.onCleanup(clearLongPress);
+
+    // Preset buttons — built once, mutated in place by applyPresets.
+    const presetBtns = [];
+
+    function syncPlayBtn(np) {
+      const playing = np && np.playStatus === 'PLAY_STATE';
+      btnPlay.textContent = playing ? '⏸' : '▶';
+      btnPlay.title       = playing ? 'Pause' : 'Play';
+      btnPlay.dataset.playing = playing ? '1' : '';
+    }
+
+    function applyVolume(vol) {
+      const muted = vol && vol.muteEnabled;
+      const level = vol ? vol.targetVolume : 0;
+      // Only update slider if the value differs — avoid stomping on an
+      // active drag (the user's thumb should stay under their finger).
+      if (sliderEl.value !== String(level)) {
+        sliderEl.value = String(level);
+      }
+      muteEl.textContent = muted ? '🔊̸' : '🔇';
+      muteEl.title = muted ? 'Unmute' : 'Mute';
+      muteEl.setAttribute('aria-pressed', muted ? 'true' : 'false');
+      volumeRowEl.hidden = !vol;
+    }
+
+    function applyNowPlaying(np) {
+      const standby = np && np.source === 'STANDBY';
+      cardEl.hidden    = standby;
+      asleepEl.hidden  = !standby;
+      transportEl.hidden = standby;
+
+      if (standby) return;
+
+      const name = renderName(np);
+      nameEl.textContent  = name;
+      trackEl.textContent = np ? pickTrackLine(np, name) : '';
+      trackEl.toggleAttribute('hidden', !trackEl.textContent);
+      metaEl.textContent  = np ? pickMetaLine(np) : '';
+      metaEl.toggleAttribute('hidden', !metaEl.textContent);
+
+      const artUrl = np && typeof np.art === 'string' && np.art.startsWith('http')
+        ? np.art : '';
+      setArt(artEl, artUrl, name);
+
+      syncPlayBtn(np);
+    }
+
+    // Mutate only the DOM nodes for slots that changed. Compare previous
+    // slot data (stored in dataset) against the new list so unaffected
+    // buttons are left untouched — preserves :active state mid-press.
+    function applyPresets(presets) {
+      for (let i = 0; i < PRESET_SLOTS; i++) {
+        const btn = presetBtns[i];
+        if (!btn) continue;
+        const p = presets && presets[i] ? presets[i] : null;
+        const empty = !p || !!p.empty;
+
+        const newName = empty ? '' : (p.itemName || `Preset ${i + 1}`);
+        const newArt  = (!empty && typeof p.art === 'string' && p.art.startsWith('http')) ? p.art : '';
+
+        if (btn.dataset.renderedEmpty === String(empty)
+            && btn.dataset.renderedName === newName
+            && btn.dataset.renderedArt === newArt) {
+          continue;
+        }
+
+        btn.dataset.renderedEmpty = String(empty);
+        btn.dataset.renderedName  = newName;
+        btn.dataset.renderedArt   = newArt;
+
+        btn.disabled = empty;
+        btn.classList.toggle('np-preset--empty', empty);
+
+        const labelEl = btn.querySelector('.np-preset-name');
+        const imgEl  = btn.querySelector('.np-preset-art');
+
+        if (labelEl) labelEl.textContent = empty ? 'Empty' : newName;
+        if (imgEl) {
+          if (newArt) {
+            imgEl.src = newArt;
+            imgEl.removeAttribute('hidden');
+          } else {
+            imgEl.removeAttribute('src');
+            imgEl.setAttribute('hidden', '');
+          }
+        }
+      }
+    }
+
+    async function onPresetClick(evt) {
+      const btn = evt.currentTarget;
+      const slot = btn.dataset.slot;
+      // Swallow the click that follows a long-press.
+      if (longPressCancelled) {
+        longPressCancelled = false;
+        return;
+      }
+      if (!slot || btn.disabled) return;
+      // Bo's firmware silently ignores `/key PRESET_N` press+release and
+      // returns 400 on `/selectPreset`. The reliable recall path is
+      // `/select` with the preset's stored ContentItem.
+      const idx = Number(slot) - 1;
+      const p = store.state.speaker.presets && store.state.speaker.presets[idx];
+      if (!p || p.empty) return;
+      try {
+        await actions.selectPreset(Number(slot), {
+          source:        p.source,
+          sourceAccount: p.sourceAccount || '',
+          type:          p.type || '',
+          location:      p.location || '',
+        });
+      } catch (_err) {
+        // Non-fatal — the next nowPlayingUpdated / nowSelectionUpdated
+        // will confirm or deny the switch.
+      }
+    }
+
+    function onPresetPointerDown(evt) {
+      if (evt.button !== undefined && evt.button !== 0) return;
+      const btn = evt.currentTarget;
+      const slot = btn.dataset.slot;
+      if (!slot || btn.disabled) return;
+      clearLongPress();
+      longPressCancelled = false;
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        longPressCancelled = true;
+        location.hash = `#/preset/${slot}`;
+      }, LONG_PRESS_MS);
+    }
+
+    function onPresetPointerUp()     { clearLongPress(); }
+    function onPresetPointerCancel() { clearLongPress(); }
+
+    function onPresetContextMenu(evt) {
+      evt.preventDefault();
+      const btn = evt.currentTarget;
+      const slot = btn.dataset.slot;
+      if (!slot || btn.disabled) return;
+      clearLongPress();
+      longPressCancelled = false;
+      location.hash = `#/preset/${slot}`;
+    }
+
     for (let i = 0; i < PRESET_SLOTS; i++) {
       const btn = document.createElement('button');
       btn.className = 'np-preset np-preset--empty';
@@ -451,10 +280,10 @@ export default {
       img.setAttribute('hidden', '');
       btn.appendChild(img);
 
-      const label = document.createElement('span');
-      label.className = 'np-preset-name';
-      label.textContent = 'Empty';
-      btn.appendChild(label);
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'np-preset-name';
+      labelSpan.textContent = 'Empty';
+      btn.appendChild(labelSpan);
 
       btn.addEventListener('click', onPresetClick);
       btn.addEventListener('pointerdown',   onPresetPointerDown);
@@ -465,10 +294,76 @@ export default {
       presetBtns.push(btn);
     }
 
+    function applySourcePills(sources, activeSource) {
+      const existing = sourcesEl.querySelectorAll('.np-source-pill');
+      const sourcesArr = Array.isArray(sources) ? sources : [];
+
+      if (existing.length !== sourcesArr.length) {
+        sourcesEl.textContent = '';
+        for (const src of sourcesArr) {
+          const btn = document.createElement('button');
+          btn.className = 'np-source-pill';
+          btn.type = 'button';
+          btn.dataset.source = src.source;
+          btn.dataset.account = src.sourceAccount || '';
+          btn.dataset.status = src.status;
+          btn.dataset.local = src.isLocal ? 'true' : 'false';
+          btn.textContent = src.displayName || src.source;
+          btn.addEventListener('click', onSourceClick);
+          sourcesEl.appendChild(btn);
+        }
+      }
+
+      const pills = sourcesEl.querySelectorAll('.np-source-pill');
+      for (const pill2 of pills) {
+        const src = pill2.dataset.source;
+        const unavail = pill2.dataset.status === 'UNAVAILABLE';
+        pill2.disabled = unavail;
+        pill2.dataset.active = (src === activeSource) ? 'true' : 'false';
+      }
+    }
+
+    async function onSourceClick(evt) {
+      const btn = evt.currentTarget;
+      const source = btn.dataset.source;
+      const sourceAccount = btn.dataset.account || '';
+      const isLocal = btn.dataset.local === 'true';
+      try {
+        if (isLocal) {
+          await actions.selectLocalSource(source);
+        } else {
+          await actions.selectSource({ source, sourceAccount });
+        }
+      } catch (_err) {
+        // Switch errors are non-fatal — the source pill state will
+        // self-correct when the next nowPlaying update arrives.
+      }
+    }
+
+    let keyInFlight = false;
+
+    async function sendKey(key) {
+      if (keyInFlight) return;
+      keyInFlight = true;
+      try {
+        await actions.pressKey(key);
+      } finally {
+        keyInFlight = false;
+      }
+    }
+
+    function onPrev()  { sendKey('PREV_TRACK'); }
+    function onNext()  { sendKey('NEXT_TRACK'); }
+    function onPlayPause() {
+      const np = store.state.speaker.nowPlaying;
+      const playing = np && np.playStatus === 'PLAY_STATE';
+      sendKey(playing ? 'PAUSE' : 'PLAY');
+    }
+
     const btns = root.querySelectorAll('.np-btn');
-    btnPrev = btns[0];
-    btnPlay = btns[1];
-    btnNext = btns[2];
+    const btnPrev = btns[0];
+    const btnPlay = btns[1];
+    const btnNext = btns[2];
 
     btnPrev.addEventListener('click', onPrev);
     btnPlay.addEventListener('click', onPlayPause);
@@ -480,37 +375,89 @@ export default {
 
     muteEl.addEventListener('click', () => { actions.toggleMute(); });
 
+    // --- polling ----------------------------------------------------
+    let pollTimer = null;
+    let inFlight  = false;
+
+    function clearPoll() {
+      if (pollTimer != null) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+    }
+    env.onCleanup(clearPoll);
+
+    async function pollOnce() {
+      if (inFlight) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+      if (env.signal.aborted) return;
+      inFlight = true;
+      try {
+        const np = await speakerNowPlaying();
+        if (env.signal.aborted) return;
+        store.update('speaker', (s) => { s.speaker.nowPlaying = np; });
+      } catch (_err) {
+        // Network blip — leave previous state visible.
+      } finally {
+        inFlight = false;
+        if (!env.signal.aborted && !document.hidden && pollTimer != null) {
+          pollTimer = setTimeout(pollOnce, POLL_MS);
+        }
+      }
+    }
+
+    function startPolling() {
+      if (pollTimer != null) return;
+      if (env.signal.aborted) return;
+      pollTimer = setTimeout(pollOnce, 0);
+    }
+
+    async function fetchPresetsOnce() {
+      try {
+        const envv = await presetsList();
+        if (env.signal.aborted) return;
+        if (envv && envv.ok && Array.isArray(envv.data)) {
+          store.update('speaker', (s) => { s.speaker.presets = envv.data; });
+        }
+      } catch (_err) {
+        // Non-fatal.
+      }
+    }
+
+    function onVisibilityChange() {
+      if (document.hidden) {
+        clearPoll();
+      } else {
+        startPolling();
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    env.onCleanup(() => document.removeEventListener('visibilitychange', onVisibilityChange));
+
+    // Paint synchronously from current store before polling lands.
     const sp = store.state.speaker;
     applyNowPlaying(sp.nowPlaying);
     applyVolume(sp.volume);
     applySourcePills(sp.sources, sp.nowPlaying && sp.nowPlaying.source);
     applyPresets(sp.presets);
     updateVuDot(vuDotEl, store.state);
+    updatePill(pill, store.state);
 
-    bindVisibilityOnce();
-    if (!document.hidden) startPolling();
+    if (typeof document === 'undefined' || !document.hidden) startPolling();
     if (!store.state.speaker.presets) fetchPresetsOnce();
-  },
 
-  update(state, changedKey) {
-    if (changedKey !== 'speaker') return;
-    applyNowPlaying(state.speaker.nowPlaying);
-    applyVolume(state.speaker.volume);
-    const activeSource = state.speaker.nowPlaying && state.speaker.nowPlaying.source;
-    applySourcePills(state.speaker.sources, activeSource);
-    applyPresets(state.speaker.presets);
-    if (vuDotEl) updateVuDot(vuDotEl, state);
+    return {
+      speaker(state) {
+        applyNowPlaying(state.speaker.nowPlaying);
+        applyVolume(state.speaker.volume);
+        const activeSource = state.speaker.nowPlaying && state.speaker.nowPlaying.source;
+        applySourcePills(state.speaker.sources, activeSource);
+        applyPresets(state.speaker.presets);
+        updateVuDot(vuDotEl, state);
+      },
+      ws(state) {
+        updatePill(pill, state);
+      },
+    };
   },
-
-  _teardown() {
-    clearPoll();
-    clearLongPress();
-    longPressCancelled = false;
-    cardEl = artEl = nameEl = trackEl = metaEl = null;
-    transportEl = sourcesEl = presetsEl = asleepEl = null;
-    btnPrev = btnPlay = btnNext = null;
-    sliderEl = muteEl = volumeRowEl = null;
-    presetBtns = [];
-    vuDotEl = null;
-  },
-};
+});

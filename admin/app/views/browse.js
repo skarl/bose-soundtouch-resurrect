@@ -9,7 +9,7 @@
 // Audio leaves render via stationCard() and link to #/station/sNNN.
 // See admin/PLAN.md § View specs / browse and docs/tunein-api.md.
 
-import { html, mount } from '../dom.js';
+import { html, mount, defineView } from '../dom.js';
 import { tuneinBrowse } from '../api.js';
 import { stationCard } from '../components.js';
 
@@ -24,20 +24,17 @@ const TABS = [
   { key: 'language', label: 'Language', params: { c: 'lang' }  },
 ];
 
-export default {
-  init(root, _store, ctx) {
+export default defineView({
+  mount(root, _store, ctx) {
     const drillId = (ctx && ctx.query && ctx.query.id) || null;
     if (drillId) {
       renderDrill(root, drillId);
     } else {
       renderRoot(root);
     }
+    return {};
   },
-  update(/* state, changedKey */) {
-    // Browse is a static view: no store subscription. Re-entry via
-    // hashchange runs init() again, which is the refresh path.
-  },
-};
+});
 
 // ---- root view (tabs) -----------------------------------------------
 

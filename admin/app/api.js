@@ -24,9 +24,10 @@ export const apiBase = '/cgi-bin/api/v1';
 // envelope; classification (gated / dark / playable) lives in
 // app/reshape.js.
 
-async function getJson(path) {
+async function getJson(path, opts) {
   const res = await fetch(`${apiBase}${path}`, {
     headers: { Accept: 'application/json' },
+    signal: opts && opts.signal,
   });
   if (!res.ok) {
     throw new Error(`${path} failed: HTTP ${res.status}`);
@@ -34,33 +35,33 @@ async function getJson(path) {
   return res.json();
 }
 
-export function tuneinSearch(q) {
+export function tuneinSearch(q, opts) {
   // TuneIn's Search.ashx expects `query=`; sending `q=` returns
   // {head: {status: 400, fault: "Empty Query specified"}} with no body.
   const qs = new URLSearchParams({ query: q, type: 'station' }).toString();
-  return getJson(`/tunein/search?${qs}`);
+  return getJson(`/tunein/search?${qs}`, opts);
 }
 
 // tuneinBrowse() with no args returns the root taxonomy.
 // tuneinBrowse('g22') drills into a genre/category/region node.
 // tuneinBrowse({ c: 'music' }) hits the c-style top-level (Browse.ashx
 // uses both `id=` and `c=`; see docs/tunein-api.md).
-export function tuneinBrowse(arg) {
+export function tuneinBrowse(arg, opts) {
   let qs = '';
   if (typeof arg === 'string') {
     qs = `?id=${encodeURIComponent(arg)}`;
   } else if (arg && typeof arg === 'object') {
     qs = '?' + new URLSearchParams(arg).toString();
   }
-  return getJson(`/tunein/browse${qs}`);
+  return getJson(`/tunein/browse${qs}`, opts);
 }
 
-export function tuneinStation(sid) {
-  return getJson(`/tunein/station/${encodeURIComponent(sid)}`);
+export function tuneinStation(sid, opts) {
+  return getJson(`/tunein/station/${encodeURIComponent(sid)}`, opts);
 }
 
-export function tuneinProbe(sid) {
-  return getJson(`/tunein/probe/${encodeURIComponent(sid)}`);
+export function tuneinProbe(sid, opts) {
+  return getJson(`/tunein/probe/${encodeURIComponent(sid)}`, opts);
 }
 
 // --- speaker proxy --------------------------------------------------

@@ -4,7 +4,7 @@
 
 import { store } from './state.js';
 import { createRouter } from './router.js';
-import { html, mount } from './dom.js';
+import { html, mount, defineView } from './dom.js';
 
 import nowPlaying from './views/now-playing.js';
 import browse     from './views/browse.js';
@@ -14,14 +14,14 @@ import preset     from './views/preset.js';
 
 import { installVersionDriftCheck } from './version.js';
 import { getSpeakerInfo } from './api.js';
-import { connectionPill, updatePill, themeToggle } from './components.js';
+import { themeToggle } from './components.js';
 import * as ws from './ws.js';
 import * as theme from './theme.js';
 
 theme.init();
 
-const notFound = {
-  init(root, _store, ctx) {
+const notFound = defineView({
+  mount(root, _store, ctx) {
     const path = (ctx && ctx.path) || '(unknown)';
     mount(root, html`
       <section class="placeholder" data-view="not-found">
@@ -29,12 +29,12 @@ const notFound = {
         <p>No view for <code>${path}</code>. Try <a href="#/">home</a>.</p>
       </section>
     `);
+    return {};
   },
-  update() {},
-};
+});
 
 const routes = [
-  { pattern: /^\/$/,                             view: nowPlaying, subscribe: 'speaker' },
+  { pattern: /^\/$/,                             view: nowPlaying },
   { pattern: /^\/browse$/,                       view: browse },
   { pattern: /^\/search$/,                       view: search },
   { pattern: /^\/station\/(?<id>s\d+)$/,         view: station },
@@ -42,12 +42,10 @@ const routes = [
 ];
 
 function renderShell(appRoot) {
-  const pill   = connectionPill(store.state);
   const toggle = themeToggle();
   mount(appRoot, html`
     <header class="app-header">
       <span class="app-speaker-name"></span>
-      ${pill}
       ${toggle}
     </header>
     <nav class="routes" aria-label="primary">
@@ -59,10 +57,6 @@ function renderShell(appRoot) {
   `);
 
   const nameEl = appRoot.querySelector('.app-speaker-name');
-
-  store.subscribe('ws', (state) => {
-    updatePill(pill, state);
-  });
 
   store.subscribe('speaker', (state) => {
     nameEl.textContent = (state.speaker.info && state.speaker.info.name) || '';
