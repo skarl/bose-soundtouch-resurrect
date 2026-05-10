@@ -11,7 +11,7 @@ import { store } from '../state.js';
 import { speakerNowPlaying, presetsList } from '../api.js';
 import { setArt } from '../art.js';
 import * as actions from '../actions/index.js';
-import { vuDot, updateVuDot, connectionPill, updatePill } from '../components.js';
+import { vuDot, updateVuDot } from '../components.js';
 
 const POLL_MS = 2000;
 const PRESET_SLOTS = 6;
@@ -100,12 +100,6 @@ export default defineView({
     const volumeRowEl = root.querySelector('.np-volume');
     const sliderEl   = root.querySelector('.np-slider');
     const muteEl     = root.querySelector('.np-mute');
-
-    // Connection pill — was previously a shell-level subscriber in main.js.
-    // Owned here so the routes table can drop subscribe: 'ws'.
-    const pill = connectionPill(store.state);
-    pill.classList.add('np-conn-pill');
-    cardEl.appendChild(pill);
 
     // Long-press state — closure-local.
     let longPressTimer    = null;
@@ -441,7 +435,6 @@ export default defineView({
     applySourcePills(sp.sources, sp.nowPlaying && sp.nowPlaying.source);
     applyPresets(sp.presets);
     updateVuDot(vuDotEl, store.state);
-    updatePill(pill, store.state);
 
     if (typeof document === 'undefined' || !document.hidden) startPolling();
     if (!store.state.speaker.presets) fetchPresetsOnce();
@@ -454,9 +447,6 @@ export default defineView({
         applySourcePills(state.speaker.sources, activeSource);
         applyPresets(state.speaker.presets);
         updateVuDot(vuDotEl, state);
-      },
-      ws(state) {
-        updatePill(pill, state);
       },
     };
   },

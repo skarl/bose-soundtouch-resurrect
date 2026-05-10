@@ -14,7 +14,7 @@ import preset     from './views/preset.js';
 
 import { installVersionDriftCheck } from './version.js';
 import { getSpeakerInfo } from './api.js';
-import { themeToggle } from './components.js';
+import { connectionPill, updatePill, themeToggle } from './components.js';
 import * as ws from './ws.js';
 import * as theme from './theme.js';
 
@@ -42,10 +42,12 @@ const routes = [
 ];
 
 function renderShell(appRoot) {
+  const pill   = connectionPill(store.state);
   const toggle = themeToggle();
   mount(appRoot, html`
     <header class="app-header">
       <span class="app-speaker-name"></span>
+      ${pill}
       ${toggle}
     </header>
     <nav class="routes" aria-label="primary">
@@ -57,6 +59,10 @@ function renderShell(appRoot) {
   `);
 
   const nameEl = appRoot.querySelector('.app-speaker-name');
+
+  store.subscribe('ws', (state) => {
+    updatePill(pill, state);
+  });
 
   store.subscribe('speaker', (state) => {
     nameEl.textContent = (state.speaker.info && state.speaker.info.name) || '';
