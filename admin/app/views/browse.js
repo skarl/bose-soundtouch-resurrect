@@ -6,12 +6,12 @@
 //   2. Drill view (#/browse?id=<id>): fetches Browse.ashx?id=<id>,
 //      renders children + a breadcrumb back to the root.
 //
-// Audio leaves render via stationCard() and link to #/station/sNNN.
+// Audio leaves render via resultCard() and link to #/station/sNNN.
 // See admin/PLAN.md § View specs / browse and docs/tunein-api.md.
 
 import { html, mount, defineView } from '../dom.js';
 import { tuneinBrowse } from '../api.js';
-import { stationCard } from '../components.js';
+import { resultCard } from '../components.js';
 
 // Top-level tab → Browse.ashx parameter. Verified against the TuneIn
 // API reference (docs/tunein-api.md § Categories worth knowing):
@@ -143,7 +143,7 @@ function renderOutline(body, json) {
   }
 }
 
-function renderEntry(entry) {
+export function renderEntry(entry) {
   if (Array.isArray(entry.children) && entry.children.length > 0) {
     const section = document.createElement('section');
     section.className = 'browse-section';
@@ -158,12 +158,14 @@ function renderEntry(entry) {
   }
 
   if (entry.type === 'audio' && entry.guide_id) {
-    return stationCard({
+    return resultCard({
       sid:      entry.guide_id,
       name:     entry.text,
       art:      entry.image,
       location: entry.subtext,
-      format:   entry.bitrate ? `${entry.bitrate} kbps` : entry.formats,
+      genre:    entry.genre_name || entry.genre || '',
+      bitrate:  entry.bitrate,
+      codec:    entry.formats,
     });
   }
 

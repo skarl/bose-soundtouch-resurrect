@@ -433,3 +433,65 @@ export function stationCard({ sid, name, art, location, format }) {
   card.appendChild(body);
   return card;
 }
+
+// resultCard({ sid, name, art, location, genre, bitrate, codec }) —
+// browse-drill / search result card. Visual layout (#59):
+//   [stationArt 48] semibold name (single-line, ellipsis on overflow)
+//                   location · genre · <pill kbps codec>
+// All metadata fields are optional; the metadata line is omitted
+// entirely when nothing usable is provided so the card stays stable
+// (CSS pins the row height regardless).
+export function resultCard({
+  sid,
+  name,
+  art = '',
+  location = '',
+  genre = '',
+  bitrate,
+  codec = '',
+} = {}) {
+  const card = document.createElement('a');
+  card.className = 'result-card';
+  card.href = `#/station/${encodeURIComponent(sid)}`;
+  card.dataset.sid = sid;
+
+  card.appendChild(stationArt({ url: art, name: name || sid, size: 48 }));
+
+  const body = document.createElement('span');
+  body.className = 'result-card__body';
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'result-card__name';
+  nameEl.textContent = name || sid;
+  body.appendChild(nameEl);
+
+  const meta = document.createElement('span');
+  meta.className = 'result-card__meta';
+
+  const textParts = [];
+  if (location) textParts.push(String(location));
+  if (genre)    textParts.push(String(genre));
+  if (textParts.length > 0) {
+    const text = document.createElement('span');
+    text.className = 'result-card__meta-text';
+    text.textContent = textParts.join(' · ');
+    meta.appendChild(text);
+  }
+
+  const kbps = Number(bitrate);
+  const haveKbps = Number.isFinite(kbps) && kbps > 0;
+  if (haveKbps || codec) {
+    const codecText = codec ? String(codec).toUpperCase() : '';
+    const pillText = haveKbps
+      ? (codecText ? `${kbps} kbps · ${codecText}` : `${kbps} kbps`)
+      : codecText;
+    const tag = pill({ tone: 'ok', text: pillText });
+    tag.classList.add('result-card__pill');
+    meta.appendChild(tag);
+  }
+
+  if (meta.childNodes.length > 0) body.appendChild(meta);
+
+  card.appendChild(body);
+  return card;
+}

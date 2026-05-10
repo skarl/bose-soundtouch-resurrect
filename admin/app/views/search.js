@@ -1,9 +1,11 @@
 // search — TuneIn search + empty-state landing.
 //
 // Sticky input at top, debounced 300ms. Results render via
-// stationCard(). Empty state shows "Recently viewed" (from
-// state.caches.recentlyViewed) and "Popular" (Browse.ashx?c=local via
-// the tunein CGI).
+// resultCard() (#59 visual station card). Empty state shows two
+// columns: "Recently viewed" (from state.caches.recentlyViewed, last
+// 10 entries) and "Popular" (Browse.ashx?c=local via the tunein CGI).
+// CSS grid in style.css collapses the two columns into a single stack
+// on narrow viewports.
 //
 // Render strategy (see admin/PLAN.md § Render strategy):
 //   mount() builds the static frame once and returns a `caches` updater
@@ -17,10 +19,40 @@
 
 import { html, mount, defineView } from '../dom.js';
 import { tuneinSearch, tuneinBrowse } from '../api.js';
-import { stationCard } from '../components.js';
+import { resultCard } from '../components.js';
 
-const DEBOUNCE_MS = 300;
+export const DEBOUNCE_MS = 300;
 const STATION_GUIDE_ID = /^s\d+$/;
+
+// Pull station leaves out of a TuneIn Search.ashx body — flat filter.
+export function searchResultStations(json) {
+  const items = Array.isArray(json && json.body) ? json.body : [];
+  return items.filter(
+    (e) => e && e.type === 'audio' && typeof e.guide_id === 'string'
+      && STATION_GUIDE_ID.test(e.guide_id)
+  );
+}
+
+// Pull station leaves out of a Browse.ashx?c=local body — recurses one
+// level so nested sections surface their leaves directly.
+export function popularStations(json) {
+  const items = Array.isArray(json && json.body) ? json.body : [];
+  const out = [];
+  const visit = (entry) => {
+    if (!entry) return;
+    if (Array.isArray(entry.children)) {
+      for (const c of entry.children) visit(c);
+      return;
+    }
+    if (entry.type === 'audio'
+        && typeof entry.guide_id === 'string'
+        && STATION_GUIDE_ID.test(entry.guide_id)) {
+      out.push(entry);
+    }
+  };
+  for (const e of items) visit(e);
+  return out;
+}
 
 export default defineView({
   mount(root, store, ctx, env) {
@@ -117,23 +149,21 @@ export default defineView({
     }
 
     function renderResults(json) {
-      const items = Array.isArray(json && json.body) ? json.body : [];
-      const stations = items.filter(
-        (e) => e && e.type === 'audio' && typeof e.guide_id === 'string'
-          && STATION_GUIDE_ID.test(e.guide_id)
-      );
+      const stations = searchResultStations(json);
       resultsEl.replaceChildren();
       if (stations.length === 0) {
         setResultsMessage('No matches.', 'search-no-results');
         return;
       }
       for (const e of stations) {
-        resultsEl.appendChild(stationCard({
+        resultsEl.appendChild(resultCard({
           sid:      e.guide_id,
           name:     e.text,
           art:      e.image,
           location: e.subtext,
-          format:   e.bitrate ? `${e.bitrate} kbps` : e.formats,
+          genre:    e.genre_name || e.genre || '',
+          bitrate:  e.bitrate,
+          codec:    e.formats,
         }));
       }
     }
@@ -177,13 +207,13 @@ export default defineView({
       if (recents.length === 0) {
         const p = document.createElement('p');
         p.className = 'search-empty-note';
-        p.textContent = 'No recent stations.';
+        p.textContent = 'Browse to see recently viewed stations.';
         recentListEl.appendChild(p);
         return;
       }
-      for (const entry of recents) {
+      for (const entry of recents.slice(0, 10)) {
         if (!entry || typeof entry.sid !== 'string') continue;
-        recentListEl.appendChild(stationCard({
+        recentListEl.appendChild(resultCard({
           sid:  entry.sid,
           name: entry.name || entry.sid,
           art:  entry.art,
@@ -193,24 +223,7 @@ export default defineView({
 
     function renderPopular(json) {
       popularEl.replaceChildren();
-      const items = Array.isArray(json && json.body) ? json.body : [];
-
-      // Browse.ashx?c=local commonly nests stations under sections;
-      // walk one level so we surface station leaves directly.
-      const stations = [];
-      const visit = (entry) => {
-        if (!entry) return;
-        if (Array.isArray(entry.children)) {
-          for (const c of entry.children) visit(c);
-          return;
-        }
-        if (entry.type === 'audio'
-            && typeof entry.guide_id === 'string'
-            && STATION_GUIDE_ID.test(entry.guide_id)) {
-          stations.push(entry);
-        }
-      };
-      for (const e of items) visit(e);
+      const stations = popularStations(json);
 
       if (stations.length === 0) {
         const p = document.createElement('p');
@@ -220,12 +233,14 @@ export default defineView({
         return;
       }
       for (const e of stations) {
-        popularEl.appendChild(stationCard({
+        popularEl.appendChild(resultCard({
           sid:      e.guide_id,
           name:     e.text,
           art:      e.image,
           location: e.subtext,
-          format:   e.bitrate ? `${e.bitrate} kbps` : e.formats,
+          genre:    e.genre_name || e.genre || '',
+          bitrate:  e.bitrate,
+          codec:    e.formats,
         }));
       }
     }

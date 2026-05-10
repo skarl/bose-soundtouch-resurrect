@@ -67,6 +67,47 @@ if (!ElementProto.classList) {
   });
 }
 
+// xmldom stores className / href / src / alt as JS-only properties; the
+// production code (resultCard, art.js) writes via the property and our
+// assertions read via getAttribute. Mirror property → attribute so both
+// sides see the same value.
+if (!Object.getOwnPropertyDescriptor(ElementProto, 'className')) {
+  Object.defineProperty(ElementProto, 'className', {
+    get() { return this.getAttribute('class') || ''; },
+    set(v) { this.setAttribute('class', String(v == null ? '' : v)); },
+  });
+}
+for (const attr of ['href', 'src', 'alt']) {
+  if (!Object.getOwnPropertyDescriptor(ElementProto, attr)) {
+    Object.defineProperty(ElementProto, attr, {
+      get() { return this.getAttribute(attr) || ''; },
+      set(v) { this.setAttribute(attr, String(v == null ? '' : v)); },
+    });
+  }
+}
+// dataset Proxy: data-foo ↔ dataset.foo round-trip via attributes.
+if (!Object.getOwnPropertyDescriptor(ElementProto, 'dataset')) {
+  Object.defineProperty(ElementProto, 'dataset', {
+    get() {
+      const el = this;
+      return new Proxy({}, {
+        get(_t, key) {
+          if (typeof key !== 'string') return undefined;
+          const attr = 'data-' + key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+          const v = el.getAttribute(attr);
+          return v == null ? undefined : v;
+        },
+        set(_t, key, value) {
+          if (typeof key !== 'string') return true;
+          const attr = 'data-' + key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+          el.setAttribute(attr, String(value));
+          return true;
+        },
+      });
+    },
+  });
+}
+
 if (!ElementProto.addEventListener) {
   ElementProto.addEventListener = function (type, fn) {
     const map = this.__listeners__ || (this.__listeners__ = new Map());
@@ -105,6 +146,7 @@ const {
   connectionPill,
   updatePill,
   throttleLeadingTrailing,
+  resultCard,
 } = await import('../app/components.js');
 
 // --- pill ------------------------------------------------------------
@@ -363,4 +405,87 @@ test('stationArt: size prop sets the wrapper width/height', () => {
   // xmldom keeps style as a string attribute; just probe substrings.
   const style = a.getAttribute('style') || '';
   assert.ok(style.includes('72px'), `expected 72px in style, got "${style}"`);
+});
+
+// --- resultCard ------------------------------------------------------
+
+function classOf(el) { return el.getAttribute('class') || ''; }
+
+function findFirstByClass(root, cls) {
+  if (classOf(root).split(/\s+/).includes(cls)) return root;
+  for (let i = 0; i < (root.childNodes || []).length; i++) {
+    const n = root.childNodes[i];
+    if (n && n.nodeType === 1) {
+      const found = findFirstByClass(n, cls);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+test('resultCard: art, name, location and bitrate render', () => {
+  const c = resultCard({
+    sid:      's12345',
+    name:     'KEXP 90.3',
+    art:      'http://example/art.png',
+    location: 'Seattle, WA',
+    genre:    'Alternative',
+    bitrate:  128,
+    codec:    'mp3',
+  });
+  assert.equal(c.tagName, 'a');
+  assert.ok(classOf(c).includes('result-card'));
+  assert.equal(c.getAttribute('href'), '#/station/s12345');
+
+  const art = findFirstByClass(c, 'station-art');
+  assert.ok(art, 'station-art slot present');
+  const img = art.firstChild;
+  assert.equal(img.tagName, 'img');
+  assert.equal(img.src, 'http://example/art.png');
+
+  const nameEl = findFirstByClass(c, 'result-card__name');
+  assert.equal(nameEl.textContent, 'KEXP 90.3');
+
+  const metaText = findFirstByClass(c, 'result-card__meta-text');
+  assert.equal(metaText.textContent, 'Seattle, WA · Alternative');
+
+  const tag = findFirstByClass(c, 'result-card__pill');
+  assert.ok(tag, 'kbps pill present');
+  // pill renders text in a child .pill__text span.
+  const tagText = findFirstByClass(tag, 'pill__text');
+  assert.equal(tagText.textContent, '128 kbps · MP3');
+});
+
+test('resultCard: long names get the truncating class for ellipsis', () => {
+  const c = resultCard({
+    sid:  's00001',
+    name: 'A Spectacularly Long Station Name That Should Be Forced To Truncate',
+  });
+  const nameEl = findFirstByClass(c, 'result-card__name');
+  assert.ok(classOf(nameEl).includes('result-card__name'),
+    'truncation class applied (.result-card__name carries white-space:nowrap + ellipsis)');
+});
+
+test('resultCard: meta line is omitted when no metadata is present', () => {
+  const c = resultCard({ sid: 's00001', name: 'Bare' });
+  assert.equal(findFirstByClass(c, 'result-card__meta'), null);
+});
+
+test('resultCard: kbps pill omitted when bitrate is zero or missing', () => {
+  const c = resultCard({ sid: 's00001', name: 'Bare', location: 'Earth' });
+  assert.equal(findFirstByClass(c, 'result-card__pill'), null);
+});
+
+test('resultCard: codec without bitrate still shows a pill', () => {
+  const c = resultCard({ sid: 's00001', name: 'Codec only', codec: 'aac' });
+  const tag = findFirstByClass(c, 'result-card__pill');
+  assert.ok(tag);
+  const tagText = findFirstByClass(tag, 'pill__text');
+  assert.equal(tagText.textContent, 'AAC');
+});
+
+test('resultCard: falls back to sid for the name when name is missing', () => {
+  const c = resultCard({ sid: 's42' });
+  const nameEl = findFirstByClass(c, 'result-card__name');
+  assert.equal(nameEl.textContent, 's42');
 });
