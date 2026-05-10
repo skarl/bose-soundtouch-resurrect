@@ -4,7 +4,7 @@
 // Surface:
 //   tunein*              — TuneIn forwarder (search / browse / station / probe)
 //   speakerNowPlaying()  — speaker proxy /now_playing
-//   getNowPlaying()      — alias of speakerNowPlaying() (canonical 0.3+ name)
+//   getNowPlaying()      — alias of speakerNowPlaying() (canonical name)
 //   parseNowPlayingXml() — shared parser used by REST and WS paths
 //   parseNowPlayingEl()  — same parser for an already-parsed DOM element
 //   getVolume(), postVolume() — GET/POST /speaker/volume
@@ -148,8 +148,8 @@ export function parseNowPlayingEl(np) {
   };
 }
 
-// Canonical 0.3+ name; speakerNowPlaying kept as the legacy alias the
-// 0.2 polling code in views/now-playing.js still imports.
+// getNowPlaying is the canonical name; speakerNowPlaying is kept as an
+// alias because the polling path in views/now-playing.js imports it directly.
 export { speakerNowPlaying as getNowPlaying };
 
 // --- presets --------------------------------------------------------
@@ -350,9 +350,8 @@ export async function getSources() {
 
 // POST /cgi-bin/api/v1/speaker/select — switch to a streaming source.
 // contentItem: { source, sourceAccount, type?, location? }
-// Sends a minimal <ContentItem> that lets the speaker resume its last
-// known position for that source. Full resume UX (specific station or
-// playlist) is 0.4 territory.
+// Sends a minimal <ContentItem> that resumes the speaker's last-known
+// position for that source. Station-level deep-link is a future improvement.
 export async function postSelect(contentItem) {
   const { source, sourceAccount = '', type = '', location = '' } = contentItem;
   const xml = `<ContentItem source="${source}" sourceAccount="${sourceAccount}" type="${type}" location="${location}"/>`;

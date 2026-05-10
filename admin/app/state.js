@@ -56,8 +56,8 @@ export const store = observable({
     info:       null,   // {deviceID, name, type, firmwareVersion, ...}
     nowPlaying: null,   // {source, item, track, artist, art, playStatus}
     presets:    null,   // [{slot, source, type, location, itemName, art}, ...]
-    volume:     null,   // 0.3+
-    sources:    null,   // 0.3+
+    volume:     null,   // {targetVolume, actualVolume, muteEnabled}
+    sources:    null,   // [{source, sourceAccount, displayName, status, isLocal}, ...]
   },
   caches: {
     probe:          new Map(),               // sid -> {kind, streams?, reason?, expires}

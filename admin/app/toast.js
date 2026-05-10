@@ -3,8 +3,8 @@
 // it. Stateless on purpose: no store coupling, no queue. Each call
 // creates a node that auto-removes after the dwell.
 //
-// Used by the station detail view's preset-assign feedback. Other call
-// sites (0.3 "pressed on speaker" toasts) can reuse showToast() as-is.
+// Used by the station detail view's preset-assign feedback and by ws.js
+// for "pressed on speaker" toasts.
 
 const CONTAINER_ID = 'toast-container';
 const DEFAULT_DWELL_MS = 2000;

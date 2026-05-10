@@ -29,8 +29,13 @@ emit_error() {
     printf '{"ok":false,"error":{"code":"%s","message":"%s"}}\n' "$code" "$msg"
 }
 
-# CSRF guard: same-origin or no Origin header (curl) → pass.
+# CSRF guard: same-origin or no cross-origin header (curl) → pass.
 # Cross-origin mutating request → 403.
+#
+# busybox httpd v1.19.4 does not forward the Origin header as HTTP_ORIGIN,
+# so we check HTTP_REFERER (which busybox DOES forward). A Referer that
+# starts with a different origin than HTTP_HOST is treated as cross-origin.
+# Absent Referer (curl, same-origin navigations) passes freely.
 case "${REQUEST_METHOD:-GET}" in
     POST|PUT|DELETE)
         case "${HTTP_ORIGIN:-}" in
@@ -42,6 +47,13 @@ case "${REQUEST_METHOD:-GET}" in
                 exit 0
                 ;;
         esac
+        REFERER_HOST=$(printf '%s' "${HTTP_REFERER:-}" | \
+            sed 's|^https\{0,1\}://||; s|/.*||')
+        if [ -n "$REFERER_HOST" ] && [ "$REFERER_HOST" != "${HTTP_HOST:-}" ]; then
+            emit_error 403 CSRF_BLOCKED \
+                "cross-origin mutating request rejected"
+            exit 0
+        fi
         ;;
 esac
 
@@ -97,15 +109,22 @@ case "$METHOD" in
         else
             : >"$REQ_FILE"
         fi
-        CT_HDR_ARGS=""
+        # Write a curl config file so the Content-Type header value is
+        # never word-split (POSIX sh has no arrays; unquoted expansion of
+        # "-H Content-Type: text/xml" hands curl three separate argv
+        # tokens and produces status 000). --config is safe with spaces.
+        CURL_CFG="$TMPDIR_FALLBACK/speaker-proxy.$$.cfg"
+        : >"$CURL_CFG"
         if [ -n "${CONTENT_TYPE:-}" ]; then
-            CT_HDR_ARGS="-H Content-Type: ${CONTENT_TYPE}"
+            printf 'header = "Content-Type: %s"\n' "${CONTENT_TYPE}" >"$CURL_CFG"
         fi
-        # shellcheck disable=SC2086
-        curl -s -X "$METHOD" -o "$BODY_FILE" \
+        # /select can block 3-4 s while the speaker switches; give it 10 s.
+        curl -s --config "$CURL_CFG" -X "$METHOD" -o "$BODY_FILE" \
              -w '%{http_code}\n%{content_type}\n' \
-             $CT_HDR_ARGS --data-binary "@$REQ_FILE" \
+             --max-time 10 \
+             --data-binary "@$REQ_FILE" \
              "$URL" >"$META_FILE" 2>/dev/null || : >"$META_FILE"
+        rm -f "$CURL_CFG"
         rm -f "$REQ_FILE"
         ;;
     *)
