@@ -1,29 +1,32 @@
 // settings — #/settings shell.
 //
-// Renders six collapsible <details> sections in the order
-// Speaker · Audio · Bluetooth · Multi-room · Network · System. Each
-// section's body is mounted via mountChild into a per-section sub-view
-// under app/views/settings/. Sub-views own their own subscriptions and
-// fetchers; the shell only wires the frame.
+// Renders seven collapsible <details> sections:
+//   Appearance · Speaker · Audio · Bluetooth · Multi-room · Network · System
 //
-// See admin/PLAN.md § View specs / settings.
+// Appearance, Speaker, and Audio are open by default; the rest start
+// collapsed. <details>.open is part of the live DOM (not torn down on
+// state change), so the user's expand/collapse choices persist for as
+// long as the view is mounted. Sub-views own their own subscriptions
+// and fetchers; the shell only wires the frame.
 
 import { html, mount, defineView, mountChild } from '../dom.js';
 
-import speakerSection   from './settings/speaker.js';
-import audioSection     from './settings/audio.js';
-import bluetoothSection from './settings/bluetooth.js';
-import multiroomSection from './settings/multiroom.js';
-import networkSection   from './settings/network.js';
-import systemSection    from './settings/system.js';
+import appearanceSection from './settings/appearance.js';
+import speakerSection    from './settings/speaker.js';
+import audioSection      from './settings/audio.js';
+import bluetoothSection  from './settings/bluetooth.js';
+import multiroomSection  from './settings/multiroom.js';
+import networkSection    from './settings/network.js';
+import systemSection     from './settings/system.js';
 
 const SECTIONS = [
-  { id: 'speaker',   label: 'Speaker',    view: speakerSection },
-  { id: 'audio',     label: 'Audio',      view: audioSection },
-  { id: 'bluetooth', label: 'Bluetooth',  view: bluetoothSection },
-  { id: 'multiroom', label: 'Multi-room', view: multiroomSection },
-  { id: 'network',   label: 'Network',    view: networkSection },
-  { id: 'system',    label: 'System',     view: systemSection },
+  { id: 'appearance', label: 'Appearance', view: appearanceSection, open: true },
+  { id: 'speaker',    label: 'Speaker',    view: speakerSection,    open: true },
+  { id: 'audio',      label: 'Audio',      view: audioSection,      open: true },
+  { id: 'bluetooth',  label: 'Bluetooth',  view: bluetoothSection,  open: false },
+  { id: 'multiroom',  label: 'Multi-room', view: multiroomSection,  open: false },
+  { id: 'network',    label: 'Network',    view: networkSection,    open: false },
+  { id: 'system',     label: 'System',     view: systemSection,     open: false },
 ];
 
 export default defineView({
@@ -41,6 +44,7 @@ export default defineView({
       const details = document.createElement('details');
       details.className = 'settings-section';
       details.dataset.section = section.id;
+      if (section.open) details.open = true;
 
       const summary = document.createElement('summary');
       summary.className = 'settings-section__summary';

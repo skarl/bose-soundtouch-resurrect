@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<nowPlaying source="BLUETOOTH" sourceAccount="">
+  <ContentItem source="BLUETOOTH" location="" sourceAccount="" isPresetable="false"/>
+  <track>Mr. Brightside</track>
+  <artist>The Killers</artist>
+  <playStatus>PLAY_STATE</playStatus>
+  <connectionStatusInfo status="CONNECTED" deviceName="Sven's iPhone"/>
+</nowPlaying>

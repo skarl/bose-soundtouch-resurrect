@@ -2430,3 +2430,210 @@ nav.routes a:hover {
 .search-empty-list {
   gap: 0.4rem;
 }
+
+/* --- Settings v2 additions ---------------------------------------- */
+
+/* Appearance picker — 4-way segmented control. */
+.settings-appearance {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.appearance-picker {
+  display: flex;
+  gap: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.2rem;
+  background: var(--bg-elevated, var(--bg));
+}
+
+.appearance-picker__opt {
+  flex: 1 1 0;
+  font: inherit;
+  font-weight: 500;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.appearance-picker__opt[data-active="true"] {
+  background: var(--bg);
+  border-color: var(--border);
+  font-weight: 600;
+}
+
+.appearance-picker__opt:hover {
+  background: var(--bg);
+}
+
+.appearance-picker__opt:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
+}
+
+.appearance-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .appearance-picker__opt {
+    transition: none;
+  }
+}
+
+/* Multi-room stub — single line of explanatory copy. */
+.settings-multiroom__stub {
+  margin: 0;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Bluetooth — shared dl rows shape with Network/System. */
+.bt-rows {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 0.85rem;
+  row-gap: 0.25rem;
+  margin: 0 0 0.5rem;
+}
+
+.bt-rows dt {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.bt-rows dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.bt-pairing-hint {
+  margin: 0.5rem 0 0;
+  color: var(--accent, currentColor);
+  font-size: 0.9rem;
+}
+
+.bt-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* Network — 4-bar signal indicator. data-fill on the wrapper drives
+   the per-bar visibility via [data-on="true"]. Heights ramp so the
+   widget reads as "more bars = stronger signal" at a glance. */
+.settings-network__signal {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.signal-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 1em;
+}
+
+.signal-bars__bar {
+  display: inline-block;
+  width: 3px;
+  background: var(--muted);
+  opacity: 0.35;
+  border-radius: 1px;
+}
+
+.signal-bars__bar:nth-child(1) { height: 30%; }
+.signal-bars__bar:nth-child(2) { height: 50%; }
+.signal-bars__bar:nth-child(3) { height: 75%; }
+.signal-bars__bar:nth-child(4) { height: 100%; }
+
+.signal-bars__bar[data-on="true"] {
+  background: var(--accent, currentColor);
+  opacity: 1;
+}
+
+/* WS activity log — fixed-height mono panel inside the System section. */
+.ws-log {
+  margin-top: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated, var(--bg));
+}
+
+.ws-log__summary {
+  cursor: pointer;
+  padding: 0.45rem 0.65rem;
+  font-weight: 500;
+  list-style: none;
+  user-select: none;
+}
+
+.ws-log__summary::-webkit-details-marker {
+  display: none;
+}
+
+.ws-log__summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 1rem;
+  margin-right: 0.25rem;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.ws-log[open] > .ws-log__summary::before {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-log__summary::before,
+  .settings-section__summary::before {
+    transition: none;
+  }
+}
+
+.ws-log__list {
+  margin: 0;
+  padding: 0.4rem 0.65rem;
+  list-style: none;
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  max-height: 240px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.ws-log__item {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.1rem 0;
+}
+
+.ws-log__ts {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.ws-log__tag {
+  color: var(--fg);
+  word-break: break-all;
+}
+
+.ws-log__empty {
+  margin: 0;
+  padding: 0.4rem 0.65rem;
+  color: var(--muted);
+  font-style: italic;
+  border-top: 1px solid var(--border);
+}
+

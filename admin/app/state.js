@@ -61,7 +61,9 @@ export const store = observable({
     probe:          new Map(),               // sid → Probe = {sid, verdict, tuneinJson, expires} — TTL 10 min
     recentlyViewed: [],                      // [{sid, name, art?}], in-memory only
   },
-  ws: { connected: false, mode: 'offline', lastEvent: null },
+  // recentEvents is a 50-entry FIFO ring of inbound WS frames (raw text +
+  // root tag), surfaced by the System settings section as a debug log.
+  ws: { connected: false, mode: 'offline', lastEvent: null, recentEvents: [] },
   ui: { toast: null, testPlaying: null, activeTab: 'now' },
 });
 

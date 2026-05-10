@@ -151,6 +151,16 @@ export function parseNowPlayingEl(np) {
     return el && el.textContent != null ? el.textContent : '';
   };
 
+  // <connectionStatusInfo deviceName="…" status="CONNECTED" /> rides
+  // alongside the BLUETOOTH source on /now_playing — Bo's firmware does
+  // not expose the active BT pairing anywhere else. Surfaced here so the
+  // settings/bluetooth view can read it without a second parse pass.
+  const csi = g(np, 'connectionStatusInfo');
+  const connection = csi ? {
+    deviceName: csi.getAttribute('deviceName') || '',
+    status:     csi.getAttribute('status') || '',
+  } : null;
+
   return {
     source:        np.getAttribute('source') || '',
     sourceAccount: np.getAttribute('sourceAccount') || '',
@@ -163,6 +173,7 @@ export function parseNowPlayingEl(np) {
     artist:     text('artist'),
     art:        text('art'),
     playStatus: text('playStatus'),
+    connection,
   };
 }
 
@@ -1054,23 +1065,17 @@ export async function getBluetoothInfo() {
 }
 
 // Parse the speaker's <BluetoothInfo> XML into:
-//   { paired: [{ name, mac }, ...] }
+//   { macAddress }
 //
-// Reference shapes (firmware does not publish a schema; observed):
-//   Empty:
-//     <BluetoothInfo/>
-//   or
-//     <BluetoothInfo><pairedList/></BluetoothInfo>
-//   Populated:
-//     <BluetoothInfo>
-//       <pairedList>
-//         <pairedDevice mac="AA:BB:CC:DD:EE:FF">My Phone</pairedDevice>
-//         ...
-//       </pairedList>
-//     </BluetoothInfo>
+// Reference shape (verified on Bo with iPhone actively paired):
+//   <BluetoothInfo BluetoothMACAddress="0CB2B709F837"/>
 //
-// Defensive: tolerates either tag-case (BluetoothInfo / bluetoothInfo) and
-// missing pairedList.
+// The firmware never materialises a <pairedList> — earlier releases of
+// this admin parsed one speculatively; the populated shape was never
+// observed in the wild. The currently-connected device is exposed via
+// /now_playing's <connectionStatusInfo> instead (see parseNowPlayingEl).
+//
+// Defensive: tolerates either tag-case (BluetoothInfo / bluetoothInfo).
 export function parseBluetoothInfoXml(xmlText) {
   if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
   const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
@@ -1083,18 +1088,14 @@ export function parseBluetoothInfoXml(xmlText) {
   return parseBluetoothInfoEl(root[0]);
 }
 
-// Parse an already-resolved <BluetoothInfo> DOM element.
+// Parse an already-resolved <BluetoothInfo> DOM element. Reads only the
+// speaker's own MAC; ignores any speculative children.
 export function parseBluetoothInfoEl(el) {
   if (!el) return null;
-  const devices = el.getElementsByTagName('pairedDevice');
-  const paired = [];
-  for (let i = 0; i < devices.length; i++) {
-    const d = devices[i];
-    const mac = d.getAttribute('mac') || d.getAttribute('MAC') || '';
-    const name = (d.textContent || '').trim();
-    paired.push({ name, mac });
-  }
-  return { paired };
+  const macAddress = el.getAttribute('BluetoothMACAddress') ||
+                     el.getAttribute('macAddress') ||
+                     '';
+  return { macAddress };
 }
 
 // POST /cgi-bin/api/v1/speaker/enterBluetoothPairing — one-shot. Bo's

@@ -1,4 +1,2 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<BluetoothInfo>
-  <pairedList/>
-</BluetoothInfo>
+<BluetoothInfo BluetoothMACAddress="0CB2B709F837"/>

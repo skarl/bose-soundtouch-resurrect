@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8" ?>
-<BluetoothInfo>
-  <pairedList>
-    <pairedDevice mac="AA:BB:CC:DD:EE:FF">Sven's Phone</pairedDevice>
-    <pairedDevice mac="11:22:33:44:55:66">MacBook Pro</pairedDevice>
-  </pairedList>
-</BluetoothInfo>

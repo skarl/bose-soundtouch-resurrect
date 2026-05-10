@@ -353,30 +353,33 @@ test('parseSystemTimeoutEl: parses a DOM element directly', async () => {
 });
 
 // --- parseBluetoothInfoXml ------------------------------------------
+// Bo's firmware exposes only the speaker's own MAC; <pairedList> never
+// materialises in practice (verified with iPhone actively paired). The
+// parser now reads only BluetoothMACAddress and ignores any speculative
+// children so a stray <pairedList> in the wild is silently tolerated.
 
-test('parseBluetoothInfoXml: empty pairedList returns paired=[]', async () => {
+test('parseBluetoothInfoXml: speaker MAC attribute populates macAddress', async () => {
   const xml = await fixture('bluetooth-info-empty.xml');
   const bt = parseBluetoothInfoXml(xml);
   assert.ok(bt, 'returns a non-null object');
-  assert.ok(Array.isArray(bt.paired), 'paired is an array');
-  assert.equal(bt.paired.length, 0);
+  assert.equal(bt.macAddress, '0CB2B709F837');
+  assert.equal(bt.paired, undefined, 'paired list is no longer surfaced');
 });
 
-test('parseBluetoothInfoXml: populated returns name+mac per device', async () => {
-  const xml = await fixture('bluetooth-info-populated.xml');
-  const bt = parseBluetoothInfoXml(xml);
-  assert.ok(bt);
-  assert.equal(bt.paired.length, 2);
-  assert.equal(bt.paired[0].name, "Sven's Phone");
-  assert.equal(bt.paired[0].mac, 'AA:BB:CC:DD:EE:FF');
-  assert.equal(bt.paired[1].name, 'MacBook Pro');
-  assert.equal(bt.paired[1].mac, '11:22:33:44:55:66');
-});
-
-test('parseBluetoothInfoXml: bare <BluetoothInfo/> returns paired=[]', () => {
+test('parseBluetoothInfoXml: bare <BluetoothInfo/> returns macAddress=""', () => {
   const bt = parseBluetoothInfoXml('<BluetoothInfo/>');
   assert.ok(bt);
-  assert.equal(bt.paired.length, 0);
+  assert.equal(bt.macAddress, '');
+});
+
+test('parseBluetoothInfoXml: speculative <pairedList> is ignored', () => {
+  const xml = '<BluetoothInfo BluetoothMACAddress="AABBCCDDEEFF">' +
+              '<pairedList><pairedDevice mac="11:22:33:44:55:66">Phone</pairedDevice></pairedList>' +
+              '</BluetoothInfo>';
+  const bt = parseBluetoothInfoXml(xml);
+  assert.ok(bt);
+  assert.equal(bt.macAddress, 'AABBCCDDEEFF');
+  assert.equal(bt.paired, undefined, 'pairedList shape is intentionally not parsed');
 });
 
 test('parseBluetoothInfoXml: empty string returns null', () => {
@@ -392,13 +395,31 @@ test('parseBluetoothInfoEl: null input returns null', () => {
 });
 
 test('parseBluetoothInfoEl: parses a DOM element directly', async () => {
-  const xml = await fixture('bluetooth-info-populated.xml');
+  const xml = await fixture('bluetooth-info-empty.xml');
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
   const els = doc.getElementsByTagName('BluetoothInfo');
   const bt = parseBluetoothInfoEl(els && els[0]);
   assert.ok(bt);
-  assert.equal(bt.paired.length, 2);
-  assert.equal(bt.paired[0].mac, 'AA:BB:CC:DD:EE:FF');
+  assert.equal(bt.macAddress, '0CB2B709F837');
+});
+
+// --- parseNowPlayingXml: connection (BT) ---------------------------
+
+test('parseNowPlayingXml: BLUETOOTH source carries connection info', async () => {
+  const xml = await fixture('now-playing-bluetooth.xml');
+  const np = parseNowPlayingXml(xml);
+  assert.ok(np);
+  assert.equal(np.source, 'BLUETOOTH');
+  assert.ok(np.connection, 'connection is set when <connectionStatusInfo> present');
+  assert.equal(np.connection.deviceName, "Sven's iPhone");
+  assert.equal(np.connection.status, 'CONNECTED');
+});
+
+test('parseNowPlayingXml: TUNEIN source has connection=null', async () => {
+  const xml = await fixture('now-playing-tunein.xml');
+  const np = parseNowPlayingXml(xml);
+  assert.ok(np);
+  assert.equal(np.connection, null);
 });
 
 // --- parseBassXml ---------------------------------------------------

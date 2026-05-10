@@ -119,7 +119,16 @@ export function init() {
 
 export function toggle() {
   const idx  = CYCLE.indexOf(_pref);
-  _pref      = CYCLE[(idx + 1) % CYCLE.length];
+  setTheme(CYCLE[(idx + 1) % CYCLE.length]);
+}
+
+// Set the active theme preference. Validates input against the cycle;
+// unknown values fall back to 'auto'. Mirrors toggle()'s side-effects:
+// persists the choice, applies the resolved palette synchronously, and
+// installs/removes the OS-prefers MQ listener as needed.
+export function setTheme(name) {
+  const next = VALID.has(name) ? name : 'auto';
+  _pref = next;
   savePref(_pref);
 
   clearMqListener();

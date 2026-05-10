@@ -1,8 +1,11 @@
-// system — settings sub-view: firmware, MAC, capabilities summary, recents.
+// system — settings sub-view: firmware, MAC, device ID, capabilities,
+// recents, refresh-stream-URLs button, and a 50-entry WS activity log.
 //
 // state.speaker.info is populated by speaker-state.js (no WS event).
-// state.speaker.recents is the speaker's recently-played list,
-// kept fresh by the recentsUpdated WS event.
+// state.speaker.recents is the speaker's recently-played list, kept
+// fresh by the recentsUpdated WS event.
+// state.ws.recentEvents is a FIFO ring of every inbound WS frame
+// (most-recent first); ws.js owns appending, this view just renders.
 
 import { html, mount, defineView } from '../../dom.js';
 import { getCapabilities } from '../../api.js';
@@ -23,8 +26,6 @@ function formatFirmware(raw) {
   return build ? `v${version} (build ${build})` : `v${version}`;
 }
 
-// Bose firmware reports MAC as a 12-hex-digit blob (e.g. "0CB2B709F837").
-// Insert colons for readability without mutating the source field.
 function formatMac(mac) {
   if (typeof mac !== 'string') return '';
   const hex = mac.replace(/[^0-9A-Fa-f]/g, '').toUpperCase();
@@ -33,7 +34,6 @@ function formatMac(mac) {
 }
 
 // `/v1/playback/station/s12345` → "s12345" (TUNEIN station IDs).
-// Anything else returns null so the row falls back to plain text.
 function tuneinStationId(location) {
   if (typeof location !== 'string') return null;
   const m = location.match(/\/station\/(s\d+)$/);
@@ -49,6 +49,14 @@ const CAP_FLAGS = [
   { key: 'clockDisplay',       label: 'Clock display' },
 ];
 
+function formatTs(ts) {
+  if (typeof ts !== 'number' || !isFinite(ts)) return '';
+  const d = new Date(ts);
+  // HH:MM:SS.mmm — local time, fixed-width for the mono log.
+  const pad = (n, w = 2) => String(n).padStart(w, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
 export default defineView({
   mount(root, store, _ctx, env) {
     mount(root, html`
@@ -56,6 +64,8 @@ export default defineView({
         <dl class="settings-system__rows">
           <dt>Firmware</dt><dd class="settings-system__firmware">—</dd>
           <dt>MAC address</dt><dd class="settings-system__mac">—</dd>
+          <dt>Device ID</dt><dd class="settings-system__deviceid">—</dd>
+          <dt>Uptime</dt><dd class="settings-system__uptime">Not exposed by firmware</dd>
           <dt>Capabilities</dt>
           <dd>
             <ul class="settings-system__caps"></ul>
@@ -73,26 +83,33 @@ export default defineView({
           <span class="settings-system__refresh-spinner" hidden aria-hidden="true"></span>
           <div class="settings-system__refresh-result" hidden></div>
         </div>
+        <details class="settings-system__ws-log ws-log">
+          <summary class="ws-log__summary">WebSocket activity</summary>
+          <ol class="ws-log__list" aria-live="off"></ol>
+          <p class="ws-log__empty" hidden>No events received yet.</p>
+        </details>
       </div>
     `);
 
     const firmwareEl    = root.querySelector('.settings-system__firmware');
     const macEl         = root.querySelector('.settings-system__mac');
+    const devIdEl       = root.querySelector('.settings-system__deviceid');
     const capsEl        = root.querySelector('.settings-system__caps');
     const recentsEl     = root.querySelector('.settings-system__recents');
     const recentsEmptyEl = root.querySelector('.settings-system__recents-empty');
     const refreshBtn    = root.querySelector('.settings-system__refresh-btn');
     const refreshSpinner = root.querySelector('.settings-system__refresh-spinner');
     const refreshResult = root.querySelector('.settings-system__refresh-result');
+    const wsLogList     = root.querySelector('.ws-log__list');
+    const wsLogEmpty    = root.querySelector('.ws-log__empty');
 
     function renderInfo(info) {
       const fw = formatFirmware(info && info.firmwareVersion);
       firmwareEl.textContent = fw || '—';
+      devIdEl.textContent = (info && info.deviceID) || '—';
     }
 
     function renderMac(network, info) {
-      // Prefer the active interface's MAC (matches what Network shows);
-      // fall back to /info's deviceID if /networkInfo hasn't landed yet.
       const raw = (network && network.macAddress) || (info && info.deviceID) || '';
       macEl.textContent = formatMac(raw) || '—';
     }
@@ -154,6 +171,34 @@ export default defineView({
       }
       recentsEl.hidden = false;
       recentsEmptyEl.hidden = true;
+    }
+
+    function renderWsLog(events) {
+      const list = Array.isArray(events) ? events : [];
+      wsLogList.textContent = '';
+      if (list.length === 0) {
+        wsLogList.hidden = true;
+        wsLogEmpty.hidden = false;
+        return;
+      }
+      for (const e of list) {
+        const li = document.createElement('li');
+        li.className = 'ws-log__item';
+
+        const ts = document.createElement('span');
+        ts.className = 'ws-log__ts';
+        ts.textContent = formatTs(e.ts);
+
+        const tag = document.createElement('span');
+        tag.className = 'ws-log__tag';
+        tag.textContent = e.tag || '(no tag)';
+
+        li.appendChild(ts);
+        li.appendChild(tag);
+        wsLogList.appendChild(li);
+      }
+      wsLogList.hidden = false;
+      wsLogEmpty.hidden = true;
     }
 
     function renderRefreshResult(envelope) {
@@ -253,6 +298,7 @@ export default defineView({
     renderMac(store.state.speaker.network, store.state.speaker.info);
     renderCapabilities(store.state.speaker.capabilities);
     renderRecents(store.state.speaker.recents);
+    renderWsLog(store.state.ws && store.state.ws.recentEvents);
 
     return {
       speaker(state) {
@@ -260,6 +306,9 @@ export default defineView({
         renderMac(state.speaker.network, state.speaker.info);
         renderCapabilities(state.speaker.capabilities);
         renderRecents(state.speaker.recents);
+      },
+      ws(state) {
+        renderWsLog(state.ws && state.ws.recentEvents);
       },
     };
   },
