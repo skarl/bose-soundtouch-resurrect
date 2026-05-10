@@ -1,5 +1,6 @@
-// system — settings sub-view: firmware, MAC, device ID, capabilities,
-// recents, refresh-stream-URLs button, and a 50-entry WS activity log.
+// system — settings sub-view: firmware, model, device ID, MAC,
+// capabilities, recents, resolver pill, refresh-stream-URLs button, and
+// a 50-entry WS activity log.
 //
 // state.speaker.info is populated by speaker-state.js (no WS event).
 // state.speaker.recents is the speaker's recently-played list, kept
@@ -10,21 +11,7 @@
 import { html, mount, defineView } from '../../dom.js';
 import { getCapabilities } from '../../api.js';
 import * as actions from '../../actions/index.js';
-
-// Firmware version strings on Bo look like
-//   "27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29"
-// — semantic-ish dotted version, then a whitespace-separated build tag.
-// We surface "v27.0.6" plus the first build number (46330) so the row
-// reads cleanly without leaking firmware vocabulary.
-function formatFirmware(raw) {
-  if (typeof raw !== 'string' || !raw.trim()) return '';
-  const head = raw.trim().split(/\s+/)[0];
-  const parts = head.split('.');
-  const version = parts.slice(0, 3).join('.');
-  const build   = parts[3];
-  if (!version) return raw.trim();
-  return build ? `v${version} (build ${build})` : `v${version}`;
-}
+import { pill } from '../../components.js';
 
 function formatMac(mac) {
   if (typeof mac !== 'string') return '';
@@ -40,6 +27,8 @@ function tuneinStationId(location) {
   return m ? m[1] : null;
 }
 
+// Boolean-shaped capability flags get human-readable labels; the
+// freeform <capabilities><capability name=…> list is appended after.
 const CAP_FLAGS = [
   { key: 'dspMonoStereo',      label: 'Mono/Stereo DSP' },
   { key: 'lrStereoCapable',    label: 'L/R stereo pair' },
@@ -57,32 +46,52 @@ function formatTs(ts) {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
 }
 
+// The resolver lives behind the same admin httpd as this SPA, on
+// localhost:8181 from the speaker's perspective. We don't probe it —
+// rendering "RUNNING" reflects the deploy contract, not a live status.
+const RESOLVER_PORT = 8181;
+
 export default defineView({
   mount(root, store, _ctx, env) {
     mount(root, html`
       <div class="settings-system" data-section="system">
-        <dl class="settings-system__rows">
-          <dt>Firmware</dt><dd class="settings-system__firmware">—</dd>
-          <dt>MAC address</dt><dd class="settings-system__mac">—</dd>
-          <dt>Device ID</dt><dd class="settings-system__deviceid">—</dd>
-          <dt>Uptime</dt><dd class="settings-system__uptime">Not exposed by firmware</dd>
-          <dt>Capabilities</dt>
-          <dd>
-            <ul class="settings-system__caps"></ul>
-          </dd>
-          <dt>Recents</dt>
-          <dd>
-            <ol class="settings-system__recents"></ol>
-            <p class="settings-system__recents-empty" hidden>No recent items</p>
-          </dd>
-        </dl>
-        <div class="settings-system__refresh">
-          <button class="settings-system__refresh-btn" type="button">
-            Refresh all preset stream URLs
+        <div class="settings-row">
+          <span class="settings-row__label">Firmware</span>
+          <span class="settings-row__control mono settings-system__firmware">—</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-row__label">Model</span>
+          <span class="settings-row__control settings-system__model">—</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-row__label">Device ID</span>
+          <span class="settings-row__control mono settings-system__deviceid">—</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-row__label">MAC address</span>
+          <span class="settings-row__control mono settings-system__mac">—</span>
+        </div>
+        <div class="settings-row settings-row--wrap">
+          <span class="settings-row__label">Capabilities</span>
+          <span class="settings-row__control mono settings-system__caps">—</span>
+        </div>
+        <div class="settings-row settings-row--wrap">
+          <span class="settings-row__label">Recents</span>
+          <span class="settings-row__control settings-system__recents">—</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-row__label">Resolver</span>
+          <span class="settings-row__control settings-system__resolver"></span>
+        </div>
+
+        <div class="settings-actions">
+          <button class="settings-btn settings-system__refresh-btn" type="button">
+            Refresh stream URLs
           </button>
           <span class="settings-system__refresh-spinner" hidden aria-hidden="true"></span>
-          <div class="settings-system__refresh-result" hidden></div>
         </div>
+        <div class="settings-system__refresh-result" hidden></div>
+
         <details class="settings-system__ws-log ws-log">
           <summary class="ws-log__summary">WebSocket activity</summary>
           <ol class="ws-log__list" aria-live="off"></ol>
@@ -92,20 +101,31 @@ export default defineView({
     `);
 
     const firmwareEl    = root.querySelector('.settings-system__firmware');
+    const modelEl       = root.querySelector('.settings-system__model');
     const macEl         = root.querySelector('.settings-system__mac');
     const devIdEl       = root.querySelector('.settings-system__deviceid');
     const capsEl        = root.querySelector('.settings-system__caps');
     const recentsEl     = root.querySelector('.settings-system__recents');
-    const recentsEmptyEl = root.querySelector('.settings-system__recents-empty');
+    const resolverEl    = root.querySelector('.settings-system__resolver');
     const refreshBtn    = root.querySelector('.settings-system__refresh-btn');
     const refreshSpinner = root.querySelector('.settings-system__refresh-spinner');
     const refreshResult = root.querySelector('.settings-system__refresh-result');
     const wsLogList     = root.querySelector('.ws-log__list');
     const wsLogEmpty    = root.querySelector('.ws-log__empty');
 
+    // Resolver pill is built once and updated only if we ever start
+    // probing health (we don't today).
+    const resolverPill = pill({ tone: 'live', pulse: true, text: 'RUNNING' });
+    const resolverPort = document.createElement('span');
+    resolverPort.className = 'mono';
+    resolverPort.textContent = `:${RESOLVER_PORT}`;
+    resolverEl.appendChild(resolverPill);
+    resolverEl.appendChild(resolverPort);
+
     function renderInfo(info) {
-      const fw = formatFirmware(info && info.firmwareVersion);
-      firmwareEl.textContent = fw || '—';
+      const fw = (info && info.firmwareVersion) || '';
+      firmwareEl.textContent = fw.trim() || '—';
+      modelEl.textContent = (info && info.type) || '—';
       devIdEl.textContent = (info && info.deviceID) || '—';
     }
 
@@ -115,41 +135,31 @@ export default defineView({
     }
 
     function renderCapabilities(caps) {
-      capsEl.textContent = '';
-      if (!caps) return;
-      const flags = CAP_FLAGS.filter((f) => caps[f.key]);
-      const named = Array.isArray(caps.capabilities) ? caps.capabilities : [];
-      if (flags.length === 0 && named.length === 0) {
-        const li = document.createElement('li');
-        li.className = 'settings-system__caps-empty';
-        li.textContent = 'No capabilities reported';
-        capsEl.appendChild(li);
+      if (!caps) {
+        capsEl.textContent = '—';
         return;
       }
-      for (const f of flags) {
-        const li = document.createElement('li');
-        li.textContent = f.label;
-        capsEl.appendChild(li);
-      }
-      for (const c of named) {
-        const li = document.createElement('li');
-        li.textContent = c.name;
-        capsEl.appendChild(li);
-      }
+      const flags = CAP_FLAGS.filter((f) => caps[f.key]).map((f) => f.label);
+      const named = Array.isArray(caps.capabilities)
+        ? caps.capabilities.map((c) => c.name).filter(Boolean)
+        : [];
+      const all = [...flags, ...named];
+      capsEl.textContent = all.length === 0 ? '—' : all.join(', ');
     }
 
     function renderRecents(recents) {
       recentsEl.textContent = '';
       const list = Array.isArray(recents) ? recents.slice(0, 5) : [];
       if (list.length === 0) {
-        recentsEl.hidden = true;
-        recentsEmptyEl.hidden = false;
+        recentsEl.classList.add('settings-muted');
+        recentsEl.textContent = 'No recent items';
         return;
       }
+      recentsEl.classList.remove('settings-muted');
+      const ol = document.createElement('ol');
+      ol.className = 'settings-system__recents-list';
       for (const r of list) {
         const li = document.createElement('li');
-        li.className = 'settings-system__recent';
-
         const sid = r.source === 'TUNEIN' ? tuneinStationId(r.location) : null;
         const labelText = r.itemName || r.location || r.source || '(unknown)';
         if (sid) {
@@ -160,17 +170,9 @@ export default defineView({
         } else {
           li.textContent = labelText;
         }
-
-        if (r.source) {
-          const tag = document.createElement('span');
-          tag.className = 'settings-system__recent-source';
-          tag.textContent = r.source;
-          li.appendChild(tag);
-        }
-        recentsEl.appendChild(li);
+        ol.appendChild(li);
       }
-      recentsEl.hidden = false;
-      recentsEmptyEl.hidden = true;
+      recentsEl.appendChild(ol);
     }
 
     function renderWsLog(events) {
@@ -290,7 +292,7 @@ export default defineView({
         if (env.signal.aborted) return;
         store.update('speaker', (s) => { s.speaker.capabilities = caps; });
       } catch (_err) {
-        // Non-fatal — leave the row empty.
+        // Non-fatal — leave the row at em-dash.
       }
     })();
 

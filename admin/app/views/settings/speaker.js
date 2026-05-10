@@ -1,6 +1,7 @@
 import { html, mount, defineView } from '../../dom.js';
 import { store } from '../../state.js';
 import * as actions from '../../actions/index.js';
+import { pill } from '../../components.js';
 
 // Bo's firmware exposes no /systemtimeoutCapabilities; mirror the
 // official app's set. Minutes; 0 = "Never".
@@ -18,27 +19,40 @@ export default defineView({
   mount(root) {
     mount(root, html`
       <div class="settings-speaker">
-        <label class="settings-row">
-          <span class="settings-label">Name</span>
-          <input class="settings-name" type="text" maxlength="64" autocomplete="off" spellcheck="false">
-        </label>
+        <div class="settings-row">
+          <span class="settings-row__label">Name</span>
+          <span class="settings-row__control">
+            <input class="settings-name settings-input" type="text" maxlength="64" autocomplete="off" spellcheck="false">
+          </span>
+        </div>
 
-        <label class="settings-row">
-          <span class="settings-label">Sleep timer</span>
-          <select class="settings-sleep"></select>
-        </label>
+        <div class="settings-row">
+          <span class="settings-row__label">Power</span>
+          <span class="settings-row__control settings-power"></span>
+        </div>
 
-        <div class="settings-row settings-row--inline">
-          <button class="settings-standby" type="button">Standby</button>
-          <button class="settings-wake" type="button">Wake</button>
+        <div class="settings-row">
+          <span class="settings-row__label">Sleep timer</span>
+          <span class="settings-row__control">
+            <select class="settings-sleep settings-input"></select>
+          </span>
+        </div>
+
+        <div class="settings-actions">
+          <button class="settings-btn settings-standby" type="button">Standby</button>
+          <button class="settings-btn settings-wake" type="button">Wake</button>
         </div>
       </div>
     `);
 
     const nameEl     = root.querySelector('.settings-name');
     const sleepEl    = root.querySelector('.settings-sleep');
+    const powerEl    = root.querySelector('.settings-power');
     const standbyEl  = root.querySelector('.settings-standby');
     const wakeEl     = root.querySelector('.settings-wake');
+
+    const powerPill = pill({ tone: 'ok', text: 'ON' });
+    powerEl.appendChild(powerPill);
 
     for (const o of SLEEP_TIMER_OPTIONS) {
       const opt = document.createElement('option');
@@ -71,8 +85,6 @@ export default defineView({
       nameDirty = false;
       try {
         await actions.setName(next);
-        // No WS event for name; mirror locally so the header pill updates
-        // without a full /info refetch.
         store.update('speaker', (s) => {
           if (!s.speaker.info) s.speaker.info = { name: next };
           else s.speaker.info = { ...s.speaker.info, name: next };
@@ -137,9 +149,14 @@ export default defineView({
     }
 
     function applyPower(np) {
-      const standby = np && np.source === 'STANDBY';
+      const standby = !!(np && np.source === 'STANDBY');
       wakeEl.disabled    = !standby;
-      standbyEl.disabled = !!standby;
+      standbyEl.disabled = standby;
+      powerPill.update({
+        tone: standby ? 'warn' : 'live',
+        pulse: !standby,
+        text: standby ? 'STANDBY' : 'ON',
+      });
     }
 
     const sp = store.state.speaker;

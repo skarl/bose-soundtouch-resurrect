@@ -1,10 +1,13 @@
-// Tests for the settings v2 sections (#61):
+// Tests for the settings v2 sections (#61) and the v2 polish pass:
 //   - Appearance picker wires through theme.setTheme()
 //   - Multi-room view renders the deferred-feature stub
 //   - Bluetooth view shows the speaker MAC and Now-Playing connection
 //   - Network view exposes signalBars()/signalBarsCount() and a 4-bar widget
 //   - WS log ring buffer caps at 50 entries (FIFO trim)
-//   - Settings shell renders seven <details> sections in the agreed order
+//   - Settings shell renders seven cards in the agreed order
+//   - Card headers are buttons that toggle aria-expanded on click
+//   - No "Low-power standby", "Send notification", or "Factory reset" leaks
+//     anywhere in the rendered settings tree
 //
 // Uses jsdom rather than @xmldom/xmldom because the views build DOM via
 // the html`` tag, which depends on <template>.content + querySelectorAll
@@ -274,13 +277,13 @@ test('ws.recentEvents: malformed payload still gets logged', () => {
 
 // --- Settings shell ---------------------------------------------------
 
-test('settings shell: renders seven <details> sections in the agreed order', () => {
+test('settings shell: renders seven cards in the agreed order', () => {
   const store = makeStore();
   const root = makeRoot();
   const destroy = settingsShell.init(root, store, {});
-  const detailsList = root.querySelectorAll('details.settings-section');
-  assert.equal(detailsList.length, 7, 'seven top-level sections');
-  const ids = Array.from(detailsList).map((d) => d.dataset.section);
+  const cards = root.querySelectorAll('.settings-card');
+  assert.equal(cards.length, 7, 'seven top-level cards');
+  const ids = Array.from(cards).map((c) => c.dataset.section);
   assert.deepEqual(ids, [
     'appearance', 'speaker', 'audio', 'bluetooth',
     'multiroom',  'network', 'system',
@@ -288,14 +291,55 @@ test('settings shell: renders seven <details> sections in the agreed order', () 
   destroy();
 });
 
-test('settings shell: appearance / speaker / audio are open by default', () => {
+test('settings shell: only Appearance is open by default', () => {
   const store = makeStore();
   const root = makeRoot();
   const destroy = settingsShell.init(root, store, {});
-  const sections = root.querySelectorAll('details.settings-section');
-  const openIds = Array.from(sections)
-    .filter((d) => d.open)
-    .map((d) => d.dataset.section);
-  assert.deepEqual(openIds, ['appearance', 'speaker', 'audio']);
+  const cards = root.querySelectorAll('.settings-card');
+  const openIds = Array.from(cards)
+    .filter((c) => c.dataset.open === 'true')
+    .map((c) => c.dataset.section);
+  assert.deepEqual(openIds, ['appearance']);
+  destroy();
+});
+
+test('settings shell: clicking a header toggles aria-expanded', () => {
+  const store = makeStore();
+  const root = makeRoot();
+  const destroy = settingsShell.init(root, store, {});
+  const networkHeader = root.querySelector('.settings-card[data-section="network"] .settings-card__header');
+  assert.equal(networkHeader.getAttribute('aria-expanded'), 'false');
+  networkHeader.click();
+  assert.equal(networkHeader.getAttribute('aria-expanded'), 'true');
+  networkHeader.click();
+  assert.equal(networkHeader.getAttribute('aria-expanded'), 'false');
+  destroy();
+});
+
+test('settings shell: no low-power-standby / notification / factory-reset leaks', () => {
+  resetRealSpeaker();
+  realStore.state.speaker.bluetooth = { macAddress: '0CB2B709F837' };
+
+  const store = makeStore();
+  const root = makeRoot();
+  // Mount the shell against the real store so sub-views read live state.
+  const destroy = settingsShell.init(root, realStore, {});
+
+  // Open every card so all sub-views actually render their bodies.
+  for (const header of root.querySelectorAll('.settings-card__header')) {
+    if (header.getAttribute('aria-expanded') !== 'true') header.click();
+  }
+
+  const text = root.textContent.toLowerCase();
+  assert.ok(!text.includes('low-power'),    'no "low-power" copy');
+  assert.ok(!text.includes('low power'),    'no "low power" copy');
+  assert.ok(!text.includes('notification'), 'no notification UI');
+  assert.ok(!text.includes('factory reset'), 'no factory reset UI');
+
+  // Confirm there's also no Multi-room interactive controls.
+  const mrBody = root.querySelector('.settings-card[data-section="multiroom"] .settings-card__body');
+  assert.equal(mrBody.querySelectorAll('button, input, select').length, 0,
+    'multi-room body has no interactive controls');
+
   destroy();
 });

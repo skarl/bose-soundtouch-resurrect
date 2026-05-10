@@ -1,7 +1,7 @@
 // Network — read-only.
-// Displays the speaker's active interface (SSID, IP, MAC, signal). Wi-Fi
-// reconfiguration is intentionally out of scope (admin/PLAN.md § Out of
-// scope; SECURITY.md § LAN trust model).
+// Displays the speaker's active interface (SSID, IP, hostname, MAC,
+// signal). Wi-Fi reconfiguration is intentionally out of scope
+// (admin/PLAN.md § Out of scope; SECURITY.md § LAN trust model).
 //
 // The speaker reports a coarse 5-bucket signal label, not a numeric
 // dBm. We render both the label (so screen readers / search are happy)
@@ -57,29 +57,44 @@ export function signalBars(label) {
   return wrap;
 }
 
+function hostnameOf(info, net) {
+  const name = (info && info.name) || (net && net.name) || '';
+  if (!name) return '';
+  // Hostnames don't tolerate spaces or unicode; the speaker UPnP
+  // device-name allows both. Lowercase + replace whitespace with '-' so
+  // the .local form looks like something you could actually paste into
+  // a browser bar.
+  const slug = name.trim().toLowerCase().replace(/\s+/g, '-');
+  return slug ? `${slug}.local` : '';
+}
+
 export default defineView({
   mount(root, store, _ctx, env) {
     mount(root, html`
       <div class="settings-network" data-section="network">
-        <dl class="settings-network__rows">
-          <dt>SSID</dt><dd class="settings-network__ssid">—</dd>
-          <dt>IP address</dt><dd class="settings-network__ip">—</dd>
-          <dt>MAC address</dt><dd class="settings-network__mac">—</dd>
-          <dt>Hostname</dt><dd class="settings-network__host">—</dd>
-          <dt>Signal</dt>
-          <dd class="settings-network__signal">
-            <span class="settings-network__signal-bars"></span>
-            <span class="settings-network__signal-label">—</span>
-          </dd>
-        </dl>
-        <div class="settings-network__actions">
-          <button class="settings-network__refresh" type="button">Refresh</button>
+        <div class="settings-row">
+          <span class="settings-row__label">SSID</span>
+          <span class="settings-row__control mono settings-network__ssid">—</span>
         </div>
-        <p class="settings-network__note">
-          Network reconfiguration is not exposed by this admin UI. The
-          speaker's local API has no authentication on a trusted LAN —
-          see <a href="../SECURITY.md">SECURITY.md</a>.
-        </p>
+        <div class="settings-row">
+          <span class="settings-row__label">IP address</span>
+          <span class="settings-row__control mono settings-network__ip">—</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-row__label">Hostname</span>
+          <span class="settings-row__control mono settings-network__host">—</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-row__label">MAC address</span>
+          <span class="settings-row__control mono settings-network__mac">—</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-row__label">Signal</span>
+          <span class="settings-row__control settings-network__signal">
+            <span class="mono settings-network__signal-label">—</span>
+            <span class="settings-network__signal-bars"></span>
+          </span>
+        </div>
       </div>
     `);
 
@@ -89,16 +104,12 @@ export default defineView({
     const hostEl    = root.querySelector('.settings-network__host');
     const barsSlot  = root.querySelector('.settings-network__signal-bars');
     const labelEl   = root.querySelector('.settings-network__signal-label');
-    const refreshEl = root.querySelector('.settings-network__refresh');
 
     function render(net, info) {
       ssidEl.textContent  = (net && net.ssid)       || '—';
       ipEl.textContent    = (net && net.ipAddress)  || '—';
       macEl.textContent   = (net && net.macAddress) || '—';
-      // Bo reports the wifi interface name (wlan0/wlan1) rather than a
-      // hostname; speaker name from /info is the closest user-friendly
-      // identifier we have.
-      hostEl.textContent  = (info && info.name)     || (net && net.name) || '—';
+      hostEl.textContent  = hostnameOf(info, net) || '—';
 
       const lbl = signalLabel(net);
       labelEl.textContent = lbl || '—';
@@ -108,19 +119,14 @@ export default defineView({
     }
 
     async function refresh() {
-      refreshEl.disabled = true;
       try {
         const net = await getNetworkInfo();
         if (env.signal.aborted) return;
         store.update('speaker', (s) => { s.speaker.network = net; });
       } catch (_err) {
         // Network blip — keep the previously-rendered values.
-      } finally {
-        if (!env.signal.aborted) refreshEl.disabled = false;
       }
     }
-
-    refreshEl.addEventListener('click', refresh);
 
     render(store.state.speaker.network, store.state.speaker.info);
     if (!store.state.speaker.network) refresh();

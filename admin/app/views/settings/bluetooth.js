@@ -33,15 +33,19 @@ function connectedDevice(np) {
 export default defineView({
   mount(root, _store, _ctx, env) {
     mount(root, html`
-      <div class="bt-settings" data-section="bluetooth">
-        <dl class="bt-rows">
-          <dt>Bluetooth MAC</dt><dd class="bt-mac">—</dd>
-          <dt>Currently connected</dt><dd class="bt-connected">Not connected</dd>
-        </dl>
+      <div class="bt-settings settings-bluetooth" data-section="bluetooth">
+        <div class="settings-actions bt-actions">
+          <button class="settings-btn bt-pair" type="button">Enter pairing mode</button>
+          <button class="settings-btn bt-clear" type="button">Clear paired devices</button>
+        </div>
         <p class="bt-pairing-hint" hidden>Pairing mode active</p>
-        <div class="bt-actions">
-          <button class="bt-pair" type="button">Enter pairing mode</button>
-          <button class="bt-clear" type="button">Clear paired devices</button>
+        <div class="settings-row">
+          <span class="settings-row__label">Bluetooth MAC</span>
+          <span class="settings-row__control mono bt-mac">—</span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-row__label">Currently connected</span>
+          <span class="settings-row__control bt-connected">Not connected</span>
         </div>
       </div>
     `);
@@ -60,6 +64,8 @@ export default defineView({
     function applyConnection(np) {
       const dev = connectedDevice(np);
       connectedEl.textContent = dev || 'Not connected';
+      if (dev) connectedEl.classList.remove('settings-muted');
+      else connectedEl.classList.add('settings-muted');
     }
 
     async function refetch() {

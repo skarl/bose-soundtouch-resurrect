@@ -5,9 +5,9 @@
 // bassUpdated/balanceUpdated events mutate the slider thumb in place
 // via the {speaker(state)} updater.
 //
-// Mono/stereo is a one-shot: the radio's change handler calls
-// actions.setDSPMonoStereo and the next reconcile() / WS sweep refreshes
-// state.speaker.dspMonoStereo.
+// Mono/stereo is wired as a two-button toggle. The button's change
+// handler calls actions.setDSPMonoStereo and the next reconcile() / WS
+// sweep refreshes state.speaker.dspMonoStereo.
 
 import { html, mount, defineView } from '../../dom.js';
 import { getBassCapabilities, getBalanceCapabilities } from '../../api.js';
@@ -17,25 +17,43 @@ import { formatBassValueText, formatBalanceValueText } from '../../a11y.js';
 const BASS_FALLBACK    = { min: -9, max: 0,  def: 0 };
 const BALANCE_FALLBACK = { min: -7, max: 7,  def: 0 };
 
+function formatBass(level) {
+  if (typeof level !== 'number' || !Number.isFinite(level)) return '';
+  if (level > 0) return `+${level}`;
+  return String(level);
+}
+
+function formatBalance(level) {
+  if (typeof level !== 'number' || !Number.isFinite(level)) return '';
+  if (level === 0) return 'C';
+  return level < 0 ? `L${-level}` : `R${level}`;
+}
+
 export default defineView({
   mount(root, store, _ctx, env) {
     mount(root, html`
       <div class="settings-audio">
-        <div class="settings-row settings-row--bass">
+        <div class="settings-row settings-row--slider settings-row--bass">
           <label class="settings-row__label" for="settings-bass">Bass</label>
-          <input class="settings-slider" id="settings-bass" type="range" step="1" disabled>
-          <output class="settings-row__value" for="settings-bass"></output>
+          <span class="settings-row__control">
+            <input class="settings-slider" id="settings-bass" type="range" step="1" disabled>
+            <output class="settings-row__value mono" for="settings-bass"></output>
+          </span>
         </div>
-        <div class="settings-row settings-row--balance">
+        <div class="settings-row settings-row--slider settings-row--balance">
           <label class="settings-row__label" for="settings-balance">Balance</label>
-          <input class="settings-slider" id="settings-balance" type="range" step="1" disabled>
-          <output class="settings-row__value" for="settings-balance"></output>
+          <span class="settings-row__control">
+            <input class="settings-slider" id="settings-balance" type="range" step="1" disabled>
+            <output class="settings-row__value mono" for="settings-balance"></output>
+          </span>
         </div>
-        <fieldset class="settings-row settings-row--mono">
-          <legend class="settings-row__label">Channel</legend>
-          <label><input type="radio" name="settings-mono" value="stereo"> Stereo</label>
-          <label><input type="radio" name="settings-mono" value="mono"> Mono</label>
-        </fieldset>
+        <div class="settings-row settings-row--mono">
+          <span class="settings-row__label">Mono / stereo</span>
+          <span class="settings-row__control settings-toggle" role="radiogroup" aria-label="Channel mode">
+            <button class="settings-btn settings-toggle__opt" type="button" data-mode="stereo">Stereo</button>
+            <button class="settings-btn settings-toggle__opt" type="button" data-mode="mono">Mono</button>
+          </span>
+        </div>
       </div>
     `);
 
@@ -43,14 +61,14 @@ export default defineView({
     const bassOut   = root.querySelector('.settings-row--bass .settings-row__value');
     const balEl     = root.querySelector('#settings-balance');
     const balOut    = root.querySelector('.settings-row--balance .settings-row__value');
-    const monoRadios = root.querySelectorAll('input[name="settings-mono"]');
+    const monoBtns  = root.querySelectorAll('.settings-toggle__opt');
 
     function applyBass(bass) {
       if (!bass) return;
       const level = bass.targetBass;
       if (typeof level !== 'number') return;
       if (bassEl.value !== String(level)) bassEl.value = String(level);
-      bassOut.textContent = String(level);
+      bassOut.textContent = formatBass(level);
       bassEl.setAttribute('aria-valuetext',
         formatBassValueText(level, Number(bassEl.min) || BASS_FALLBACK.min, Number(bassEl.max) || BASS_FALLBACK.max));
     }
@@ -60,21 +78,23 @@ export default defineView({
       const level = balance.targetBalance;
       if (typeof level !== 'number') return;
       if (balEl.value !== String(level)) balEl.value = String(level);
-      balOut.textContent = String(level);
+      balOut.textContent = formatBalance(level);
       balEl.setAttribute('aria-valuetext',
         formatBalanceValueText(level, Number(balEl.min) || BALANCE_FALLBACK.min, Number(balEl.max) || BALANCE_FALLBACK.max));
     }
 
     function applyMono(dsp) {
       const mode = dsp && dsp.mode === 'mono' ? 'mono' : 'stereo';
-      for (const r of monoRadios) {
-        r.checked = (r.value === mode);
+      for (const b of monoBtns) {
+        const active = b.dataset.mode === mode;
+        b.dataset.active = active ? 'true' : 'false';
+        b.setAttribute('aria-pressed', active ? 'true' : 'false');
       }
     }
 
     bassEl.addEventListener('input', () => {
       const v = Number(bassEl.value);
-      bassOut.textContent = String(v);
+      bassOut.textContent = formatBass(v);
       bassEl.setAttribute('aria-valuetext',
         formatBassValueText(v, Number(bassEl.min) || BASS_FALLBACK.min, Number(bassEl.max) || BASS_FALLBACK.max));
       actions.setBass(v);
@@ -82,16 +102,19 @@ export default defineView({
 
     balEl.addEventListener('input', () => {
       const v = Number(balEl.value);
-      balOut.textContent = String(v);
+      balOut.textContent = formatBalance(v);
       balEl.setAttribute('aria-valuetext',
         formatBalanceValueText(v, Number(balEl.min) || BALANCE_FALLBACK.min, Number(balEl.max) || BALANCE_FALLBACK.max));
       actions.setBalance(v);
     });
 
-    for (const r of monoRadios) {
-      r.addEventListener('change', () => {
-        if (!r.checked) return;
-        actions.setDSPMonoStereo(r.value).catch(() => {
+    for (const b of monoBtns) {
+      b.addEventListener('click', () => {
+        const mode = b.dataset.mode;
+        // Optimistic paint — keeps the toggle from flickering between
+        // commit and the next WS sweep.
+        applyMono({ mode });
+        actions.setDSPMonoStereo(mode).catch(() => {
           // Non-fatal — next reconcile() will resync from the speaker.
         });
       });
@@ -134,7 +157,6 @@ export default defineView({
       applyBalance(store.state.speaker.balance);
     })();
 
-    // Paint synchronously from current store before fetchers land.
     applyBass(store.state.speaker.bass);
     applyBalance(store.state.speaker.balance);
     applyMono(store.state.speaker.dspMonoStereo);
