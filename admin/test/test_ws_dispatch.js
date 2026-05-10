@@ -12,12 +12,15 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-// jsdom provides DOMParser (browser API) in Node. ws.js checks for
-// `typeof DOMParser` and falls back to a no-op when it's absent, so we
-// must inject it into globalThis before importing ws.js.
-import { JSDOM } from 'jsdom';
-const { DOMParser: JsdomDOMParser } = new JSDOM().window;
-globalThis.DOMParser = JsdomDOMParser;
+// @xmldom/xmldom provides a spec-compliant DOMParser without dragging
+// in a full DOM. ws.js calls `new DOMParser().parseFromString(text, …)`
+// and checks for `typeof DOMParser`, so we inject it into globalThis
+// before importing ws.js. The onError handler is a no-op so the
+// "malformed XML does not throw" test doesn't print xmldom warnings.
+import { DOMParser as XmldomDOMParser } from '@xmldom/xmldom';
+globalThis.DOMParser = class extends XmldomDOMParser {
+  constructor() { super({ onError: () => {} }); }
+};
 
 import { dispatch } from '../app/ws.js';
 

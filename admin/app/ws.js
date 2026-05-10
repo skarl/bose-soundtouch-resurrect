@@ -68,14 +68,21 @@ export function dispatch(xmlText, store) {
 
 // --- XML parsing ----------------------------------------------------
 
-// parseXml returns a Document or null. In the browser it uses
-// DOMParser; in Node (tests) it expects a DOMParser global injected by
-// the test harness.
+// parseXml returns a Document or null. Browser DOMParser signals a
+// parse failure by appending a <parsererror> node; @xmldom/xmldom (the
+// test runtime) throws instead. Handle both shapes so dispatch() can
+// stay simple.
 function parseXml(text) {
   if (typeof text !== 'string' || !text.trim()) return null;
   if (typeof DOMParser === 'undefined') return null;
-  const doc = new DOMParser().parseFromString(text, 'application/xml');
-  if (doc.querySelector('parsererror')) return null;
+  let doc;
+  try {
+    doc = new DOMParser().parseFromString(text, 'application/xml');
+  } catch (_err) {
+    return null;
+  }
+  if (!doc || !doc.documentElement) return null;
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
   return doc;
 }
 
