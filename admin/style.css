@@ -60,50 +60,6 @@
 /* Applied via [data-theme] on <html>; init() in theme.js sets the
    attribute synchronously before any paint, so there is no FOWT.     */
 
-[data-theme="light"] {
-  --bg:         #fff;
-  --fg:         #111;
-  --fg-muted:   #666;
-  --accent:     #0a66c2;
-  --border:     #e3e3e3;
-  --surface:    #fafafa;
-  --surface-hi: #f5f5f5;
-  --stream-sel: #e7f3ff;
-  --warn-bg:    #fff8c5;
-  --warn-border:#d4c95a;
-  --error-bg:   #fde4e4;
-  --error-border:#d49a9a;
-  --error-fg:   #7a1f1f;
-  --search-err: #b00020;
-  --pill-amber: #b07000;
-  --pill-green: #1a7f37;
-  --pill-red:   #b00020;
-  --toast-bg:   #222;
-  --toast-fg:   #fff;
-}
-
-[data-theme="dark"] {
-  --bg:         #15171a;
-  --fg:         #e8eaed;
-  --fg-muted:   #8b949e;
-  --accent:     #4d9cf8;
-  --border:     #30363d;
-  --surface:    #1c1f23;
-  --surface-hi: #21262d;
-  --stream-sel: #1b3554;
-  --warn-bg:    #2d2300;
-  --warn-border:#6b5a00;
-  --error-bg:   #2d0f0f;
-  --error-border:#6b2a2a;
-  --error-fg:   #f08080;
-  --search-err: #f08080;
-  --pill-amber: #d4a000;
-  --pill-green: #3fb950;
-  --pill-red:   #f85149;
-  --toast-bg:   #e8eaed;
-  --toast-fg:   #1c1f23;
-}
-
 [data-theme="graphite"] {
   --bg:         #f4f6f8;
   --fg:         #1b2026;
@@ -206,8 +162,6 @@
 
 /* Keep --muted in sync with --fg-muted inside each theme block so
    existing rules that reference var(--muted) still resolve correctly. */
-[data-theme="light"]    { --muted: var(--fg-muted); }
-[data-theme="dark"]     { --muted: var(--fg-muted); }
 [data-theme="graphite"] { --muted: var(--fg-muted); }
 [data-theme="cream"]    { --muted: var(--fg-muted); }
 [data-theme="terminal"] { --muted: var(--fg-muted); }
@@ -263,31 +217,10 @@ main {
   color: var(--muted);
 }
 
-/* --- app header (speaker name + connection pill + theme toggle) --- */
-
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.5rem 0;
-  margin-bottom: 0.5rem;
-  border-bottom: 1px solid var(--border);
-  min-height: 2rem;
-}
-
-.app-speaker-name {
-  font-weight: 600;
-  font-size: 0.95rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1 1 auto;
-}
-
-/* Connection-state pill. A small coloured dot + label.
-   Colour is driven by [data-state] so later states (reconnecting,
-   polling) only need a CSS rule, not a JS change. */
+/* --- connection-state pill --------------------------------------- */
+/* A small coloured dot + label. Colour is driven by [data-state] so
+   later states (reconnecting, polling) only need a CSS rule, not a
+   JS change. The shell header overrides the chrome lower down. */
 .conn-pill {
   display: inline-flex;
   align-items: center;
@@ -311,60 +244,6 @@ main {
 .conn-pill[data-state="offline"]      { color: var(--pill-red);   }
 .conn-pill[data-state="reconnecting"] { color: var(--pill-amber); }
 .conn-pill[data-state="polling"]      { color: var(--fg-muted);   }
-
-/* Theme-toggle button. Icon-only, no visible border at rest. */
-.theme-btn {
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  padding: 0.1rem 0.35rem;
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-  color: var(--muted);
-  flex-shrink: 0;
-}
-
-.theme-btn:hover {
-  border-color: var(--border);
-  color: var(--fg);
-}
-
-.settings-link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-  color: var(--muted);
-  font-size: 1rem;
-  line-height: 1;
-  padding: 0.1rem 0.35rem;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
-.settings-link:hover {
-  border-color: var(--border);
-  color: var(--fg);
-}
-
-nav.routes {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
-  font-size: 0.9rem;
-}
-
-nav.routes a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-nav.routes a:hover {
-  text-decoration: underline;
-}
 
 /* --- browse view ------------------------------------------------- */
 
