@@ -54,10 +54,15 @@ export function updatePill(pill, state) {
 }
 
 // Theme-toggle button for the app header. Clicking cycles the preference
-// (auto → light → dark → auto) and updates its own label. Does NOT
-// subscribe to any store key — theme is a pre-mount global, not reactive
-// store state.
-const THEME_GLYPHS = { auto: '◑', light: '☀', dark: '☾' };
+// (auto → graphite → cream → terminal → auto) and updates its own label.
+// Does NOT subscribe to any store key — theme is a pre-mount global, not
+// reactive store state.
+const THEME_GLYPHS = {
+  auto:     '◑',
+  graphite: '☀',
+  cream:    '◐',
+  terminal: '☾',
+};
 
 export function themeToggle() {
   const btn = document.createElement('button');

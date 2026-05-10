@@ -1,5 +1,61 @@
 /* SoundTouch admin — vanilla, mobile-first. */
 
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/Geist-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./fonts/Geist-500.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./fonts/Geist-600.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/Geist-700.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/Geist-Mono-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./fonts/Geist-Mono-500.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./fonts/Geist-Mono-600.woff2") format("woff2");
+}
+
 /* --- colour tokens ------------------------------------------------ */
 /* Applied via [data-theme] on <html>; init() in theme.js sets the
    attribute synchronously before any paint, so there is no FOWT.     */
@@ -48,6 +104,72 @@
   --toast-fg:   #1c1f23;
 }
 
+[data-theme="graphite"] {
+  --bg:         #f4f6f8;
+  --fg:         #1b2026;
+  --fg-muted:   #5a6672;
+  --accent:     #2f6fde;
+  --border:     #d6dde3;
+  --surface:    #eaeef2;
+  --surface-hi: #dfe5eb;
+  --stream-sel: #dde9fb;
+  --warn-bg:    #fff3c4;
+  --warn-border:#cdb24a;
+  --error-bg:   #fbe1e1;
+  --error-border:#c98a8a;
+  --error-fg:   #6f1c1c;
+  --search-err: #a30018;
+  --pill-amber: #9c6300;
+  --pill-green: #166f30;
+  --pill-red:   #a30018;
+  --toast-bg:   #1b2026;
+  --toast-fg:   #f4f6f8;
+}
+
+[data-theme="cream"] {
+  --bg:         #f6efe1;
+  --fg:         #3a2a14;
+  --fg-muted:   #806a4a;
+  --accent:     #a8651f;
+  --border:     #e3d6bd;
+  --surface:    #efe5d0;
+  --surface-hi: #e7dabd;
+  --stream-sel: #f1dfb4;
+  --warn-bg:    #fbeac1;
+  --warn-border:#c8a85a;
+  --error-bg:   #f3d6cf;
+  --error-border:#bc8a7a;
+  --error-fg:   #6a2210;
+  --search-err: #8a2a14;
+  --pill-amber: #a4720d;
+  --pill-green: #4a7a30;
+  --pill-red:   #8a2a14;
+  --toast-bg:   #3a2a14;
+  --toast-fg:   #f6efe1;
+}
+
+[data-theme="terminal"] {
+  --bg:         #07080a;
+  --fg:         #c5f5c0;
+  --fg-muted:   #6a8a68;
+  --accent:     #3fdc62;
+  --border:     #1c2a1d;
+  --surface:    #0c1110;
+  --surface-hi: #131c14;
+  --stream-sel: #133b1a;
+  --warn-bg:    #2a2200;
+  --warn-border:#6e5a00;
+  --error-bg:   #2a0a0a;
+  --error-border:#6e2424;
+  --error-fg:   #ff7a7a;
+  --search-err: #ff7a7a;
+  --pill-amber: #e0b020;
+  --pill-green: #3fdc62;
+  --pill-red:   #ff5a5a;
+  --toast-bg:   #c5f5c0;
+  --toast-fg:   #07080a;
+}
+
 /* Fallback: honour legacy :root custom properties for any env that
    renders before theme.js runs (e.g. prerender, print). Light values. */
 :root {
@@ -71,13 +193,24 @@
   --pill-red:   #b00020;
   --toast-bg:   #222;
   --toast-fg:   #fff;
+
+  --st-rowH:    56px;
+  --st-gap:     14px;
+  --st-pad:     16px;
+  --st-fz:      14.5px;
+  --st-fzSm:    12.5px;
+
+  font-family: "Geist", system-ui, sans-serif;
   font-size: 16px;
 }
 
 /* Keep --muted in sync with --fg-muted inside each theme block so
    existing rules that reference var(--muted) still resolve correctly. */
-[data-theme="light"] { --muted: var(--fg-muted); }
-[data-theme="dark"]  { --muted: var(--fg-muted); }
+[data-theme="light"]    { --muted: var(--fg-muted); }
+[data-theme="dark"]     { --muted: var(--fg-muted); }
+[data-theme="graphite"] { --muted: var(--fg-muted); }
+[data-theme="cream"]    { --muted: var(--fg-muted); }
+[data-theme="terminal"] { --muted: var(--fg-muted); }
 
 * { box-sizing: border-box; }
 
@@ -100,7 +233,7 @@ html, body {
   padding: 0;
   background: var(--bg);
   color: var(--fg);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Geist", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   line-height: 1.4;
 }
 
@@ -1558,7 +1691,7 @@ nav.routes a:hover {
 }
 
 .bt-paired-mac {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.8rem;
   color: var(--muted);
 }
@@ -1641,7 +1774,7 @@ nav.routes a:hover {
 }
 
 .settings-multiroom__member-label {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.85rem;
 }
 

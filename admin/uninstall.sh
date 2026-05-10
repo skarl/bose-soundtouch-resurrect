@@ -38,6 +38,7 @@ $SSH root@"$SPEAKER" '
     rm -f  /mnt/nv/resolver/style.css
     rm -f  /mnt/nv/resolver/ws-test.html
     rm -rf /mnt/nv/resolver/app
+    rm -rf /mnt/nv/resolver/fonts
     rm -rf /mnt/nv/resolver/cgi-bin/api/v1
     sync
 '

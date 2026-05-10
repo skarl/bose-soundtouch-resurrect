@@ -42,6 +42,7 @@ say "Pre-flight checks"
 [ -f "$ADMIN/index.html" ] || fail "admin/index.html missing — repo is incomplete?"
 [ -f "$ADMIN/style.css" ]  || fail "admin/style.css missing — repo is incomplete?"
 [ -d "$ADMIN/app" ]        || fail "admin/app/ missing — repo is incomplete?"
+[ -d "$ADMIN/fonts" ]      || fail "admin/fonts/ missing — repo is incomplete?"
 
 # SSH reachability
 $SSH root@"$SPEAKER" 'true' \
@@ -97,6 +98,11 @@ $SCP "$ADMIN/httpd.conf" root@"$SPEAKER":/mnt/nv/resolver/httpd.conf
 # busybox's quirkier ssh.
 $SSH root@"$SPEAKER" 'rm -rf /mnt/nv/resolver/app && mkdir -p /mnt/nv/resolver/app'
 $SCP -r "$STAGE/app/." root@"$SPEAKER":/mnt/nv/resolver/app/
+
+# Self-hosted Geist + Geist Mono. The CSS @font-face URLs are relative
+# to /, so they resolve to /fonts/* — keep the on-device path matching.
+$SSH root@"$SPEAKER" 'mkdir -p /mnt/nv/resolver/fonts'
+$SCP -r "$ADMIN/fonts/." root@"$SPEAKER":/mnt/nv/resolver/fonts/
 
 if [ -f "$STAGE/ws-test.html" ]; then
   $SCP "$STAGE/ws-test.html" root@"$SPEAKER":/mnt/nv/resolver/ws-test.html
