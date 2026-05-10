@@ -1,8 +1,5 @@
 // system — settings sub-view: firmware, MAC, capabilities summary, recents.
 //
-// All read-only. The notifications gizmo (#43) lands inside the
-// .settings-system__notif-slot container via mountChild in a later slice.
-//
 // state.speaker.info is populated by speaker-state.js (no WS event).
 // state.speaker.recents is the speaker's recently-played list,
 // kept fresh by the recentsUpdated WS event.
@@ -76,7 +73,6 @@ export default defineView({
           <span class="settings-system__refresh-spinner" hidden aria-hidden="true"></span>
           <div class="settings-system__refresh-result" hidden></div>
         </div>
-        <div class="settings-system__notif-slot"></div>
       </div>
     `);
 

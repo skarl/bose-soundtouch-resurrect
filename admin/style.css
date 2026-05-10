@@ -1363,14 +1363,6 @@ nav.routes a:hover {
   margin-left: 0.5rem;
 }
 
-.settings-system__notif-slot {
-  margin-top: 0.65rem;
-}
-
-.settings-system__notif-slot:empty {
-  display: none;
-}
-
 .settings-system__refresh {
   margin-top: 0.75rem;
   display: flex;
