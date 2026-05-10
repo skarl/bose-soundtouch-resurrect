@@ -20,7 +20,8 @@ globalThis.DOMParser = class extends XmldomDOMParser {
 };
 
 // Import after DOMParser is in place.
-import { FIELDS, reconcile, dispatch, setVolumeConfirmFn } from '../app/speaker-state.js';
+import { FIELDS, reconcile, dispatch } from '../app/speaker-state.js';
+import * as actions from '../app/actions/index.js';
 
 // --- Fixtures --------------------------------------------------------
 
@@ -177,20 +178,22 @@ test('dispatch: unknown tag → no-op', async () => {
   assert.equal(store.state.speaker.volume, null, 'state unchanged');
 });
 
-test('dispatch: volumeUpdated with confirmFn registered → afterApply receives actualVolume', async () => {
+test('dispatch: volumeUpdated → afterApply confirms actions slider with actualVolume', async () => {
   const xml = await wsFixture('volume-updated.xml');
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
   const child = doc.documentElement.children[0];
 
-  let received = null;
-  setVolumeConfirmFn((av) => { received = av; });
-
   const store = makeStore();
   await dispatch(child, store);
 
-  assert.equal(received, 32, 'confirmFn called with actualVolume');
-
-  setVolumeConfirmFn(null);
+  // confirm(32) was forwarded to the volume slider — a follow-up
+  // setVolume(32) is then a no-op (no POST queued, hasPending stays false).
+  // setVolume reads/writes the singleton store from state.js, so seed it there.
+  const { store: realStore } = await import('../app/state.js');
+  realStore.state.speaker.volume = { targetVolume: 32, actualVolume: 32, muteEnabled: false };
+  actions.setVolume(32);
+  assert.equal(actions.hasPending('volume'), false,
+    'confirm(32) gates a set(32) — no in-flight POST');
 });
 
 test('registry sanity: every entry with eventTag has parseInline and a fetcher', () => {

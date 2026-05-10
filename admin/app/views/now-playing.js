@@ -8,12 +8,10 @@
 
 import { html, mount } from '../dom.js';
 import { store } from '../state.js';
-import { speakerNowPlaying, presetsList, postSelect, postSelectLocalSource } from '../api.js';
+import { speakerNowPlaying, presetsList } from '../api.js';
 import { setArt } from '../art.js';
-import { postKey } from '../transport.js';
-import { volumeController } from '../volume.js';
+import * as actions from '../actions/index.js';
 import { vuDot, updateVuDot } from '../components.js';
-import { recordOutgoing } from '../io-ledger.js';
 
 const POLL_MS = 2000;
 const PRESET_SLOTS = 6;
@@ -258,9 +256,8 @@ async function onPresetClick(evt) {
   const idx = Number(slot) - 1;
   const p = store.state.speaker.presets && store.state.speaker.presets[idx];
   if (!p || p.empty) return;
-  recordOutgoing('preset', Number(slot));
   try {
-    await postSelect({
+    await actions.selectPreset(Number(slot), {
       source:        p.source,
       sourceAccount: p.sourceAccount || '',
       type:          p.type || '',
@@ -349,12 +346,11 @@ async function onSourceClick(evt) {
   const source = btn.dataset.source;
   const sourceAccount = btn.dataset.account || '';
   const isLocal = btn.dataset.local === 'true';
-  recordOutgoing('source');
   try {
     if (isLocal) {
-      await postSelectLocalSource(source);
+      await actions.selectLocalSource(source);
     } else {
-      await postSelect({ source, sourceAccount });
+      await actions.selectSource({ source, sourceAccount });
     }
   } catch (_err) {
     // Switch errors are non-fatal — the source pill state will self-correct
@@ -370,7 +366,7 @@ async function sendKey(key) {
   if (keyInFlight) return;
   keyInFlight = true;
   try {
-    await postKey(key);
+    await actions.pressKey(key);
   } finally {
     keyInFlight = false;
   }
@@ -479,10 +475,10 @@ export default {
     btnNext.addEventListener('click', onNext);
 
     sliderEl.addEventListener('input', () => {
-      volumeController.set(Number(sliderEl.value));
+      actions.setVolume(Number(sliderEl.value));
     });
 
-    muteEl.addEventListener('click', () => { volumeController.toggleMute(); });
+    muteEl.addEventListener('click', () => { actions.toggleMute(); });
 
     const sp = store.state.speaker;
     applyNowPlaying(sp.nowPlaying);

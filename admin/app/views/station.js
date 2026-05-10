@@ -19,11 +19,12 @@
 // See admin/PLAN.md § View specs / station detail.
 
 import { html, mount } from '../dom.js';
-import { tuneinStation, presetsList, previewStream } from '../api.js';
+import { tuneinStation, presetsList } from '../api.js';
 import { store, addRecentlyViewed } from '../state.js';
 import { showToast } from '../toast.js';
 import { setArt } from '../art.js';
 import { probe, assignToPreset, buildBosePayload } from '../probe.js';
+import { previewStream } from '../actions/index.js';
 
 const ASSIGN_SLOTS = 6;
 

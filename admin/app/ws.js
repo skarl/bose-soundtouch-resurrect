@@ -5,7 +5,7 @@
 
 import { reconcile, dispatch as speakerDispatch } from './speaker-state.js';
 import { showToast } from './toast.js';
-import { wasRecentOutgoing } from './io-ledger.js';
+import { wasRecent } from './actions/index.js';
 
 let socket = null;
 let userInitiatedClose = false;
@@ -56,7 +56,7 @@ function watchSpeakerButtons(store) {
     const ps = np && np.playStatus;
     if (ps !== prevPlayStatus) {
       if (prevPlayStatus !== null && (ps === 'PLAY_STATE' || ps === 'PAUSE_STATE')) {
-        if (!wasRecentOutgoing('transport')) {
+        if (!wasRecent('transport')) {
           showToast('Play/Pause pressed on speaker');
         }
       }
@@ -69,7 +69,7 @@ function watchSpeakerButtons(store) {
       ? `${np.source}:${(np.item && np.item.location) || ''}`
       : null;
     if (sourceKey !== null && sourceKey !== prevSource) {
-      if (prevSource !== null && !wasRecentOutgoing('source') && !wasRecentOutgoing('preset')) {
+      if (prevSource !== null && !wasRecent('source') && !wasRecent('preset')) {
         showToast('Source switched on speaker');
       }
       prevSource = sourceKey;
@@ -80,7 +80,7 @@ function watchSpeakerButtons(store) {
     // --- volume change ---
     const av = vol && vol.actualVolume;
     if (typeof av === 'number' && av !== prevVolume) {
-      if (prevVolume !== null && !wasRecentOutgoing('volume')) {
+      if (prevVolume !== null && !wasRecent('volume')) {
         const delta = Math.abs(av - prevVolume);
         if (delta > 1) {
           const now = Date.now();

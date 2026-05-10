@@ -7,7 +7,8 @@
 //
 // See admin/PLAN.md § State management and § REST API.
 
-import { tuneinProbe as _tuneinProbe, presetsAssign as _presetsAssign } from './api.js';
+import { tuneinProbe as _tuneinProbe } from './api.js';
+import { storePreset as _storePreset } from './actions/index.js';
 import { store } from './state.js';
 import { classify, reshape } from './reshape.js';
 
@@ -16,7 +17,7 @@ const PROBE_TTL_MS = 10 * 60 * 1000;   // 10 minutes
 // Swappable deps — test suite replaces these via _setDeps().
 let deps = {
   tuneinProbe: _tuneinProbe,
-  presetsAssign: _presetsAssign,
+  presetsAssign: _storePreset,
   setPresets: (list) => store.update('speaker', (s) => { s.speaker.presets = list; }),
 };
 
