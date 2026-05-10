@@ -13,16 +13,19 @@
 // the operator can see the full surface in one run.
 //
 // Playwright is expected on the host; the script does not install it.
-// On macOS with Homebrew + the `playwright` global package, link the
-// global node_modules into the cwd before running:
-//
-//   ln -sf /opt/homebrew/lib/node_modules ./node_modules
-//   SPEAKER_HOST=… node scripts/playwright-smoke.mjs
-//
-// (Or invoke from a directory that already resolves `playwright` —
-// e.g. /tmp/admin-smoke per the project memory recipe.)
+// We try a normal `import 'playwright'` first, then fall back to the
+// Homebrew global location on macOS so a globally-installed Playwright
+// works without symlinking node_modules into the repo.
 
-import { chromium } from 'playwright';
+const playwright = await (async () => {
+  try {
+    return await import('playwright');
+  } catch (err) {
+    if (err.code !== 'ERR_MODULE_NOT_FOUND') throw err;
+    return await import('/opt/homebrew/lib/node_modules/playwright/index.mjs');
+  }
+})();
+const { chromium } = playwright;
 
 const SPEAKER = process.env.SPEAKER_HOST;
 if (!SPEAKER) {
@@ -44,7 +47,7 @@ function section(name) { console.log(`\n=== ${name} ===`); }
 
 async function main() {
   const browser = await chromium.launch();
-  const context = await browser.newContext();
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
 
   page.on('pageerror', (e) => console.log(`  [pageerror] ${e.message}`));
