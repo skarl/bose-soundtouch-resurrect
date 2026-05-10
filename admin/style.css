@@ -1182,3 +1182,106 @@ nav.routes a:hover {
 .preset-modal-pane {
   /* Each pane is a full-width host for the search or browse sub-view. */
 }
+
+/* --- mobile-remote: container-query layout ----------------------- */
+/* Container queries (not @media) so the admin shapes itself to its
+   own frame width — important when embedded in a wider dashboard
+   iframe where the viewport would otherwise lie about available
+   space. Older browsers without container-query support fall through
+   the @supports guard and keep the unconditional desktop layout. */
+
+@supports (container-type: inline-size) {
+  .np-view,
+  [data-view="browse"],
+  [data-view="search"],
+  .station-detail,
+  .preset-modal {
+    container-type: inline-size;
+  }
+
+  @container (max-inline-size: 480px) {
+    /* Stack the now-playing card even if the outer viewport is wide. */
+    .np-card {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .np-art {
+      width: 5rem;
+      height: 5rem;
+    }
+
+    .np-art-wrap {
+      align-self: center;
+    }
+
+    /* Transport buttons: ≥44px tap target. */
+    .np-btn {
+      width: 2.75rem;
+      height: 2.75rem;
+    }
+
+    .np-btn--play {
+      width: 3.25rem;
+      height: 3.25rem;
+    }
+
+    /* Volume row: slider stretches the whole width; bump the mute
+       button and slider thumb to 44px tap targets. */
+    .np-mute {
+      width: 2.75rem;
+      height: 2.75rem;
+    }
+
+    .np-slider {
+      height: 8px;
+    }
+
+    .np-slider::-webkit-slider-thumb {
+      width: 28px;
+      height: 28px;
+    }
+
+    .np-slider::-moz-range-thumb {
+      width: 28px;
+      height: 28px;
+    }
+
+    /* Source pills: roomier hit area. */
+    .np-source-pill {
+      min-height: 2.75rem;
+      padding: 0.5rem 1rem;
+    }
+
+    /* Preset rows: wrap 6 slots into 3×2 instead of 6×1. */
+    .np-presets,
+    .preset-row,
+    .station-assign-row {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .np-preset {
+      min-height: 5.5rem;
+    }
+
+    .preset-slot {
+      min-height: 5.5rem;
+    }
+
+    /* Station detail: stack header art above text. */
+    .station-header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .station-stream-audition {
+      width: 2.75rem;
+      height: 2.75rem;
+      font-size: 1rem;
+    }
+
+    .station-assign-btn {
+      min-height: 2.75rem;
+    }
+  }
+}
