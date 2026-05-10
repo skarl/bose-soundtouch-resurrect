@@ -52,6 +52,17 @@ const SHAPES = {
     ['circle', { cx: '12', cy: '14', r: '4' }],
     ['line', { x1: '12', y1: '6', x2: '12.01', y2: '6' }],
   ],
+  // "Two speakers in sync" — narrower side-by-side cabinets so the glyph
+  // reads as multiple speakers rather than a wider single one. Used for
+  // the Settings → Multi-room section header.
+  multiroom: [
+    ['rect', { x: '3', y: '4', width: '8', height: '16', rx: '1.5', ry: '1.5' }],
+    ['circle', { cx: '7', cy: '14', r: '2.5' }],
+    ['line', { x1: '7', y1: '7', x2: '7.01', y2: '7' }],
+    ['rect', { x: '13', y: '4', width: '8', height: '16', rx: '1.5', ry: '1.5' }],
+    ['circle', { cx: '17', cy: '14', r: '2.5' }],
+    ['line', { x1: '17', y1: '7', x2: '17.01', y2: '7' }],
+  ],
   bt: [
     ['polyline', { points: '6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5' }],
   ],

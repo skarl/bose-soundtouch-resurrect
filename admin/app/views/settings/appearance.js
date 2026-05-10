@@ -19,21 +19,21 @@ export default defineView({
   mount(root) {
     mount(root, html`
       <div class="settings-appearance">
-        <div class="appearance-picker" role="radiogroup" aria-label="Colour theme">
+        <div class="settings-segment" role="radiogroup" aria-label="Colour theme">
         </div>
-        <p class="appearance-hint">
+        <p class="settings-hint">
           Auto follows the system light/dark setting (graphite or terminal).
           Cream is manual-only.
         </p>
       </div>
     `);
 
-    const pickerEl = root.querySelector('.appearance-picker');
+    const trackEl = root.querySelector('.settings-segment');
 
     const buttons = OPTIONS.map((opt) => {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'appearance-picker__opt';
+      btn.className = 'settings-segment__opt';
       btn.dataset.theme = opt.value;
       btn.setAttribute('role', 'radio');
       btn.setAttribute('aria-label', opt.label);
@@ -42,7 +42,7 @@ export default defineView({
         theme.setTheme(opt.value);
         paint();
       });
-      pickerEl.appendChild(btn);
+      trackEl.appendChild(btn);
       return btn;
     });
 

@@ -1,15 +1,17 @@
 // settings — #/settings shell.
 //
-// Renders seven collapsible <details> sections:
+// Renders seven collapsible cards (NOT <details>): each section is a
+// .settings-card with a button-driven header and a body region that
+// only mounts when expanded. Order:
 //   Appearance · Speaker · Audio · Bluetooth · Multi-room · Network · System
 //
-// Appearance, Speaker, and Audio are open by default; the rest start
-// collapsed. <details>.open is part of the live DOM (not torn down on
-// state change), so the user's expand/collapse choices persist for as
-// long as the view is mounted. Sub-views own their own subscriptions
-// and fetchers; the shell only wires the frame.
+// Default open: Appearance only (theme picker is the most-touched
+// control). The rest start collapsed; the user's expand/collapse choices
+// live in component state and persist for as long as the view is mounted
+// (no localStorage round-trip).
 
 import { html, mount, defineView, mountChild } from '../dom.js';
+import { icon } from '../icons.js';
 
 import appearanceSection from './settings/appearance.js';
 import speakerSection    from './settings/speaker.js';
@@ -20,43 +22,88 @@ import networkSection    from './settings/network.js';
 import systemSection     from './settings/system.js';
 
 const SECTIONS = [
-  { id: 'appearance', label: 'Appearance', view: appearanceSection, open: true },
-  { id: 'speaker',    label: 'Speaker',    view: speakerSection,    open: true },
-  { id: 'audio',      label: 'Audio',      view: audioSection,      open: true },
-  { id: 'bluetooth',  label: 'Bluetooth',  view: bluetoothSection,  open: false },
-  { id: 'multiroom',  label: 'Multi-room', view: multiroomSection,  open: false },
-  { id: 'network',    label: 'Network',    view: networkSection,    open: false },
-  { id: 'system',     label: 'System',     view: systemSection,     open: false },
+  { id: 'appearance', label: 'Appearance', icon: 'settings',  view: appearanceSection },
+  { id: 'speaker',    label: 'Speaker',    icon: 'speaker',   view: speakerSection    },
+  { id: 'audio',      label: 'Audio',      icon: 'music',     view: audioSection      },
+  { id: 'bluetooth',  label: 'Bluetooth',  icon: 'bt',        view: bluetoothSection  },
+  { id: 'multiroom',  label: 'Multi-room', icon: 'multiroom', view: multiroomSection  },
+  { id: 'network',    label: 'Network',    icon: 'wifi',      view: networkSection    },
+  { id: 'system',     label: 'System',     icon: 'cpu',       view: systemSection     },
 ];
+
+const DEFAULT_OPEN = new Set(['appearance']);
 
 export default defineView({
   mount(root, store, _ctx, env) {
     mount(root, html`
       <section class="settings-view" data-view="settings">
         <h1 class="settings-title">Settings</h1>
-        <div class="settings-sections"></div>
+        <div class="settings-cards"></div>
       </section>
     `);
 
-    const sectionsEl = root.querySelector('.settings-sections');
+    const cardsEl = root.querySelector('.settings-cards');
 
     for (const section of SECTIONS) {
-      const details = document.createElement('details');
-      details.className = 'settings-section';
-      details.dataset.section = section.id;
-      if (section.open) details.open = true;
+      const card = document.createElement('div');
+      card.className = 'settings-card';
+      card.dataset.section = section.id;
 
-      const summary = document.createElement('summary');
-      summary.className = 'settings-section__summary';
-      summary.textContent = section.label;
-      details.appendChild(summary);
+      const header = document.createElement('button');
+      header.type = 'button';
+      header.className = 'settings-card__header';
+      header.setAttribute('aria-expanded', 'false');
+      header.id = `settings-card-${section.id}-h`;
+
+      const iconEl = document.createElement('span');
+      iconEl.className = 'settings-card__icon';
+      iconEl.appendChild(icon(section.icon, 16));
+      header.appendChild(iconEl);
+
+      const labelEl = document.createElement('span');
+      labelEl.className = 'settings-card__label';
+      labelEl.textContent = section.label;
+      header.appendChild(labelEl);
+
+      const chevron = document.createElement('span');
+      chevron.className = 'settings-card__chevron';
+      chevron.appendChild(icon('arrow', 14));
+      header.appendChild(chevron);
 
       const body = document.createElement('div');
-      body.className = 'settings-section__body';
-      details.appendChild(body);
+      body.className = 'settings-card__body';
+      body.id = `settings-card-${section.id}-b`;
+      body.hidden = true;
+      header.setAttribute('aria-controls', body.id);
 
-      sectionsEl.appendChild(details);
-      mountChild(body, section.view, store, {}, env);
+      card.appendChild(header);
+      card.appendChild(body);
+      cardsEl.appendChild(card);
+
+      // Sub-views mount once on first expand. Mounting eagerly would
+      // wire every section's WS subscriber + auto-fetch even when the
+      // user only opens one card.
+      let mounted = false;
+      function ensureMounted() {
+        if (mounted) return;
+        mounted = true;
+        mountChild(body, section.view, store, {}, env);
+      }
+
+      function setOpen(next) {
+        const open = !!next;
+        header.setAttribute('aria-expanded', open ? 'true' : 'false');
+        card.dataset.open = open ? 'true' : 'false';
+        body.hidden = !open;
+        if (open) ensureMounted();
+      }
+
+      header.addEventListener('click', () => {
+        const open = header.getAttribute('aria-expanded') === 'true';
+        setOpen(!open);
+      });
+
+      setOpen(DEFAULT_OPEN.has(section.id));
     }
 
     return {};

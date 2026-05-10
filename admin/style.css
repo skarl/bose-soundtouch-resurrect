@@ -1312,149 +1312,230 @@ main {
   margin: 0 0 0.25rem;
 }
 
-.settings-sections {
+/* Card-with-chevron collapsibles. The header is a real <button>, so
+   focus-visible + Enter/Space + aria-expanded all work for free; the
+   body is hidden via [hidden] (also strips it from the a11y tree). */
+.settings-cards {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.settings-section {
+.settings-card {
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg-elevated, var(--bg));
+  overflow: hidden;
 }
 
-.settings-section__summary {
-  cursor: pointer;
-  padding: 0.6rem 0.85rem;
+.settings-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   font-weight: 600;
-  user-select: none;
-  list-style: none;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-align: left;
 }
 
-.settings-section__summary::-webkit-details-marker {
-  display: none;
+.settings-card__header:hover {
+  background: var(--surface, var(--bg));
 }
 
-.settings-section__summary::before {
-  content: '▸';
-  display: inline-block;
-  width: 1rem;
-  margin-right: 0.25rem;
+.settings-card__header:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: -2px;
+}
+
+.settings-card__icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.settings-card__label {
+  flex: 1;
+}
+
+.settings-card__chevron {
+  display: inline-flex;
+  align-items: center;
   color: var(--muted);
   transition: transform 0.15s ease;
 }
 
-.settings-section[open] > .settings-section__summary::before {
+.settings-card[data-open="true"] > .settings-card__header > .settings-card__chevron {
   transform: rotate(90deg);
 }
 
-.settings-section__body {
-  padding: 0.5rem 0.85rem 0.85rem;
+.settings-card__body {
   border-top: 1px solid var(--border);
 }
 
-.settings-section__body .placeholder {
-  color: var(--muted);
-  font-style: italic;
-  margin: 0;
+/* Clean row pattern for sub-views. Border-bottom between rows but not
+   on the last row so the body's bottom edge doesn't double-line with
+   the card border. */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
 }
 
-.settings-network__rows {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  column-gap: 0.85rem;
-  row-gap: 0.25rem;
-  margin: 0;
+.settings-row + .settings-row,
+.settings-actions + .settings-row,
+.settings-row + .settings-actions {
+  border-top: 1px solid var(--border);
 }
 
-.settings-network__rows dt {
-  color: var(--muted);
+.settings-row--wrap {
+  align-items: flex-start;
+}
+
+.settings-row__label {
+  font-size: 0.85rem;
+  color: var(--fg);
   font-weight: 500;
+  flex-shrink: 0;
 }
 
-.settings-network__rows dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
+.settings-row__control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  text-align: right;
+  min-width: 0;
 }
 
-.settings-network__actions {
-  margin-top: 0.5rem;
+.settings-row--wrap .settings-row__control {
+  text-align: left;
+  flex-wrap: wrap;
+  word-break: break-word;
 }
 
-.settings-network__refresh {
+.settings-row__value {
+  min-width: 28px;
+  text-align: right;
+  font-size: 0.8rem;
+}
+
+/* Shared input chrome for the rare row that takes user text input. */
+.settings-input {
   font: inherit;
-  padding: 0.25rem 0.65rem;
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  height: 28px;
+  padding: 0 8px;
   border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg-elevated, var(--bg));
-  cursor: pointer;
+  border-radius: 6px;
+  background: var(--surface, var(--bg));
+  color: var(--fg);
+  text-align: right;
+  width: 140px;
+  box-sizing: border-box;
 }
 
-.settings-network__refresh[disabled] {
+.settings-input:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
+}
+
+input.settings-input,
+select.settings-input {
+  /* iOS resets */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+select.settings-input {
+  padding-right: 22px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+                    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 13px) 12px, calc(100% - 8px) 12px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  text-align: left;
+}
+
+/* Action row (a horizontal cluster of buttons at the foot of a card). */
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.settings-btn {
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface, var(--bg));
+  color: var(--fg);
+  cursor: pointer;
+  line-height: 1.3;
+}
+
+.settings-btn:hover {
+  background: var(--bg-elevated, var(--bg));
+}
+
+.settings-btn:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
+}
+
+.settings-btn:disabled {
   opacity: 0.55;
   cursor: default;
 }
 
-.settings-network__note {
-  margin: 0.65rem 0 0;
+/* Two-button toggle (e.g. Stereo / Mono). The active opt picks up the
+   accent so the choice is unambiguous at a glance. */
+.settings-toggle {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.settings-toggle__opt[data-active="true"] {
+  background: var(--fg);
+  color: var(--bg);
+  border-color: var(--fg);
+}
+
+/* Slider rows lay the range + numeric output side by side. The slider
+   itself stretches; the output stays a fixed mono width. */
+.settings-row--slider .settings-row__control {
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.settings-row--slider .settings-slider {
+  flex: 1;
+  max-width: 220px;
+  min-width: 100px;
+}
+
+.settings-muted {
   color: var(--muted);
-  font-size: 0.85rem;
 }
 
-.settings-system__rows {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  column-gap: 0.85rem;
-  row-gap: 0.35rem;
-  margin: 0;
-  align-items: start;
-}
-
-.settings-system__rows dt {
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.settings-system__rows dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-.settings-system__caps,
-.settings-system__recents {
-  margin: 0;
-  padding-left: 1.1rem;
-}
-
-.settings-system__caps li,
-.settings-system__recents li {
-  margin: 0.1rem 0;
-}
-
-.settings-system__caps-empty,
-.settings-system__recents-empty {
-  color: var(--muted);
-  font-style: italic;
-  list-style: none;
-  margin-left: -1.1rem;
-}
-
-.settings-system__recent-source {
-  color: var(--muted);
-  font-size: 0.8rem;
-  margin-left: 0.5rem;
-}
-
-.settings-system__refresh {
-  margin-top: 0.75rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.settings-system__refresh-btn {
-  align-self: flex-start;
+/* Inline mono fragments inside a row. */
+.settings-row__control.mono,
+.settings-row__control .mono {
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
 }
 
 .settings-system__refresh-spinner {
@@ -1585,181 +1666,6 @@ main {
   }
 }
 
-/* --- bluetooth settings ------------------------------------------- */
-
-.bt-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.bt-paired {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.bt-paired-item {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-}
-
-.bt-paired-name {
-  font-weight: 500;
-}
-
-.bt-paired-mac {
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-
-.bt-empty {
-  color: var(--muted);
-  font-style: italic;
-  margin: 0;
-}
-
-.bt-pairing-hint {
-  margin: 0;
-  padding: 0.4rem 0.6rem;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--accent, #4a90e2) 15%, transparent);
-  color: var(--fg);
-  font-size: 0.9rem;
-}
-
-.bt-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.25rem;
-}
-
-.bt-pair,
-.bt-clear {
-  font: inherit;
-  padding: 0.4rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-  color: var(--fg);
-  cursor: pointer;
-}
-
-.bt-pair:hover,
-.bt-clear:hover {
-  background: var(--bg-elevated, var(--bg));
-}
-
-.bt-pair:disabled,
-.bt-clear:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-/* --- multi-room settings ------------------------------------------ */
-
-.settings-multiroom {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.settings-multiroom__status {
-  margin: 0;
-  font-weight: 500;
-}
-
-.settings-multiroom__members {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.settings-multiroom__member {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-}
-
-.settings-multiroom__member-label {
-  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.85rem;
-}
-
-.settings-multiroom__member-remove,
-.settings-multiroom__leave-btn,
-.settings-multiroom__add-btn {
-  font: inherit;
-  padding: 0.35rem 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-  color: var(--fg);
-  cursor: pointer;
-}
-
-.settings-multiroom__member-remove:hover,
-.settings-multiroom__leave-btn:hover,
-.settings-multiroom__add-btn:hover {
-  background: var(--bg-elevated, var(--bg));
-}
-
-.settings-multiroom__member-remove:disabled,
-.settings-multiroom__leave-btn:disabled,
-.settings-multiroom__add-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.settings-multiroom__add {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.25rem;
-}
-
-.settings-multiroom__add-label {
-  font-size: 0.9rem;
-  color: var(--muted);
-}
-
-.settings-multiroom__add-pick {
-  font: inherit;
-  padding: 0.3rem 0.4rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-  color: var(--fg);
-  min-width: 12rem;
-}
-
-.settings-multiroom__add-empty {
-  margin: 0;
-  color: var(--muted);
-  font-style: italic;
-  flex-basis: 100%;
-}
-
 /* --- confirm dialog ----------------------------------------------- */
 
 .confirm-backdrop {
@@ -1839,7 +1745,7 @@ main {
   .np-preset {
     transition: none;
   }
-  .settings-section__summary::before { transition: none; }
+  .settings-card__chevron { transition: none; }
   .settings-system__refresh-spinner { animation: none; }
 }
 
@@ -2702,115 +2608,97 @@ main {
 
 /* --- Settings v2 additions ---------------------------------------- */
 
-/* Appearance picker — 4-way segmented control. */
+/* Appearance — 4-way segmented control. The track is one box; each opt
+   sits flush so the active opt visually slides under the cursor. */
 .settings-appearance {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 12px;
+  padding: 14px;
 }
 
-.appearance-picker {
+.settings-segment {
   display: flex;
-  gap: 0.25rem;
+  gap: 4px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.2rem;
+  border-radius: 999px;
+  padding: 4px;
   background: var(--bg-elevated, var(--bg));
 }
 
-.appearance-picker__opt {
+.settings-segment__opt {
   flex: 1 1 0;
   font: inherit;
+  font-size: 0.82rem;
   font-weight: 500;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid transparent;
-  border-radius: 4px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 999px;
   background: transparent;
-  color: var(--fg);
+  color: var(--muted);
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-.appearance-picker__opt[data-active="true"] {
-  background: var(--bg);
-  border-color: var(--border);
+.settings-segment__opt[data-active="true"] {
+  background: var(--surface, var(--bg));
+  color: var(--fg);
   font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
-.appearance-picker__opt:hover {
-  background: var(--bg);
+.settings-segment__opt:hover {
+  color: var(--fg);
 }
 
-.appearance-picker__opt:focus-visible {
+.settings-segment__opt:focus-visible {
   outline: 2px solid var(--accent, currentColor);
   outline-offset: 2px;
 }
 
-.appearance-hint {
+.settings-hint {
   margin: 0;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  font-style: italic;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .appearance-picker__opt {
-    transition: none;
-  }
+/* Multi-room stub — single line of explanatory copy, padded to match
+   the .settings-row scale so the body height doesn't collapse. */
+.settings-multiroom {
+  padding: 14px;
 }
-
-/* Multi-room stub — single line of explanatory copy. */
 .settings-multiroom__stub {
   margin: 0;
   color: var(--muted);
   font-style: italic;
+  font-size: 0.85rem;
 }
 
-/* Bluetooth — shared dl rows shape with Network/System. */
-.bt-rows {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  column-gap: 0.85rem;
-  row-gap: 0.25rem;
-  margin: 0 0 0.5rem;
-}
-
-.bt-rows dt {
-  color: var(--muted);
-  font-weight: 500;
-}
-
-.bt-rows dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
-}
-
+/* Bluetooth — pairing hint sits between the action row and the rows;
+   a tight padded strip keeps it off the row separators. */
 .bt-pairing-hint {
-  margin: 0.5rem 0 0;
+  margin: 0;
+  padding: 8px 14px;
   color: var(--accent, currentColor);
-  font-size: 0.9rem;
-}
-
-.bt-actions {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-  flex-wrap: wrap;
+  font-size: 0.85rem;
+  border-top: 1px solid var(--border);
 }
 
 /* Network — 4-bar signal indicator. data-fill on the wrapper drives
    the per-bar visibility via [data-on="true"]. Heights ramp so the
    widget reads as "more bars = stronger signal" at a glance. */
 .settings-network__signal {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
 }
 
 .signal-bars {
   display: inline-flex;
   align-items: flex-end;
   gap: 2px;
-  height: 1em;
+  height: 12px;
 }
 
 .signal-bars__bar {
@@ -2831,18 +2719,37 @@ main {
   opacity: 1;
 }
 
-/* WS activity log — fixed-height mono panel inside the System section. */
+/* System — recents list packed inside a single row's control cell. */
+.settings-system__recents-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.8rem;
+}
+
+.settings-system__resolver {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* WS activity log — fixed-height mono panel inside the System section.
+   Lives at the bottom of the body so the row separators above stay
+   crisp; the panel adds its own border-top against the last row. */
 .ws-log {
-  margin-top: 1rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  margin: 0;
+  border-top: 1px solid var(--border);
   background: var(--bg-elevated, var(--bg));
 }
 
 .ws-log__summary {
   cursor: pointer;
-  padding: 0.45rem 0.65rem;
+  padding: 10px 14px;
   font-weight: 500;
+  font-size: 0.82rem;
   list-style: none;
   user-select: none;
 }
@@ -2865,8 +2772,9 @@ main {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ws-log__summary::before,
-  .settings-section__summary::before {
+  .settings-card__chevron,
+  .settings-segment__opt,
+  .ws-log__summary::before {
     transition: none;
   }
 }
