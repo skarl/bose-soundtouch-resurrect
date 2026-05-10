@@ -7,6 +7,37 @@
 
 import { setArt } from './art.js';
 
+// Connection-state pill. Returns a <span> node with data-state reflecting
+// state.ws.mode. The caller is responsible for subscribing to 'ws' and
+// calling updatePill(pill, state) when mode changes — never re-creating
+// the node.
+//
+// Supported data-state values (CSS drives colour via [data-state="…"]):
+//   connecting  — socket opened, hello not yet received
+//   ws          — live WebSocket, hello received
+//   offline     — socket closed or error
+//   reconnecting, polling — reserved for slice 2; no-op here
+const PILL_LABELS = {
+  connecting: 'connecting…',
+  ws:         'live',
+  offline:    'offline',
+};
+
+export function connectionPill(state) {
+  const pill = document.createElement('span');
+  pill.className = 'conn-pill';
+  const mode = (state && state.ws && state.ws.mode) || 'offline';
+  pill.dataset.state = mode;
+  pill.textContent = PILL_LABELS[mode] || mode;
+  return pill;
+}
+
+export function updatePill(pill, state) {
+  const mode = (state && state.ws && state.ws.mode) || 'offline';
+  pill.dataset.state = mode;
+  pill.textContent = PILL_LABELS[mode] || mode;
+}
+
 // Build a clickable card for a TuneIn station. `sid` is the only
 // required field; everything else degrades gracefully when missing.
 // Clicking the card sets location.hash to #/station/<sid> via the

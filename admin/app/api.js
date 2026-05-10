@@ -176,6 +176,67 @@ export async function speakerKey(name, state) {
   return true;
 }
 
+// GET /cgi-bin/api/v1/speaker/info → parsed info object.
+// Fields: deviceID, name, type, firmwareVersion (plus any others present).
+export async function getSpeakerInfo() {
+  const res = await fetch(`${apiBase}/speaker/info`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getSpeakerInfo: HTTP ${res.status}`);
+  const text = await res.text();
+  return parseInfoXml(text);
+}
+
+// Parse the speaker's <info> XML into:
+//   { deviceID, name, type, firmwareVersion }
+//
+// Reference shape (from the 8090 /info endpoint):
+//   <info deviceID="...">
+//     <name>My SoundTouch</name>
+//     <type>SoundTouch 10</type>
+//     <components>
+//       <component>
+//         <componentCategory>SCM</componentCategory>
+//         <softwareVersion>27.0.6.29798 epdbuild hepdswbld04 (Sep 20 2016 12:19:09)</softwareVersion>
+//         <serialNumber>...</serialNumber>
+//       </component>
+//     </components>
+//   </info>
+//
+// Defensive: any field may be missing on unknown firmware revisions.
+export function parseInfoXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.querySelector('parsererror')) return null;
+  const info = doc.querySelector('info');
+  if (!info) return null;
+
+  const text = (sel) => {
+    const el = info.querySelector(sel);
+    return el && el.textContent != null ? el.textContent.trim() : '';
+  };
+
+  // Firmware version lives in the first SCM component's softwareVersion.
+  let firmwareVersion = '';
+  for (const comp of info.querySelectorAll('component')) {
+    const cat = comp.querySelector('componentCategory');
+    if (cat && cat.textContent.trim() === 'SCM') {
+      const sv = comp.querySelector('softwareVersion');
+      if (sv) firmwareVersion = sv.textContent.trim();
+      break;
+    }
+  }
+
+  return {
+    deviceID:        info.getAttribute('deviceID') || '',
+    name:            text('name'),
+    type:            text('type'),
+    firmwareVersion,
+  };
+}
+
 // POST /presets/:slot with {id, slot, name, kind, json}.
 // Slot is 1..6; payload must include matching `slot` and `kind:"playable"`
 // (the CGI rejects anything else with a structured error).

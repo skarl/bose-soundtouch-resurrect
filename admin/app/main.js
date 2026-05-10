@@ -12,6 +12,9 @@ import search     from './views/search.js';
 import station    from './views/station.js';
 
 import { installVersionDriftCheck } from './version.js';
+import { getSpeakerInfo } from './api.js';
+import { connectionPill, updatePill } from './components.js';
+import * as ws from './ws.js';
 
 // #/preset/N is reserved for the 0.3 "replace this preset" modal
 // triggered from now-playing. Until then, render a tiny inline
@@ -51,8 +54,12 @@ const routes = [
 ];
 
 function renderShell(appRoot) {
-  // Static nav scaffold — view content mounts into <div id="view">.
+  const pill = connectionPill(store.state);
   mount(appRoot, html`
+    <header class="app-header">
+      <span class="app-speaker-name"></span>
+      ${pill}
+    </header>
     <nav class="routes" aria-label="primary">
       <a href="#/">Now playing</a>
       <a href="#/browse">Browse</a>
@@ -60,6 +67,17 @@ function renderShell(appRoot) {
     </nav>
     <div id="view" role="main"></div>
   `);
+
+  const nameEl = appRoot.querySelector('.app-speaker-name');
+
+  store.subscribe('ws', (state) => {
+    updatePill(pill, state);
+  });
+
+  store.subscribe('speaker', (state) => {
+    nameEl.textContent = (state.speaker.info && state.speaker.info.name) || '';
+  });
+
   return appRoot.querySelector('#view');
 }
 
@@ -75,6 +93,19 @@ function boot() {
   });
   router.start();
   installVersionDriftCheck();
+
+  getSpeakerInfo().then((info) => {
+    if (info) {
+      store.state.speaker.info = info;
+      store.touch('speaker');
+    }
+  }).catch(() => {
+    // Non-fatal — header name stays blank; speaker still works.
+  });
+
+  ws.connect(store);
+
+  window.addEventListener('beforeunload', () => ws.disconnect(), { once: true });
 }
 
 if (document.readyState === 'loading') {

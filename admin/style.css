@@ -51,6 +51,61 @@ main {
   color: var(--muted);
 }
 
+/* --- app header (speaker name + connection pill) ------------------ */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  min-height: 2rem;
+}
+
+.app-speaker-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+/* Connection-state pill. A small coloured dot + label.
+   Colour is driven by [data-state] so later states (reconnecting,
+   polling) only need a CSS rule, not a JS change. */
+.conn-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.conn-pill::before {
+  content: '';
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.conn-pill[data-state="connecting"] {
+  color: #b07000;
+}
+
+.conn-pill[data-state="ws"] {
+  color: #1a7f37;
+}
+
+.conn-pill[data-state="offline"] {
+  color: #b00020;
+}
+
 nav.routes {
   display: flex;
   gap: 0.75rem;

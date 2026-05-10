@@ -63,9 +63,16 @@ export const store = observable({
     probe:          new Map(),               // sid -> {kind, streams?, reason?, expires}
     recentlyViewed: loadRecentlyViewed(),    // [{sid, name, art?}], persisted in localStorage
   },
-  ws: { connected: false, lastEvent: null },   // 0.3+
+  ws: { connected: false, mode: 'offline', lastEvent: null },
   ui: { toast: null, testPlaying: null },
 });
+
+// Update state.speaker.nowPlaying and notify 'speaker' subscribers.
+// now-playing.js calls this on every successful poll tick.
+export function setNowPlaying(np) {
+  store.state.speaker.nowPlaying = np;
+  store.touch('speaker');
+}
 
 // Reconcile state.speaker.presets from the presets CGI envelope's
 // `data` array. Defensive — the CGI guarantees a length-6 array, but
