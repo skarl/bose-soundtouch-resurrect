@@ -12,6 +12,8 @@ import { speakerNowPlaying, presetsList, postVolume, postSelect, postSelectLocal
 import { setArt } from '../art.js';
 import { postKey, makeVolumeSender } from '../transport.js';
 import { setVolumeConfirmFn } from '../ws.js';
+import { vuDot, updateVuDot } from '../components.js';
+import { recordOutgoing } from '../io-ledger.js';
 
 const POLL_MS = 2000;
 const PRESET_SLOTS = 6;
@@ -33,6 +35,7 @@ let btnNext    = null;
 let sliderEl   = null;
 let muteEl     = null;
 let volumeRowEl = null;
+let vuDotEl    = null;
 
 // Volume sender — created once in init(); survives WS events.
 let volumeSender = null;
@@ -290,6 +293,7 @@ async function onSourceClick(evt) {
   const source = btn.dataset.source;
   const sourceAccount = btn.dataset.account || '';
   const isLocal = btn.dataset.local === 'true';
+  recordOutgoing('source');
   try {
     if (isLocal) {
       await postSelectLocalSource(source);
@@ -328,6 +332,8 @@ function onPlayPause() {
 
 export default {
   init(root) {
+    vuDotEl = vuDot();
+
     mount(root, html`
       <section class="np-view" data-view="now-playing">
         <div class="np-card">
@@ -339,6 +345,7 @@ export default {
             <p class="np-track" hidden></p>
             <p class="np-meta" hidden></p>
           </div>
+          ${vuDotEl}
         </div>
         <div class="np-transport">
           <button class="np-btn" type="button" title="Previous" aria-label="Previous track">&#x23EE;</button>
@@ -432,6 +439,7 @@ export default {
     applyVolume(sp.volume);
     applySourcePills(sp.sources, sp.nowPlaying && sp.nowPlaying.source);
     applyPresets(sp.presets);
+    updateVuDot(vuDotEl, store.state);
 
     bindVisibilityOnce();
     if (!document.hidden) startPolling();
@@ -445,6 +453,7 @@ export default {
     const activeSource = state.speaker.nowPlaying && state.speaker.nowPlaying.source;
     applySourcePills(state.speaker.sources, activeSource);
     applyPresets(state.speaker.presets);
+    if (vuDotEl) updateVuDot(vuDotEl, state);
   },
 
   _teardown() {
@@ -454,6 +463,7 @@ export default {
     btnPrev = btnPlay = btnNext = null;
     sliderEl = muteEl = volumeRowEl = null;
     presetBtns = [];
+    vuDotEl = null;
     volumeSender = null;
     setVolumeConfirmFn(null);
   },

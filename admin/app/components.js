@@ -70,6 +70,27 @@ export function themeToggle() {
   return btn;
 }
 
+// Live VU dot. A small pulsing indicator mounted inside .np-card that
+// reflects playback state. Returns a <span class="vu-dot"> node.
+// The caller subscribes to 'speaker' and calls updateVuDot(dot, state)
+// on each tick — never re-creates the node.
+//
+// CSS drives the pulse via [data-playing="true"]; the dot is invisible
+// when data-playing is absent or "false".
+export function vuDot() {
+  const dot = document.createElement('span');
+  dot.className = 'vu-dot';
+  dot.setAttribute('aria-hidden', 'true');
+  dot.dataset.playing = 'false';
+  return dot;
+}
+
+export function updateVuDot(dot, state) {
+  const np = state && state.speaker && state.speaker.nowPlaying;
+  const playing = np && np.playStatus === 'PLAY_STATE';
+  dot.dataset.playing = playing ? 'true' : 'false';
+}
+
 // Build a clickable card for a TuneIn station. `sid` is the only
 // required field; everything else degrades gracefully when missing.
 // Clicking the card sets location.hash to #/station/<sid> via the
