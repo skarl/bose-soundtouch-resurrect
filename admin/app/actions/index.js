@@ -9,6 +9,7 @@ import {
   previewStream as apiPreviewStream,
   postEnterBluetoothPairing,
   postClearBluetoothPaired,
+  postRefreshAll,
 } from '../api.js';
 import { recordOutgoing, wasRecent } from './ledger.js';
 import { controllerFor, volumeCtl, bassCtl, balanceCtl } from './sliders.js';
@@ -77,6 +78,11 @@ export async function enterBluetoothPairing() {
 export async function clearBluetoothPaired() {
   recordOutgoing('bluetooth');
   await postClearBluetoothPaired();
+}
+
+export async function refreshAll() {
+  recordOutgoing('settings');
+  return postRefreshAll();
 }
 
 export { wasRecent };

@@ -9,6 +9,7 @@
 
 import { html, mount, defineView } from '../../dom.js';
 import { getCapabilities } from '../../api.js';
+import * as actions from '../../actions/index.js';
 
 // Firmware version strings on Bo look like
 //   "27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29"
@@ -68,6 +69,13 @@ export default defineView({
             <p class="settings-system__recents-empty" hidden>No recent items</p>
           </dd>
         </dl>
+        <div class="settings-system__refresh">
+          <button class="settings-system__refresh-btn" type="button">
+            Refresh all preset stream URLs
+          </button>
+          <span class="settings-system__refresh-spinner" hidden aria-hidden="true"></span>
+          <div class="settings-system__refresh-result" hidden></div>
+        </div>
         <div class="settings-system__notif-slot"></div>
       </div>
     `);
@@ -77,6 +85,9 @@ export default defineView({
     const capsEl        = root.querySelector('.settings-system__caps');
     const recentsEl     = root.querySelector('.settings-system__recents');
     const recentsEmptyEl = root.querySelector('.settings-system__recents-empty');
+    const refreshBtn    = root.querySelector('.settings-system__refresh-btn');
+    const refreshSpinner = root.querySelector('.settings-system__refresh-spinner');
+    const refreshResult = root.querySelector('.settings-system__refresh-result');
 
     function renderInfo(info) {
       const fw = formatFirmware(info && info.firmwareVersion);
@@ -148,6 +159,82 @@ export default defineView({
       recentsEl.hidden = false;
       recentsEmptyEl.hidden = true;
     }
+
+    function renderRefreshResult(envelope) {
+      refreshResult.textContent = '';
+      refreshResult.hidden = false;
+
+      if (!envelope || envelope.ok !== true || !envelope.data) {
+        const p = document.createElement('p');
+        p.className = 'settings-system__refresh-error';
+        const msg = envelope && envelope.error && envelope.error.message
+          ? envelope.error.message
+          : 'Refresh failed';
+        p.textContent = msg;
+        refreshResult.appendChild(p);
+        return;
+      }
+
+      const d = envelope.data;
+      const updated   = Array.isArray(d.updated)   ? d.updated   : [];
+      const unchanged = Array.isArray(d.unchanged) ? d.unchanged : [];
+      const failed    = Array.isArray(d.failed)    ? d.failed    : [];
+
+      const summary = document.createElement('p');
+      summary.className = 'settings-system__refresh-summary';
+      summary.textContent =
+        `${updated.length} updated, ${unchanged.length} unchanged, ${failed.length} failed`;
+      refreshResult.appendChild(summary);
+
+      const dl = document.createElement('dl');
+      dl.className = 'settings-system__refresh-rows';
+
+      function row(label, items) {
+        const dt = document.createElement('dt');
+        dt.textContent = label;
+        dl.appendChild(dt);
+        const dd = document.createElement('dd');
+        if (items.length === 0) {
+          dd.textContent = '—';
+        } else if (typeof items[0] === 'string') {
+          dd.textContent = items.join(', ');
+        } else {
+          for (const f of items) {
+            const div = document.createElement('div');
+            div.className = 'settings-system__refresh-fail';
+            div.textContent = `${f.sid}: ${f.error}`;
+            dd.appendChild(div);
+          }
+        }
+        dl.appendChild(dd);
+      }
+      row('Updated',   updated);
+      row('Unchanged', unchanged);
+      row('Failed',    failed);
+
+      refreshResult.appendChild(dl);
+    }
+
+    refreshBtn.addEventListener('click', async () => {
+      if (refreshBtn.disabled) return;
+      refreshBtn.disabled = true;
+      refreshSpinner.hidden = false;
+      refreshResult.hidden = true;
+      try {
+        const envelope = await actions.refreshAll();
+        if (env.signal.aborted) return;
+        renderRefreshResult(envelope);
+      } catch (err) {
+        if (env.signal.aborted) return;
+        renderRefreshResult({
+          ok: false,
+          error: { message: err && err.message ? err.message : 'Refresh failed' },
+        });
+      } finally {
+        refreshBtn.disabled = false;
+        refreshSpinner.hidden = true;
+      }
+    });
 
     // Capabilities don't change at runtime, so fetch once on mount and
     // stash on store.speaker.capabilities for any later subscriber.

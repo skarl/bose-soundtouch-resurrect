@@ -1136,3 +1136,25 @@ export async function presetsAssign(slot, payload) {
   }
   return body;
 }
+
+// POST /refresh-all — bulk re-probe each preset slot, atomically rewrite
+// resolver JSON files whose stream URLs have drifted. Returns the
+// envelope verbatim so callers can render per-slot status:
+//   { ok:true, data: { updated:[sid...], unchanged:[sid...],
+//                      failed:[{sid, error}, ...] } }
+// Transport errors throw; structured `{ok:false, error}` envelopes
+// resolve normally.
+export async function postRefreshAll() {
+  const res = await fetch(`${apiBase}/refresh-all`, {
+    method: 'POST',
+    headers: { Accept: 'application/json' },
+    cache: 'no-store',
+  });
+  let body;
+  try {
+    body = await res.json();
+  } catch (err) {
+    throw new Error(`postRefreshAll: malformed response (HTTP ${res.status})`);
+  }
+  return body;
+}

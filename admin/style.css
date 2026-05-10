@@ -1371,6 +1371,57 @@ nav.routes a:hover {
   display: none;
 }
 
+.settings-system__refresh {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settings-system__refresh-btn {
+  align-self: flex-start;
+}
+
+.settings-system__refresh-spinner {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid var(--muted, #888);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.settings-system__refresh-result {
+  font-size: 0.9rem;
+}
+
+.settings-system__refresh-rows {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 0.75rem;
+  margin: 0.4rem 0 0;
+}
+
+.settings-system__refresh-rows dt {
+  color: var(--muted, #888);
+}
+
+.settings-system__refresh-rows dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.settings-system__refresh-error {
+  color: var(--danger, #c33);
+}
+
 /* --- mobile-remote: container-query layout ----------------------- */
 /* Container queries (not @media) so the admin shapes itself to its
    own frame width — important when embedded in a wider dashboard

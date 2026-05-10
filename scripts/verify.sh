@@ -100,6 +100,16 @@ else
     printf '  [SKIP] presets CGI not deployed\n'
 fi
 
+# refresh-all CGI — POST round-trip; expects {ok:true, data:{updated, unchanged, failed}}.
+# Probed via curl from the laptop so we hit the real busybox httpd
+# CGI dispatch path (busybox wget on Bo is GET-only).
+if curl -fsS -o /dev/null -X POST "http://$SPEAKER:8181/cgi-bin/api/v1/refresh-all" 2>/dev/null; then
+    check "refresh-all CGI returns ok-envelope" \
+        sh -c 'curl -fsS -X POST "http://'"$SPEAKER"':8181/cgi-bin/api/v1/refresh-all" | grep -q "\"ok\":true"'
+else
+    printf '  [SKIP] refresh-all CGI not deployed\n'
+fi
+
 if $SSH root@"$SPEAKER" 'wget -q -O /dev/null http://127.0.0.1:8181/cgi-bin/api/v1/tunein/browse' 2>/dev/null; then
     check "tunein CGI returns JSON or array" \
         $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/cgi-bin/api/v1/tunein/browse | grep -qE "[\\[{]"'
