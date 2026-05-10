@@ -68,7 +68,7 @@ if (!ElementProto.classList) {
 }
 
 // xmldom stores className / href / src / alt as JS-only properties; the
-// production code (resultCard, art.js) writes via the property and our
+// production code (stationRow, art.js) writes via the property and our
 // assertions read via getAttribute. Mirror property → attribute so both
 // sides see the same value.
 if (!Object.getOwnPropertyDescriptor(ElementProto, 'className')) {
@@ -146,7 +146,7 @@ const {
   connectionPill,
   updatePill,
   throttleLeadingTrailing,
-  resultCard,
+  stationRow,
 } = await import('../app/components.js');
 
 // --- pill ------------------------------------------------------------
@@ -407,7 +407,7 @@ test('stationArt: size prop sets the wrapper width/height', () => {
   assert.ok(style.includes('72px'), `expected 72px in style, got "${style}"`);
 });
 
-// --- resultCard ------------------------------------------------------
+// --- stationRow ------------------------------------------------------
 
 function classOf(el) { return el.getAttribute('class') || ''; }
 
@@ -423,18 +423,17 @@ function findFirstByClass(root, cls) {
   return null;
 }
 
-test('resultCard: art, name, location and bitrate render', () => {
-  const c = resultCard({
+test('stationRow: art, name, location and bitrate render with chevron', () => {
+  const c = stationRow({
     sid:      's12345',
     name:     'KEXP 90.3',
     art:      'http://example/art.png',
     location: 'Seattle, WA',
-    genre:    'Alternative',
     bitrate:  128,
     codec:    'mp3',
   });
   assert.equal(c.tagName, 'a');
-  assert.ok(classOf(c).includes('result-card'));
+  assert.ok(classOf(c).includes('station-row'));
   assert.equal(c.getAttribute('href'), '#/station/s12345');
 
   const art = findFirstByClass(c, 'station-art');
@@ -443,49 +442,48 @@ test('resultCard: art, name, location and bitrate render', () => {
   assert.equal(img.tagName, 'img');
   assert.equal(img.src, 'http://example/art.png');
 
-  const nameEl = findFirstByClass(c, 'result-card__name');
+  const nameEl = findFirstByClass(c, 'station-row__name');
   assert.equal(nameEl.textContent, 'KEXP 90.3');
 
-  const metaText = findFirstByClass(c, 'result-card__meta-text');
-  assert.equal(metaText.textContent, 'Seattle, WA · Alternative');
+  const loc = findFirstByClass(c, 'station-row__loc');
+  assert.equal(loc.textContent, 'Seattle, WA');
 
-  const tag = findFirstByClass(c, 'result-card__pill');
-  assert.ok(tag, 'kbps pill present');
-  // pill renders text in a child .pill__text span.
-  const tagText = findFirstByClass(tag, 'pill__text');
-  assert.equal(tagText.textContent, '128 kbps · MP3');
+  const fmt = findFirstByClass(c, 'station-row__fmt');
+  assert.equal(fmt.textContent, '128k MP3');
+
+  const chev = findFirstByClass(c, 'station-row__chev');
+  assert.ok(chev, 'chevron slot present');
 });
 
-test('resultCard: long names get the truncating class for ellipsis', () => {
-  const c = resultCard({
+test('stationRow: long names get the truncating class for ellipsis', () => {
+  const c = stationRow({
     sid:  's00001',
     name: 'A Spectacularly Long Station Name That Should Be Forced To Truncate',
   });
-  const nameEl = findFirstByClass(c, 'result-card__name');
-  assert.ok(classOf(nameEl).includes('result-card__name'),
-    'truncation class applied (.result-card__name carries white-space:nowrap + ellipsis)');
+  const nameEl = findFirstByClass(c, 'station-row__name');
+  assert.ok(classOf(nameEl).includes('station-row__name'),
+    'truncation class applied (.station-row__name carries white-space:nowrap + ellipsis)');
 });
 
-test('resultCard: meta line is omitted when no metadata is present', () => {
-  const c = resultCard({ sid: 's00001', name: 'Bare' });
-  assert.equal(findFirstByClass(c, 'result-card__meta'), null);
+test('stationRow: meta line is omitted when no metadata is present', () => {
+  const c = stationRow({ sid: 's00001', name: 'Bare' });
+  assert.equal(findFirstByClass(c, 'station-row__meta'), null);
 });
 
-test('resultCard: kbps pill omitted when bitrate is zero or missing', () => {
-  const c = resultCard({ sid: 's00001', name: 'Bare', location: 'Earth' });
-  assert.equal(findFirstByClass(c, 'result-card__pill'), null);
+test('stationRow: format chunk omitted when bitrate is zero and no codec', () => {
+  const c = stationRow({ sid: 's00001', name: 'Bare', location: 'Earth' });
+  assert.equal(findFirstByClass(c, 'station-row__fmt'), null);
 });
 
-test('resultCard: codec without bitrate still shows a pill', () => {
-  const c = resultCard({ sid: 's00001', name: 'Codec only', codec: 'aac' });
-  const tag = findFirstByClass(c, 'result-card__pill');
-  assert.ok(tag);
-  const tagText = findFirstByClass(tag, 'pill__text');
-  assert.equal(tagText.textContent, 'AAC');
+test('stationRow: codec without bitrate still shows a format chunk', () => {
+  const c = stationRow({ sid: 's00001', name: 'Codec only', codec: 'aac' });
+  const fmt = findFirstByClass(c, 'station-row__fmt');
+  assert.ok(fmt);
+  assert.equal(fmt.textContent, 'AAC');
 });
 
-test('resultCard: falls back to sid for the name when name is missing', () => {
-  const c = resultCard({ sid: 's42' });
-  const nameEl = findFirstByClass(c, 'result-card__name');
+test('stationRow: falls back to sid for the name when name is missing', () => {
+  const c = stationRow({ sid: 's42' });
+  const nameEl = findFirstByClass(c, 'station-row__name');
   assert.equal(nameEl.textContent, 's42');
 });

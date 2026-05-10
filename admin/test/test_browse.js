@@ -1,5 +1,5 @@
-// Tests for app/views/browse.js — renderEntry() now produces the v2
-// result-card layout (#59) for audio leaves and a drillable link for
+// Tests for app/views/browse.js — renderEntry() produces the polish-pass
+// station-row layout for audio leaves and a browse-row for drillable
 // section nodes. Mirrors the xmldom shim from test_components.js so the
 // view can mount against a fake document.
 //
@@ -117,7 +117,7 @@ function findFirstByClass(root, cls) {
 
 // --- audio-leaf rendering -------------------------------------------
 
-test('renderEntry: audio leaf renders a result-card with art + name + meta', () => {
+test('renderEntry: audio leaf renders a station-row with art + name + meta + chevron', () => {
   const node = renderEntry({
     type:       'audio',
     guide_id:   's12345',
@@ -130,72 +130,101 @@ test('renderEntry: audio leaf renders a result-card with art + name + meta', () 
   });
 
   assert.equal(node.tagName, 'a');
-  assert.ok(classOf(node).includes('result-card'));
+  assert.ok(classOf(node).includes('station-row'));
   assert.equal(node.getAttribute('href'), '#/station/s12345');
 
   const art = findFirstByClass(node, 'station-art');
   assert.ok(art, 'art slot present');
 
-  const nameEl = findFirstByClass(node, 'result-card__name');
+  const nameEl = findFirstByClass(node, 'station-row__name');
   assert.equal(nameEl.textContent, 'Radio Paradise');
 
-  const metaText = findFirstByClass(node, 'result-card__meta-text');
-  assert.equal(metaText.textContent, 'California · Eclectic');
+  const loc = findFirstByClass(node, 'station-row__loc');
+  assert.equal(loc.textContent, 'California');
 
-  const pillTextEl = findFirstByClass(findFirstByClass(node, 'result-card__pill'), 'pill__text');
-  assert.equal(pillTextEl.textContent, '192 kbps · MP3');
+  const fmt = findFirstByClass(node, 'station-row__fmt');
+  assert.equal(fmt.textContent, '192k MP3');
+
+  const chev = findFirstByClass(node, 'station-row__chev');
+  assert.ok(chev, 'chevron slot present');
 });
 
-test('renderEntry: long station name keeps the truncating .result-card__name class', () => {
+test('renderEntry: long station name keeps the truncating .station-row__name class', () => {
   const node = renderEntry({
     type:     'audio',
     guide_id: 's00099',
     text:     'A Spectacularly Long Station Name That Should Truncate Cleanly On Small Screens',
   });
-  const nameEl = findFirstByClass(node, 'result-card__name');
-  assert.ok(classOf(nameEl).includes('result-card__name'),
-    '.result-card__name carries the white-space:nowrap + ellipsis style');
+  const nameEl = findFirstByClass(node, 'station-row__name');
+  assert.ok(classOf(nameEl).includes('station-row__name'),
+    '.station-row__name carries the white-space:nowrap + ellipsis style');
 });
 
-test('renderEntry: audio leaf without bitrate omits the kbps pill', () => {
+test('renderEntry: audio leaf without bitrate omits the format chunk', () => {
   const node = renderEntry({
     type:     'audio',
     guide_id: 's00001',
     text:     'No bitrate',
     subtext:  'Earth',
   });
-  assert.equal(findFirstByClass(node, 'result-card__pill'), null);
-  const metaText = findFirstByClass(node, 'result-card__meta-text');
-  assert.equal(metaText.textContent, 'Earth');
+  assert.equal(findFirstByClass(node, 'station-row__fmt'), null);
+  const loc = findFirstByClass(node, 'station-row__loc');
+  assert.equal(loc.textContent, 'Earth');
 });
 
-// --- section + drillable rendering ----------------------------------
+// --- browse-row rendering (non-audio entries) ----------------------
 
-test('renderEntry: section with children renders a heading + nested list', () => {
-  const node = renderEntry({
-    text:     'Top Stations',
-    children: [
-      { text: 'KEXP', URL: 'http://example/Browse.ashx?id=s12345' },
-    ],
-  });
-  assert.equal(node.tagName, 'section');
-  assert.ok(classOf(node).includes('browse-section'));
-  // h2 + .browse-list inside.
-  const list = findFirstByClass(node, 'browse-list');
-  assert.ok(list, 'browse-list container present');
-});
-
-test('renderEntry: drillable link extracts id from a Browse.ashx URL', () => {
+test('renderEntry: drillable section renders a browse-row with id badge + label + chevron', () => {
   const node = renderEntry({
     text: 'Genre',
     URL:  'http://opml.radiotime.com/Browse.ashx?id=g22',
   });
   assert.equal(node.tagName, 'a');
+  assert.ok(classOf(node).includes('browse-row'));
   assert.equal(node.getAttribute('href'), '#/browse?id=g22');
+
+  const idBadge = findFirstByClass(node, 'browse-row__id');
+  assert.equal(idBadge.textContent, 'g22');
+
+  const label = findFirstByClass(node, 'browse-row__label');
+  assert.equal(label.textContent, 'Genre');
+
+  const chev = findFirstByClass(node, 'browse-row__chev');
+  assert.ok(chev, 'chevron slot present');
+});
+
+test('renderEntry: browse-row count badge renders when station_count is set', () => {
+  const node = renderEntry({
+    text: 'Jazz',
+    URL:  'http://opml.radiotime.com/Browse.ashx?id=g24',
+    station_count: 38420,
+  });
+  const c = findFirstByClass(node, 'browse-row__count');
+  assert.ok(c, 'count badge present');
+  assert.equal(c.textContent, '38,420');
 });
 
 test('renderEntry: entry without a usable id falls back to a non-clickable label', () => {
   const node = renderEntry({ text: '(unnamed)' });
   assert.equal(node.tagName, 'span');
+  assert.ok(classOf(node).includes('browse-row'));
   assert.ok(classOf(node).includes('is-disabled'));
+});
+
+// --- segmented control: CSS contract -------------------------------
+
+test('browse css: .browse-tabs is a sunken 3-tab segmented control', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const css = fs.readFileSync(path.resolve('admin/style.css'), 'utf8');
+  const tabsRule = css.match(/^\.browse-tabs\s*\{([^}]+)\}/m);
+  assert.ok(tabsRule, 'found .browse-tabs rule');
+  // Sunken-track look: padded background sits behind active pill.
+  assert.match(tabsRule[1], /\bbackground:\s*var\(--surface-hi\)/);
+  assert.match(tabsRule[1], /\bborder-radius:\s*8px\b/);
+  assert.match(tabsRule[1], /\bpadding:\s*3px\b/);
+
+  const tabRule = css.match(/^\.browse-tab\s*\{([^}]+)\}/m);
+  assert.ok(tabRule, 'found .browse-tab rule');
+  assert.match(tabRule[1], /\bflex:\s*1\b/);
 });

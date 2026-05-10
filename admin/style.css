@@ -252,62 +252,57 @@ main {
 
 /* --- browse view ------------------------------------------------- */
 
+/* Segmented 3-tab control. Sunken track + active pill matches
+   admin/design-mockup/app/views-browse-search.jsx BrowseView. */
 .browse-tabs {
   display: flex;
-  gap: 0.5rem;
-  margin: 0.75rem 0;
-  border-bottom: 1px solid var(--border);
+  gap: 4px;
+  padding: 3px;
+  margin: 0.75rem 0 0.5rem;
+  background: var(--surface-hi);
+  border-radius: 8px;
 }
 
 .browse-tab {
-  background: none;
+  flex: 1 1 0;
+  background: transparent;
   border: 0;
-  border-bottom: 2px solid transparent;
-  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  padding: 6px 10px;
   font: inherit;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--muted);
   cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 
 .browse-tab.is-active {
+  background: var(--bg);
   color: var(--fg);
-  border-bottom-color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.browse-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browse-tab { transition: none; }
 }
 
 .browse-body {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 12px;
 }
 
 .browse-section {
-  margin: 0.5rem 0;
-}
-
-.browse-section h2 {
-  font-size: 0.95rem;
-  margin: 0 0 0.5rem;
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.browse-list {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-}
-
-.browse-link {
-  display: block;
-  padding: 0.5rem 0.25rem;
-  color: var(--accent);
-  text-decoration: none;
-  border-bottom: 1px solid var(--border);
-}
-
-.browse-link.is-disabled {
-  color: var(--muted);
-  cursor: not-allowed;
+  gap: 6px;
 }
 
 .browse-loading,
@@ -876,45 +871,84 @@ main {
   background: var(--bg);
   padding: 0.5rem 0;
   margin: 0 0 0.75rem;
-  border-bottom: 1px solid var(--border);
 }
 
-.search-input {
-  width: 100%;
-  font: inherit;
-  padding: 0.6rem 0.75rem;
+/* Pill-shaped input with leading search glyph + trailing clear button.
+   The wrapper is the visible border, the <input> is borderless inside. */
+.search-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.search-input-wrap:focus-within {
+  border-color: var(--accent);
   background: var(--bg);
   color: var(--fg);
 }
 
-.search-input:focus {
-  border-color: var(--accent);
+@media (prefers-reduced-motion: reduce) {
+  .search-input-wrap { transition: none; }
+}
+
+.search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 13.5px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  padding: 0;
+}
+
+.search-input::placeholder { color: var(--muted); }
+
+.search-input-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.search-clear:hover { color: var(--fg); background: var(--surface-hi); }
+
+.search-pending {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.6;
+  flex-shrink: 0;
 }
 
 .search-results,
 .search-empty {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-}
-
-.search-empty-section {
-  margin: 0.5rem 0 1rem;
-}
-
-.search-empty-section h2 {
-  font-size: 0.95rem;
-  margin: 0 0 0.5rem;
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.search-empty-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  gap: 12px;
 }
 
 .search-empty-note,
@@ -2410,102 +2444,257 @@ main {
   }
 }
 
-/* --- result card (browse drill + search results) ----------------- */
+/* --- shared section header (browse / search) --------------------- */
+/* Mirrors .np-section-h but tuned for browse + search panels: small
+   uppercase title + right-aligned mono meta. Optional inline glyph
+   sits inside the title span. */
 
-.result-card {
-  display: grid;
-  grid-template-columns: 48px 1fr;
+.section-h {
+  display: flex;
   align-items: center;
-  gap: 0.75rem;
-  min-height: 64px;
-  padding: 0.5rem 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  color: inherit;
-  text-decoration: none;
-  transition: border-color 120ms ease, background 120ms ease;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
-.result-card:hover,
-.result-card:focus-visible {
-  border-color: var(--accent);
+.section-h__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.section-h__meta {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--text-dim, var(--fg-muted));
+  white-space: nowrap;
+}
+
+.section-h--inline {
+  margin: 0 0 0.5rem;
+}
+
+/* --- station row (browse drill + search results, shared) -------- */
+/* One bordered card holds a column of rows separated by a thin border;
+   .is-last drops the divider on the bottom row. */
+
+.station-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  text-decoration: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.station-row.is-last { border-bottom: 0; }
+
+.station-row:hover,
+.station-row:focus-visible {
   background: var(--surface-hi);
 }
 
-.result-card:focus-visible {
+.station-row:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .result-card { transition: none; }
+  .station-row { transition: none; }
 }
 
-.result-card .station-art {
-  width: 48px;
-  height: 48px;
+.station-row .station-art {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
 }
 
-.result-card__body {
+.station-row__body {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  min-width: 0;
-}
-
-.result-card__name {
-  font-weight: 600;
-  font-size: 0.95rem;
-  line-height: 1.2;
-  color: var(--fg);
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.result-card__meta {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8rem;
-  color: var(--muted);
-  min-width: 0;
-}
-
-.result-card__meta-text {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  gap: 2px;
   min-width: 0;
   flex: 1 1 auto;
 }
 
-.result-card__pill {
-  flex: 0 0 auto;
-  font-size: 0.7rem;
+.station-row__name {
+  font-weight: 500;
+  font-size: 13.5px;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
-/* Search empty state — Recently viewed + Popular columns. Auto-fits
-   to one column on narrow viewports, two columns when there's room. */
+.station-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.station-row__loc {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.station-row__sep {
+  color: var(--text-dim, var(--fg-muted));
+  flex-shrink: 0;
+}
+
+.station-row__fmt {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  flex-shrink: 0;
+}
+
+.station-row__chev {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-dim, var(--fg-muted));
+  flex-shrink: 0;
+}
+
+/* --- browse card + browse row (non-audio rows) ------------------ */
+
+.browse-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.browse-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: inherit;
+  text-decoration: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.browse-row.is-last { border-bottom: 0; }
+
+.browse-row:hover,
+.browse-row:focus-visible {
+  background: var(--surface-hi);
+}
+
+.browse-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.browse-row.is-disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browse-row { transition: none; }
+}
+
+.browse-row__id {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--text-dim, var(--fg-muted));
+  width: 36px;
+  flex-shrink: 0;
+}
+
+.browse-row__label {
+  flex: 1 1 auto;
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.browse-row__count {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.browse-row__chev {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-dim, var(--fg-muted));
+  flex-shrink: 0;
+}
+
+/* Drill-mode breadcrumb header bits. */
+.browse-crumb {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.browse-crumb__id {
+  color: var(--text-dim, var(--fg-muted));
+}
+
+.browse-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.browse-back:hover { text-decoration: underline; }
+
+/* Search empty state — single stacked column. The earlier two-column
+   grid was the polish that didn't match the mockup. */
 .search-empty {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .search-empty-section {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 6px;
   min-width: 0;
 }
 
 .search-empty-list {
-  gap: 0.4rem;
+  gap: 0;
 }
 
 /* --- Settings v2 additions ---------------------------------------- */

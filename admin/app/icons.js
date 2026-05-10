@@ -104,6 +104,21 @@ const SHAPES = {
     ['line', { x1: '5', y1: '12', x2: '19', y2: '12' }],
     ['polyline', { points: '12 5 19 12 12 19' }],
   ],
+  clock: [
+    ['circle', { cx: '12', cy: '12', r: '10' }],
+    ['polyline', { points: '12 6 12 12 16 14' }],
+  ],
+  zap: [
+    ['polygon', { points: '13 2 4 14 11 14 9 22 20 10 13 10 13 2' }],
+  ],
+  x: [
+    ['line', { x1: '18', y1: '6', x2: '6', y2: '18' }],
+    ['line', { x1: '6', y1: '6', x2: '18', y2: '18' }],
+  ],
+  back: [
+    ['line', { x1: '19', y1: '12', x2: '5', y2: '12' }],
+    ['polyline', { points: '12 19 5 12 12 5' }],
+  ],
 };
 
 export function icon(name, size = 16) {

@@ -413,64 +413,78 @@ export function stationCard({ sid, name, art, location, format }) {
   return card;
 }
 
-// resultCard({ sid, name, art, location, genre, bitrate, codec }) —
-// browse-drill / search result card. Visual layout:
-//   [stationArt 48] semibold name (single-line, ellipsis on overflow)
-//                   location · genre · <pill kbps codec>
-// All metadata fields are optional; the metadata line is omitted
-// entirely when nothing usable is provided so the card stays stable
-// (CSS pins the row height regardless).
-export function resultCard({
+// stationRow({ sid, name, art, location, bitrate, codec }) — the shared
+// list row used by browse-drill, search results, and search empty
+// state. Layout matches admin/design-mockup/app/views-browse-search.jsx
+// StationCard:
+//   [stationArt 40] name (semibold, ellipsis)
+//                   location · NNk CODEC      [chevron]
+// All metadata fields are optional; the meta line still renders if any
+// piece is present so the row height stays stable across mixed lists.
+export function stationRow({
   sid,
   name,
   art = '',
   location = '',
-  genre = '',
   bitrate,
   codec = '',
 } = {}) {
-  const card = document.createElement('a');
-  card.className = 'result-card';
-  card.href = `#/station/${encodeURIComponent(sid)}`;
-  card.dataset.sid = sid;
+  const row = document.createElement('a');
+  row.className = 'station-row';
+  row.href = `#/station/${encodeURIComponent(sid)}`;
+  row.dataset.sid = sid;
 
-  card.appendChild(stationArt({ url: art, name: name || sid, size: 48 }));
+  row.appendChild(stationArt({ url: art, name: name || sid, size: 40 }));
 
   const body = document.createElement('span');
-  body.className = 'result-card__body';
+  body.className = 'station-row__body';
 
   const nameEl = document.createElement('span');
-  nameEl.className = 'result-card__name';
+  nameEl.className = 'station-row__name';
   nameEl.textContent = name || sid;
   body.appendChild(nameEl);
 
   const meta = document.createElement('span');
-  meta.className = 'result-card__meta';
+  meta.className = 'station-row__meta';
 
-  const textParts = [];
-  if (location) textParts.push(String(location));
-  if (genre)    textParts.push(String(genre));
-  if (textParts.length > 0) {
-    const text = document.createElement('span');
-    text.className = 'result-card__meta-text';
-    text.textContent = textParts.join(' · ');
-    meta.appendChild(text);
+  if (location) {
+    const loc = document.createElement('span');
+    loc.className = 'station-row__loc';
+    loc.textContent = String(location);
+    meta.appendChild(loc);
   }
 
   const kbps = Number(bitrate);
   const haveKbps = Number.isFinite(kbps) && kbps > 0;
   if (haveKbps || codec) {
+    if (location) {
+      const sep = document.createElement('span');
+      sep.className = 'station-row__sep';
+      sep.textContent = '·';
+      meta.appendChild(sep);
+    }
     const codecText = codec ? String(codec).toUpperCase() : '';
-    const pillText = haveKbps
-      ? (codecText ? `${kbps} kbps · ${codecText}` : `${kbps} kbps`)
+    const fmt = document.createElement('span');
+    fmt.className = 'station-row__fmt';
+    fmt.textContent = haveKbps
+      ? (codecText ? `${kbps}k ${codecText}` : `${kbps}k`)
       : codecText;
-    const tag = pill({ tone: 'ok', text: pillText });
-    tag.classList.add('result-card__pill');
-    meta.appendChild(tag);
+    meta.appendChild(fmt);
   }
 
   if (meta.childNodes.length > 0) body.appendChild(meta);
 
-  card.appendChild(body);
-  return card;
+  row.appendChild(body);
+
+  const chev = document.createElement('span');
+  chev.className = 'station-row__chev';
+  chev.appendChild(icon('arrow', 14));
+  row.appendChild(chev);
+
+  return row;
 }
+
+// Deprecated: prior name from the v2 polish. Search.js still imports
+// this; the alias keeps that file building until the search rewrite
+// lands. New code uses stationRow().
+export const resultCard = stationRow;
