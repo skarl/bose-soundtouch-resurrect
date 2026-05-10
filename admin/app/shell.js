@@ -152,7 +152,8 @@ function renderRail(railEl, store) {
   function applyName() {
     const info = store.state.speaker.info || {};
     nameLine.textContent = info.name || '';
-    const sub = [info.type, info.firmwareVersion].filter(Boolean).join(' · ');
+    const fw = (info.firmwareVersion || '').split(/[\s.]/).slice(0, 3).join('.');
+    const sub = [info.type, fw].filter(Boolean).join(' · ');
     subLine.textContent = sub;
   }
 
