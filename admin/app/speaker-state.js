@@ -26,6 +26,8 @@ import {
   getBalance,
   parseBalanceEl,
   getDSPMonoStereo,
+  getRecents,
+  parseRecentsEl,
 } from './api.js';
 import * as actions from './actions/index.js';
 
@@ -159,7 +161,15 @@ export const FIELDS = [
   // covers the Wi-Fi flap separately (state.ws). Refetched on settings
   // view-entry; user-driven via the section's Refresh button.
   { name: 'network',       fetcher: getNetworkInfo },
-  { name: 'recents',       fetcher: () => Promise.resolve(null) },
+  {
+    name: 'recents',
+    fetcher: getRecents,
+    eventTag: 'recentsUpdated',
+    parseInline(el) {
+      const lists = el.getElementsByTagName('recents');
+      return lists && lists[0] ? parseRecentsEl(lists[0]) : null;
+    },
+  },
   { name: 'systemTimeout',   fetcher: getSystemTimeout },
 ];
 

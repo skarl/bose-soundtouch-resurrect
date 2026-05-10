@@ -24,6 +24,8 @@
 //   parseSourcesEl()     — same for an already-parsed <sources> DOM element
 //   getNetworkInfo()     — GET /networkInfo (read-only network metadata)
 //   parseNetworkInfoXml(), parseNetworkInfoEl() — networkInfo parsers
+//   getCapabilities(), parseCapabilitiesXml(), parseCapabilitiesEl()
+//   getRecents(), parseRecentsXml(), parseRecentsEl()
 //   presetsList(), presetsAssign() — presets CGI envelope client
 
 export const apiBase = '/cgi-bin/api/v1';
@@ -767,6 +769,164 @@ export function parseNetworkInfoEl(el) {
     state:        active.getAttribute('state')      || '',
     mode:         active.getAttribute('mode')       || '',
   };
+}
+
+// --- capabilities ---------------------------------------------------
+
+// GET /cgi-bin/api/v1/speaker/capabilities → parsed capabilities object.
+// Surface used by the System settings section: bullet summary of feature
+// flags and the named <capability/> entries.
+export async function getCapabilities() {
+  const res = await fetch(`${apiBase}/speaker/capabilities`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getCapabilities: HTTP ${res.status}`);
+  const text = await res.text();
+  return parseCapabilitiesXml(text);
+}
+
+// Parse the speaker's <capabilities> XML into:
+//   { deviceID, dspMonoStereo, lrStereoCapable, bcoresetCapable,
+//     disablePowerSaving, lightswitch, clockDisplay, capabilities: [{name,url}] }
+//
+// Reference shape (Bo's firmware — docs are out of date):
+//   <capabilities deviceID="...">
+//     <networkConfig>...</networkConfig>
+//     <dspCapabilities>
+//       <dspMonoStereo available="false"/>
+//     </dspCapabilities>
+//     <lightswitch>false</lightswitch>
+//     <clockDisplay>false</clockDisplay>
+//     <capability name="systemtimeout" url="/systemtimeout" info=""/>
+//     <capability name="rebroadcastlatencymode" url="/rebroadcastlatencymode" info=""/>
+//     <lrStereoCapable>true</lrStereoCapable>
+//     <bcoresetCapable>false</bcoresetCapable>
+//     <disablePowerSaving>true</disablePowerSaving>
+//   </capabilities>
+export function parseCapabilitiesXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+  const els = doc.getElementsByTagName('capabilities');
+  if (!els || !els[0]) return null;
+  return parseCapabilitiesEl(els[0]);
+}
+
+export function parseCapabilitiesEl(el) {
+  if (!el) return null;
+
+  // Boolean leaves can either appear as a child with text content or be
+  // missing entirely. Treat missing as false; "true"/"false" as expected.
+  const boolText = (tag) => {
+    const col = el.getElementsByTagName(tag);
+    if (!col || !col[0] || col[0].parentNode !== el) return false;
+    return (col[0].textContent || '').trim() === 'true';
+  };
+
+  // dspMonoStereo lives inside <dspCapabilities> and reports an
+  // available="…" attribute, not a text body.
+  let dspMonoStereo = false;
+  const dspCaps = el.getElementsByTagName('dspCapabilities');
+  if (dspCaps && dspCaps[0]) {
+    const dms = dspCaps[0].getElementsByTagName('dspMonoStereo');
+    if (dms && dms[0]) {
+      dspMonoStereo = dms[0].getAttribute('available') === 'true';
+    }
+  }
+
+  const capItems = el.getElementsByTagName('capability');
+  const capabilities = [];
+  for (let i = 0; i < capItems.length; i++) {
+    const c = capItems[i];
+    capabilities.push({
+      name: c.getAttribute('name') || '',
+      url:  c.getAttribute('url')  || '',
+    });
+  }
+
+  return {
+    deviceID:           el.getAttribute('deviceID') || '',
+    dspMonoStereo,
+    lrStereoCapable:    boolText('lrStereoCapable'),
+    bcoresetCapable:    boolText('bcoresetCapable'),
+    disablePowerSaving: boolText('disablePowerSaving'),
+    lightswitch:        boolText('lightswitch'),
+    clockDisplay:       boolText('clockDisplay'),
+    capabilities,
+  };
+}
+
+// --- recents --------------------------------------------------------
+
+// GET /cgi-bin/api/v1/speaker/recents → array of recent items.
+// Each entry:
+//   { utcTime, source, sourceAccount, type, location, itemName, containerArt }
+// Returned in the order the firmware emits them (newest first on Bo).
+export async function getRecents() {
+  const res = await fetch(`${apiBase}/speaker/recents`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getRecents: HTTP ${res.status}`);
+  const text = await res.text();
+  return parseRecentsXml(text);
+}
+
+// Parse the speaker's <recents> XML into an array. Empty <recents/> → [].
+//
+// Reference shape (captured from Bo):
+//   <recents>
+//     <recent deviceID="..." utcTime="1778423423" id="...">
+//       <contentItem source="TUNEIN" type="stationurl"
+//                    location="/v1/playback/station/s10637"
+//                    sourceAccount="" isPresetable="true">
+//         <itemName>95.5 Charivari</itemName>
+//         <containerArt>https://.../logo.jpg</containerArt>
+//       </contentItem>
+//     </recent>
+//     ...
+//   </recents>
+//
+// `itemName` and `containerArt` may be absent on bare contentItem nodes.
+export function parseRecentsXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+  const els = doc.getElementsByTagName('recents');
+  if (!els || !els[0]) return null;
+  return parseRecentsEl(els[0]);
+}
+
+export function parseRecentsEl(el) {
+  if (!el) return null;
+  const items = el.getElementsByTagName('recent');
+  const out = [];
+  for (let i = 0; i < items.length; i++) {
+    const r = items[i];
+    const cis = r.getElementsByTagName('contentItem');
+    const ci = cis && cis[0];
+    if (!ci) continue;
+
+    const inner = (tag) => {
+      const c = ci.getElementsByTagName(tag);
+      return c && c[0] ? (c[0].textContent || '').trim() : '';
+    };
+
+    const utc = parseInt(r.getAttribute('utcTime') || '', 10);
+    out.push({
+      utcTime:       isNaN(utc) ? null : utc,
+      source:        ci.getAttribute('source') || '',
+      sourceAccount: ci.getAttribute('sourceAccount') || '',
+      type:          ci.getAttribute('type') || '',
+      location:      ci.getAttribute('location') || '',
+      itemName:      inner('itemName'),
+      containerArt:  inner('containerArt'),
+    });
+  }
+  return out;
 }
 
 // --- speaker name / sleep timer / low-power / power -----------------

@@ -26,6 +26,8 @@ import {
   parseBalanceXml, parseBalanceEl,
   parseBalanceCapabilitiesXml, parseBalanceCapabilitiesEl,
   parseDSPMonoStereoXml, parseDSPMonoStereoEl,
+  parseCapabilitiesXml, parseCapabilitiesEl,
+  parseRecentsXml, parseRecentsEl,
 } from '../app/api.js';
 import { dispatch } from '../app/ws.js';
 
@@ -563,4 +565,118 @@ test('parseDSPMonoStereoEl: parses a DOM element directly', async () => {
   const dsp = parseDSPMonoStereoEl(els && els[0]);
   assert.ok(dsp);
   assert.equal(dsp.mode, 'stereo');
+});
+
+// --- parseCapabilitiesXml -------------------------------------------
+
+test('parseCapabilitiesXml: surfaces deviceID, dspMonoStereo, and named capabilities', async () => {
+  const xml = await fixture('capabilities.xml');
+  const caps = parseCapabilitiesXml(xml);
+  assert.ok(caps, 'returns a non-null object');
+  assert.equal(caps.deviceID, '3415139ABD77');
+  assert.equal(caps.dspMonoStereo, false, 'available="false" → false');
+  assert.equal(caps.lrStereoCapable, true);
+  assert.equal(caps.bcoresetCapable, false);
+  assert.equal(caps.disablePowerSaving, true);
+  assert.equal(caps.lightswitch, false);
+  assert.equal(caps.clockDisplay, false);
+  assert.ok(Array.isArray(caps.capabilities));
+  assert.equal(caps.capabilities.length, 2);
+  assert.equal(caps.capabilities[0].name, 'systemtimeout');
+  assert.equal(caps.capabilities[0].url, '/systemtimeout');
+});
+
+test('parseCapabilitiesXml: empty string returns null', () => {
+  assert.equal(parseCapabilitiesXml(''), null);
+});
+
+test('parseCapabilitiesXml: non-capabilities XML returns null', () => {
+  assert.equal(parseCapabilitiesXml('<volume>0</volume>'), null);
+});
+
+test('parseCapabilitiesEl: null input returns null', () => {
+  assert.equal(parseCapabilitiesEl(null), null);
+});
+
+test('parseCapabilitiesEl: parses a DOM element directly', async () => {
+  const xml = await fixture('capabilities.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const els = doc.getElementsByTagName('capabilities');
+  const caps = parseCapabilitiesEl(els && els[0]);
+  assert.ok(caps);
+  assert.equal(caps.deviceID, '3415139ABD77');
+  assert.equal(caps.lrStereoCapable, true);
+});
+
+// --- parseRecentsXml ------------------------------------------------
+
+test('parseRecentsXml: returns array with TUNEIN + SPOTIFY entries', async () => {
+  const xml = await fixture('recents.xml');
+  const recents = parseRecentsXml(xml);
+  assert.ok(Array.isArray(recents), 'returns an array');
+  assert.equal(recents.length, 5);
+
+  const first = recents[0];
+  assert.equal(first.source, 'TUNEIN');
+  assert.equal(first.type, 'stationurl');
+  assert.equal(first.location, '/v1/playback/station/s10637');
+  assert.equal(first.utcTime, 1778423423);
+  assert.equal(first.itemName, '', 'bare contentItem has no itemName');
+
+  const named = recents[1];
+  assert.equal(named.source, 'TUNEIN');
+  assert.equal(named.itemName, '95.5 Charivari');
+
+  const arted = recents[2];
+  assert.equal(arted.itemName, 'Antenne Bayern');
+  assert.ok(arted.containerArt.startsWith('https://'), 'containerArt URL captured');
+
+  const spotify = recents[3];
+  assert.equal(spotify.source, 'SPOTIFY');
+  assert.equal(spotify.type, 'tracklisturl');
+  assert.equal(spotify.itemName, 'two of us');
+  assert.ok(spotify.sourceAccount.length > 0);
+});
+
+test('parseRecentsXml: empty <recents/> returns []', async () => {
+  const xml = await fixture('recents-empty.xml');
+  const recents = parseRecentsXml(xml);
+  assert.ok(Array.isArray(recents));
+  assert.equal(recents.length, 0);
+});
+
+test('parseRecentsXml: empty string returns null', () => {
+  assert.equal(parseRecentsXml(''), null);
+});
+
+test('parseRecentsXml: non-recents XML returns null', () => {
+  assert.equal(parseRecentsXml('<volume>0</volume>'), null);
+});
+
+test('parseRecentsEl: null input returns null', () => {
+  assert.equal(parseRecentsEl(null), null);
+});
+
+test('parseRecentsEl: parses a DOM element directly', async () => {
+  const xml = await fixture('recents.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const els = doc.getElementsByTagName('recents');
+  const recents = parseRecentsEl(els && els[0]);
+  assert.ok(Array.isArray(recents));
+  assert.equal(recents.length, 5);
+  assert.equal(recents[1].itemName, '95.5 Charivari');
+});
+
+// --- WS dispatch: recentsUpdated ------------------------------------
+
+test('recentsUpdated dispatch sets state.speaker.recents and touches speaker', async () => {
+  const xml = await wsFixture('recents-updated.xml');
+  const store = makeStore();
+  dispatch(xml, store);
+  const recents = store.state.speaker.recents;
+  assert.ok(Array.isArray(recents), 'recents is an array');
+  assert.equal(recents.length, 2);
+  assert.equal(recents[0].source, 'TUNEIN');
+  assert.equal(recents[1].itemName, '95.5 Charivari');
+  assert.ok(store._touched.includes('speaker'), 'speaker key was touched');
 });

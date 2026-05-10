@@ -332,3 +332,30 @@ test('dispatch: balanceUpdated → afterApply confirms balance slider with actua
   assert.equal(actions.hasPending('balance'), false,
     'confirm(2) gates a setBalance(2) — no in-flight POST');
 });
+
+// --- recents WS dispatch --------------------------------------------
+
+test('dispatch: inline payload (recentsUpdated) → field applied, single touch', async () => {
+  const xml = await wsFixture('recents-updated.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const child = doc.documentElement.children[0]; // <recentsUpdated>
+
+  const store = makeStore();
+  await dispatch(child, store);
+
+  assert.equal(store._touched.length, 1, 'touch called exactly once');
+  assert.equal(store._touched[0], 'speaker');
+  const recents = store.state.speaker.recents;
+  assert.ok(Array.isArray(recents), 'recents is an array');
+  assert.equal(recents.length, 2);
+  assert.equal(recents[0].source, 'TUNEIN');
+  assert.equal(recents[1].itemName, '95.5 Charivari');
+});
+
+test('registry: recents field has fetcher + eventTag + parseInline', () => {
+  const entry = FIELDS.find((f) => f.name === 'recents');
+  assert.ok(entry, 'recents entry exists in FIELDS');
+  assert.equal(typeof entry.fetcher, 'function');
+  assert.equal(entry.eventTag, 'recentsUpdated');
+  assert.equal(typeof entry.parseInline, 'function');
+});

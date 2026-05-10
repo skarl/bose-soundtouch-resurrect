@@ -69,7 +69,8 @@ export const store = observable({
     zone:           null,   // {master, members: [{ipAddress, deviceID}, ...]}
     bluetooth:      null,   // {paired: [{name, mac}, ...], pairing}
     network:        null,   // {ssid, ipAddress, macAddress, signalDbm}
-    recents:        null,   // [{deviceID, source, contentItem}, ...]
+    recents:        null,   // [{utcTime, source, sourceAccount, type, location, itemName, containerArt}, ...]
+    capabilities:   null,   // {deviceID, dspMonoStereo, lrStereoCapable, ..., capabilities:[{name,url}]}
     systemTimeout:    null, // {enabled, minutes}
   },
   caches: {
