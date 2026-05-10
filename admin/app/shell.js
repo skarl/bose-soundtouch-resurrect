@@ -108,9 +108,19 @@ function renderRail(railEl, store) {
   const pillEl = pill({ tone: initial.tone, text: initial.text, pulse: initial.tone === 'live' });
   pillEl.classList.add('shell-rail__pill');
 
+  const statusRow = document.createElement('div');
+  statusRow.className = 'shell-rail__status';
+  const powerBtn = document.createElement('button');
+  powerBtn.type = 'button';
+  powerBtn.className = 'shell-rail__power';
+  powerBtn.appendChild(icon('power', 14));
+  powerBtn.addEventListener('click', () => { actions.pressKey('POWER').catch(() => {}); });
+  statusRow.appendChild(pillEl);
+  statusRow.appendChild(powerBtn);
+
   card.appendChild(nameLine);
   card.appendChild(subLine);
-  card.appendChild(pillEl);
+  card.appendChild(statusRow);
 
   const nav = document.createElement('nav');
   nav.className = 'shell-rail__nav';
@@ -160,6 +170,11 @@ function renderRail(railEl, store) {
   function applyPill() {
     const next = computePillState(store.state);
     pillEl.update({ tone: next.tone, text: next.text, pulse: next.tone === 'live' });
+    const np = store.state.speaker.nowPlaying;
+    const standby = np && np.source === 'STANDBY';
+    powerBtn.title = standby ? 'Wake' : 'Sleep';
+    powerBtn.setAttribute('aria-label', standby ? 'Wake speaker' : 'Send speaker to standby');
+    powerBtn.dataset.standby = standby ? 'true' : 'false';
   }
 
   function applyActive() {
@@ -198,11 +213,22 @@ function renderHeader(headerEl, store) {
   const pillEl = pill({ tone: initial.tone, text: initial.text, pulse: initial.tone === 'live' });
   pillEl.classList.add('shell-header__pill');
 
-  headerEl.replaceChildren(name, pillEl);
+  const powerBtn = document.createElement('button');
+  powerBtn.type = 'button';
+  powerBtn.className = 'shell-header__power';
+  powerBtn.appendChild(icon('power', 14));
+  powerBtn.addEventListener('click', () => { actions.pressKey('POWER').catch(() => {}); });
+
+  headerEl.replaceChildren(name, pillEl, powerBtn);
 
   function applyPill() {
     const next = computePillState(store.state);
     pillEl.update({ tone: next.tone, text: next.text, pulse: next.tone === 'live' });
+    const np = store.state.speaker.nowPlaying;
+    const standby = np && np.source === 'STANDBY';
+    powerBtn.title = standby ? 'Wake' : 'Sleep';
+    powerBtn.setAttribute('aria-label', standby ? 'Wake speaker' : 'Send speaker to standby');
+    powerBtn.dataset.standby = standby ? 'true' : 'false';
   }
 
   function applyName() {

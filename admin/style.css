@@ -129,32 +129,13 @@
   --toast-fg:   #07080a;
 }
 
-/* Fallback: honour legacy :root custom properties for any env that
-   renders before theme.js runs (e.g. prerender, print). Light values. */
+/* Density tokens + base font live on :root. Colour tokens are NOT
+   declared here — they belong to the [data-theme="…"] blocks above
+   so the theme switcher actually wins the cascade. theme.js applies
+   data-theme synchronously on import, so there's no FOWT path that
+   needs a colour fallback at :root level. --muted and --text-dim
+   are aliases derived from each theme's --fg-muted (declared below). */
 :root {
-  --bg:         #fff;
-  --fg:         #111;
-  --fg-muted:   #666;
-  --muted:      #666;     /* keep --muted as alias used widely in markup */
-  --accent:     #0a66c2;
-  --accent-fg:  #ffffff;
-  --text-dim:   color-mix(in oklab, var(--fg-muted) 70%, transparent);
-  --border:     #e3e3e3;
-  --surface:    #fafafa;
-  --surface-hi: #f5f5f5;
-  --stream-sel: #e7f3ff;
-  --warn-bg:    #fff8c5;
-  --warn-border:#d4c95a;
-  --error-bg:   #fde4e4;
-  --error-border:#d49a9a;
-  --error-fg:   #7a1f1f;
-  --search-err: #b00020;
-  --pill-amber: #b07000;
-  --pill-green: #1a7f37;
-  --pill-red:   #b00020;
-  --toast-bg:   #222;
-  --toast-fg:   #fff;
-
   --st-rowH:    56px;
   --st-gap:     14px;
   --st-pad:     16px;
@@ -165,11 +146,22 @@
   font-size: 16px;
 }
 
-/* Keep --muted in sync with --fg-muted inside each theme block so
-   existing rules that reference var(--muted) still resolve correctly. */
-[data-theme="graphite"] { --muted: var(--fg-muted); }
-[data-theme="cream"]    { --muted: var(--fg-muted); }
-[data-theme="terminal"] { --muted: var(--fg-muted); }
+/* Per-theme aliases. --muted and --text-dim depend on the active
+   palette's --fg-muted, so they must be declared inside the same
+   [data-theme] scope (custom-prop var() resolution happens at use,
+   but the alias must be defined once :root no longer carries colours). */
+[data-theme="graphite"] {
+  --muted: var(--fg-muted);
+  --text-dim: color-mix(in oklab, var(--fg-muted) 70%, transparent);
+}
+[data-theme="cream"]    {
+  --muted: var(--fg-muted);
+  --text-dim: color-mix(in oklab, var(--fg-muted) 70%, transparent);
+}
+[data-theme="terminal"] {
+  --muted: var(--fg-muted);
+  --text-dim: color-mix(in oklab, var(--fg-muted) 70%, transparent);
+}
 
 * { box-sizing: border-box; }
 
@@ -2112,7 +2104,49 @@ select.settings-input {
 }
 
 .shell-rail__pill {
-  align-self: flex-start;
+  align-self: center;
+}
+
+.shell-rail__status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.15rem;
+}
+
+.shell-rail__power,
+.shell-header__power {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--fg-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.shell-rail__power:hover,
+.shell-header__power:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.shell-rail__power[data-standby="true"],
+.shell-header__power[data-standby="true"] {
+  color: var(--pill-amber);
+  border-color: var(--pill-amber);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-rail__power,
+  .shell-header__power { transition: none; }
 }
 
 .shell-rail__nav {
