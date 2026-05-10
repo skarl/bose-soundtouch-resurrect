@@ -78,7 +78,7 @@ export const store = observable({
     recentlyViewed: loadRecentlyViewed(),    // [{sid, name, art?}], persisted in localStorage
   },
   ws: { connected: false, mode: 'offline', lastEvent: null },
-  ui: { toast: null, testPlaying: null },
+  ui: { toast: null, testPlaying: null, activeTab: 'now' },
 });
 
 // Prepend an entry to state.caches.recentlyViewed, dedupe by sid, cap
