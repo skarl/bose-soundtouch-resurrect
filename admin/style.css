@@ -2626,8 +2626,11 @@ main {
   font-family: 'Geist Mono', ui-monospace, monospace;
   font-size: 10.5px;
   color: var(--text-dim, var(--fg-muted));
-  width: 36px;
+  width: 56px;
   flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .browse-row__label {
