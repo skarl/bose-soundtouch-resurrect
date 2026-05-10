@@ -443,14 +443,20 @@ handle_post() {
     sp_resp_file="$TMPDIR_FALLBACK/presets-sp.$$.resp"
     printf '%s' "$sp_body" >"$sp_body_file"
 
-    # busybox wget: exit 0 on 2xx, nonzero on 4xx/5xx/network error.
-    # We additionally inspect the response body because the speaker
+    # busybox wget on this firmware is GET-only — it doesn't accept
+    # --post-file / --post-data, so we use curl (also installed at
+    # /usr/bin/curl). curl writes the upstream HTTP status via -w; we
+    # treat 000 (transport failure) and any 4xx/5xx as a failure.
+    # Additionally inspect the response body because the speaker
     # sometimes returns 200 with an <errors><error>...</error> payload.
     sp_ok=1
-    if ! wget -q -O "$sp_resp_file" \
-        --header='Content-Type: application/xml' \
-        --post-file="$sp_body_file" \
-        "$sp_url"; then
+    sp_status=$(curl -s -o "$sp_resp_file" -w '%{http_code}' \
+        -X POST -H 'Content-Type: application/xml' \
+        --data-binary "@$sp_body_file" \
+        "$sp_url")
+    if [ -z "$sp_status" ] || [ "$sp_status" = "000" ]; then
+        sp_ok=0
+    elif [ "$sp_status" -ge 400 ] 2>/dev/null; then
         sp_ok=0
     fi
     if grep -q '<error' "$sp_resp_file" 2>/dev/null; then

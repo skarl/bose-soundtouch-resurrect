@@ -25,7 +25,9 @@ async function getJson(path) {
 }
 
 export function tuneinSearch(q) {
-  const qs = new URLSearchParams({ q, type: 'station' }).toString();
+  // TuneIn's Search.ashx expects `query=`; sending `q=` returns
+  // {head: {status: 400, fault: "Empty Query specified"}} with no body.
+  const qs = new URLSearchParams({ query: q, type: 'station' }).toString();
   return getJson(`/tunein/search?${qs}`);
 }
 

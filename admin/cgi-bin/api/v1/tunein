@@ -15,8 +15,9 @@
 #   GET /tunein/station/sNNN                → Describe.ashx?id=sNNN
 #   GET /tunein/probe/sNNN                  → Tune.ashx?id=sNNN
 #
-# busybox-shell only — no bash-isms. Uses wget (not curl); the speaker
-# ships busybox 1.x with wget but no curl.
+# busybox-shell only — no bash-isms. Uses wget for the upstream fetch
+# (this CGI only does GET, so the busybox wget's GET-only / http-only
+# limits don't bite). For POST or HTTPS, use /usr/bin/curl instead.
 
 UA='Bose_Lisa/27.0.6'
 MAGIC='formats=mp3,aac&lang=de-de&render=json'
