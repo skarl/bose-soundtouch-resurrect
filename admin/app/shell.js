@@ -175,7 +175,8 @@ function renderRail(railEl, store) {
   function applyFoot() {
     const net = store.state.speaker.network || {};
     const info = store.state.speaker.info || {};
-    fHost.textContent = net.name || info.name || '';
+    const host = info.name ? info.name.toLowerCase().replace(/\s+/g, '') + '.local' : (net.name || '');
+    fHost.textContent = host;
     fIp.textContent = net.ipAddress || '';
   }
 
