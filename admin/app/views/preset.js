@@ -8,10 +8,9 @@
 //
 // See admin/PLAN.md § Routing (#/preset/N).
 
-import { store, setPresets } from '../state.js';
-import { presetsAssign, presetsList, tuneinProbe } from '../api.js';
+import { store } from '../state.js';
 import { showToast } from '../toast.js';
-import { classify, reshape } from '../reshape.js';
+import { probe, assignToPreset } from '../probe.js';
 import searchView from './search.js';
 import browseView from './browse.js';
 
@@ -78,70 +77,15 @@ function buildCardClickHandler(slot) {
   };
 }
 
-async function doAssign(slot, sid, stationName) {
-  // Probe the station so we can reshape() a Bose payload — same path
-  // the station detail view uses.
-  const probeCache = store.state.caches.probe;
-  let cachedVerdict = probeCache && probeCache.get ? probeCache.get(sid) : null;
-  if (cachedVerdict && typeof cachedVerdict.expires === 'number' && cachedVerdict.expires <= Date.now()) {
-    probeCache.delete(sid);
-    cachedVerdict = null;
-  }
-
-  let tuneinJson = cachedVerdict ? cachedVerdict.tuneinJson : null;
-  let verdict = cachedVerdict || null;
-
-  if (!tuneinJson) {
-    showToast('Probing stream…');
-    try {
-      tuneinJson = await tuneinProbe(sid);
-      verdict = classify(tuneinJson);
-    } catch (err) {
-      showToast(`Assign failed: ${err.message || 'probe error'}`);
-      return;
-    }
-  }
-
-  if (!verdict || verdict.kind !== 'playable') {
-    showToast('This station is not playable — pick another.');
-    return;
-  }
-
-  const bose = reshape(tuneinJson, sid, stationName);
-  if (!bose) {
-    showToast(`Cannot assign: no playable streams for ${sid}`);
-    return;
-  }
-
-  let envelope;
-  try {
-    envelope = await presetsAssign(slot, {
-      id:   sid,
-      slot,
-      name: stationName,
-      art:  '',
-      kind: 'playable',
-      json: bose,
-    });
-  } catch (err) {
-    showToast(`Assign failed: ${err.message || 'transport error'}`);
-    return;
-  }
-
-  if (envelope && envelope.ok && Array.isArray(envelope.data)) {
-    setPresets(envelope.data);
-    showToast(`Saved to preset ${slot}`);
-    // Close the modal via history.
-    location.hash = '#/';
-    return;
-  }
-
-  const errObj = (envelope && envelope.error) || { code: 'UNKNOWN' };
-  const detail = errObj.message ? `${errObj.code}: ${errObj.message}` : errObj.code;
-  showToast(`Assign failed (${detail})`);
-  presetsList().then((env) => {
-    if (env && env.ok && Array.isArray(env.data)) setPresets(env.data);
-  }).catch(() => {});
+async function doAssign(slot, sid, name) {
+  let p;
+  try { p = await probe(sid); }
+  catch (err) { showToast(`Assign failed: ${err.message || 'probe error'}`); return; }
+  let env;
+  try { env = await assignToPreset(p, slot, { name, art: '' }); }
+  catch (err) { showToast(`Assign failed: ${err.message || 'transport error'}`); return; }
+  if (env.ok) { showToast(`Saved to preset ${slot}`); location.hash = '#/'; }
+  else        { showToast(`Assign failed (${env.error?.code || 'unknown'})`); }
 }
 
 export default {

@@ -6,11 +6,10 @@
 //   2. Fetch Describe.ashx via tuneinStation(sid) → fill name,
 //      slogan, location/language/format meta. Adds the station to
 //      state.caches.recentlyViewed (search.js's empty state reads it).
-//   3. Fetch Tune.ashx via tuneinProbe(sid) → classify() the response.
-//      Probe results are cached in state.caches.probe for 10 minutes
-//      keyed by sid; re-entry within TTL skips the network fetch. The
-//      raw tuneinJson is cached alongside the verdict so the
-//      assign-button handlers can call reshape() without refetching.
+//   3. Fetch Tune.ashx via probe(sid) → cache-aware orchestrator in
+//      app/probe.js. Re-entry within the 10-minute TTL skips the fetch.
+//      The Probe result carries tuneinJson so assign + audition can
+//      call buildBosePayload() without refetching.
 //   4. Render the verdict:
 //      - playable: "N streams . best: K kbps CODEC" + assign buttons
 //        enabled, click handler POSTs to /presets/:slot.
@@ -20,13 +19,12 @@
 // See admin/PLAN.md § View specs / station detail.
 
 import { html, mount } from '../dom.js';
-import { tuneinStation, tuneinProbe, presetsAssign, presetsList, previewStream } from '../api.js';
+import { tuneinStation, presetsList, previewStream } from '../api.js';
 import { addRecentlyViewed, setPresets } from '../state.js';
-import { classify, reshape } from '../reshape.js';
 import { showToast } from '../toast.js';
 import { setArt } from '../art.js';
+import { probe, assignToPreset, buildBosePayload } from '../probe.js';
 
-const PROBE_TTL_MS = 10 * 60 * 1000;   // 10 minutes
 const ASSIGN_SLOTS = 6;
 
 // Pull the friendliest single image URL from a Describe.ashx body[0].
@@ -84,7 +82,7 @@ function fmtCodec(stream) {
 
 let chosenStreamUrl = '';
 let auditionRow     = null;
-let auditionCtx     = null;   // {sid, getName, getBose} captured at row render
+let auditionCtx     = null;   // {sid, getName, getProbe} captured at row render
 
 function markRowPlaying(rowEl) {
   if (auditionRow && auditionRow !== rowEl) {
@@ -95,19 +93,15 @@ function markRowPlaying(rowEl) {
 }
 
 async function auditionStream(url, rowEl, ctx) {
-  if (!ctx || !ctx.getBose || !ctx.getName) return;
-  // Read the live name at click time. Describe.ashx races Tune.ashx,
-  // and the chooser renders on Tune's response, so capturing the name
-  // at render time can stamp the resolver JSON with `sid` (e.g.
-  // "s17490") instead of the friendly name. Evaluating here also
-  // means a re-click after Describe lands picks up the real name.
+  if (!ctx || !ctx.getProbe || !ctx.getName) return;
+  // Read the live name at click time — Describe.ashx may still be
+  // racing the probe when the stream list mounts.
   const liveName = ctx.getName();
-  const bose = ctx.getBose(url);
+  const bose = buildBosePayload(ctx.getProbe(), liveName, url);
   if (!bose) {
     showToast('No playable streams to audition');
     return;
   }
-  bose.name = liveName;
   markRowPlaying(rowEl);
   try {
     const env = await previewStream({ id: ctx.sid, name: liveName, json: bose });
@@ -206,7 +200,7 @@ function buildAssignRow() {
     btn.dataset.slot = String(n);
     btn.textContent = String(n);
     // Initial state: disabled. Enabled by enableAssignButtons() once a
-    // playable verdict + tuneinJson are in hand.
+    // playable probe result is in hand.
     btn.disabled = true;
     wrap.appendChild(btn);
   }
@@ -305,33 +299,13 @@ function applyVerdict(root, sid, verdict, ctx) {
     verdictEl.classList.add('is-playable');
     verdictEl.textContent = detail || 'Playable';
 
-    // Render the stream chooser (radios + audition buttons) under
-    // the verdict, between it and the assign row. The chooser needs
-    // a way to build a Bose JSON for the URL the user clicked, so
-    // that previewStream() can stage it on the resolver and /select
-    // on the speaker. We pass a getBose(chosenUrl) closure that calls
-    // reshape() once and patches in the chosen streamUrl — same
-    // override the assign path uses.
-    const auditionGetBose = (chosenUrl) => {
-      if (!ctx || !ctx.tuneinJson) return null;
-      const previewName = ctx.getName ? ctx.getName() : sid;
-      const j = reshape(ctx.tuneinJson, sid, previewName);
-      if (!j) return null;
-      if (chosenUrl && j.audio && Array.isArray(j.audio.streams)) {
-        const match = j.audio.streams.find((s) => s.streamUrl === chosenUrl);
-        if (match) j.audio.streamUrl = match.streamUrl;
-      }
-      return j;
-    };
     const existing = root.querySelector('.station-streams');
     if (existing) existing.remove();
     if (streams.length > 0) {
       verdictEl.insertAdjacentElement('afterend', renderStreamList(streams, {
         sid,
-        // Evaluated at click time, not at render — Describe may still
-        // be racing the probe when this list mounts.
         getName: () => (ctx && ctx.getName ? ctx.getName() : sid),
-        getBose: auditionGetBose,
+        getProbe: () => (ctx && ctx.probe ? ctx.probe : null),
       }));
     }
 
@@ -365,12 +339,11 @@ function applyVerdict(root, sid, verdict, ctx) {
 }
 
 // Enable each assign button and wire its click handler. ctx carries
-// {tuneinJson, getName} — getName() is read at click time so the
+// {probe, getName} — getName() is read at click time so the
 // metadata-fetch latency doesn't matter as long as it lands before the
-// user clicks. Buttons stay disabled if tuneinJson is missing (e.g.
-// the cache entry was rebuilt without it).
+// user clicks.
 function enableAssignButtons(root, sid, ctx) {
-  if (!ctx || !ctx.tuneinJson) return;
+  if (!ctx || !ctx.probe) return;
   const btns = root.querySelectorAll('.station-assign-btn');
   for (const btn of btns) {
     btn.disabled = false;
@@ -382,29 +355,14 @@ function enableAssignButtons(root, sid, ctx) {
   }
 }
 
-// Optimistic POST + reconcile. On {ok:true,data} reconcile speaker
-// presets from the response. On {ok:false,error} surface the code in a
-// toast and refetch /presets so the UI shows actual speaker state.
+// Optimistic POST + reconcile. assignToPreset owns the reshape + override
+// + setPresets path; this handler owns the busy-button UI bookkeeping.
 async function handleAssignClick(root, sid, slot, ctx) {
   const btn = root.querySelector(`.station-assign-btn[data-slot="${slot}"]`);
   if (!btn || btn.dataset.busy === '1') return;
 
   const name = ctx.getName ? ctx.getName() : sid;
   const art  = ctx.getArt  ? ctx.getArt()  : '';
-  const bose = reshape(ctx.tuneinJson, sid, name);
-  if (!bose) {
-    showToast(`Cannot save: no playable streams for ${sid}`);
-    return;
-  }
-  // Override the auto-picked top-level streamUrl with the user's
-  // selection from the chooser (if they made one). Keep the full
-  // streams[] list intact as fallbacks for the speaker. We don't
-  // touch reshape() itself — the reshape contract test fixtures
-  // still pin the auto-pick path against resolver/build.py.
-  if (chosenStreamUrl && bose.audio && Array.isArray(bose.audio.streams)) {
-    const match = bose.audio.streams.find((s) => s.streamUrl === chosenStreamUrl);
-    if (match) bose.audio.streamUrl = match.streamUrl;
-  }
 
   btn.dataset.busy = '1';
   btn.disabled = true;
@@ -413,23 +371,15 @@ async function handleAssignClick(root, sid, slot, ctx) {
 
   let envelope;
   try {
-    envelope = await presetsAssign(slot, {
-      id: sid,
-      slot,
-      name,
-      art,
-      kind: 'playable',
-      json: bose,
-    });
+    envelope = await assignToPreset(ctx.probe, slot, { name, art, chosenStreamUrl });
   } catch (err) {
     showToast(`Save failed: ${err.message || 'transport error'}`);
     btn.textContent = originalLabel;
     btn.disabled = false;
     btn.dataset.busy = '';
-    // Best-effort refetch so the user sees the actual speaker state.
     presetsList().then((env) => {
       if (env && env.ok && Array.isArray(env.data)) setPresets(env.data);
-    }).catch(() => { /* surfaced via the original toast already */ });
+    }).catch(() => {});
     return;
   }
 
@@ -437,19 +387,17 @@ async function handleAssignClick(root, sid, slot, ctx) {
   btn.disabled = false;
   btn.dataset.busy = '';
 
-  if (envelope && envelope.ok && Array.isArray(envelope.data)) {
-    setPresets(envelope.data);
+  if (envelope && envelope.ok) {
     showToast(`Saved to preset ${slot}`);
     return;
   }
 
-  // Structured error — refetch to show what's actually on the speaker.
-  const err = (envelope && envelope.error) || { code: 'UNKNOWN' };
-  const detail = err.message ? `${err.code}: ${err.message}` : err.code;
+  const errObj = (envelope && envelope.error) || { code: 'UNKNOWN' };
+  const detail = errObj.message ? `${errObj.code}: ${errObj.message}` : errObj.code;
   showToast(`Save failed (${detail})`);
   presetsList().then((env) => {
     if (env && env.ok && Array.isArray(env.data)) setPresets(env.data);
-  }).catch(() => { /* keep the toast as the user-facing signal */ });
+  }).catch(() => {});
 }
 
 function applyProbeError(root, err) {
@@ -460,37 +408,8 @@ function applyProbeError(root, err) {
   }
 }
 
-// Read state.caches.probe for a non-expired entry. Returns null if
-// missing or stale; on stale, evicts the entry as a courtesy.
-// Returned shape: {kind, streams?, reason?, tuneinJson?, expires}.
-function readCachedProbe(store, sid) {
-  const cache = store.state.caches.probe;
-  if (!cache || typeof cache.get !== 'function') return null;
-  const hit = cache.get(sid);
-  if (!hit) return null;
-  if (typeof hit.expires !== 'number' || hit.expires <= Date.now()) {
-    cache.delete(sid);
-    return null;
-  }
-  return hit;
-}
-
-// Cache the verdict + the original tuneinJson together. The assign
-// handler needs the raw probe to reshape() into Bose JSON; keeping it
-// here means a re-entry within the 10-minute TTL skips both the
-// network probe and the reshape input fetch.
-function writeCachedProbe(store, sid, verdict, tuneinJson) {
-  const cache = store.state.caches.probe;
-  if (!cache || typeof cache.set !== 'function') return;
-  cache.set(sid, {
-    ...verdict,
-    tuneinJson,
-    expires: Date.now() + PROBE_TTL_MS,
-  });
-}
-
 export default {
-  init(root, store, ctx) {
+  init(root, _store, ctx) {
     const sid = (ctx && ctx.params && ctx.params.id) || '';
     if (!sid) {
       mount(root, html`
@@ -534,21 +453,11 @@ export default {
         addRecentlyViewed({ sid, name: sid });
       });
 
-    // Tune.ashx → verdict. Cache hit short-circuits the network fetch.
-    const cached = readCachedProbe(store, sid);
-    if (cached) {
-      applyVerdict(root, sid, cached, {
-        tuneinJson: cached.tuneinJson || null,
-        getName,
-        getArt,
-      });
-      return;
-    }
-    tuneinProbe(sid)
-      .then((res) => {
-        const verdict = classify(res);
-        writeCachedProbe(store, sid, verdict, res);
-        applyVerdict(root, sid, verdict, { tuneinJson: res, getName, getArt });
+    // probe() is cache-aware — re-entry within the 10-minute TTL skips
+    // the network fetch.
+    probe(sid)
+      .then((p) => {
+        applyVerdict(root, sid, p.verdict, { probe: p, getName, getArt });
       })
       .catch((err) => {
         applyProbeError(root, err);

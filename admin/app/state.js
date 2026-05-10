@@ -60,7 +60,7 @@ export const store = observable({
     sources:    null,   // [{source, sourceAccount, displayName, status, isLocal}, ...]
   },
   caches: {
-    probe:          new Map(),               // sid -> {kind, streams?, reason?, expires}
+    probe:          new Map(),               // sid → Probe = {sid, verdict, tuneinJson, expires} — TTL 10 min
     recentlyViewed: loadRecentlyViewed(),    // [{sid, name, art?}], persisted in localStorage
   },
   ws: { connected: false, mode: 'offline', lastEvent: null },
