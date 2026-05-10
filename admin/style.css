@@ -496,26 +496,26 @@ nav.routes a:hover {
   font-size: 0.85rem;
 }
 
-/* --- now-playing view (0.3 full card) ----------------------------- */
+/* --- now-playing view (compact card + 3-col preset grid) --------- */
 
 .np-view {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1rem;
 }
 
-/* Art + text block — stacks vertically on mobile, side-by-side ≥640 px.
-   position:relative anchors the .vu-dot to the card's top-right corner.
-   The hero background blends a tint sampled from the current album art
-   (set by tint.js as --np-tint on .np-view) into --surface. Falls back
-   to plain --surface when --np-tint is unset (initial load, missing
-   art, CORS-tainted canvas read). */
+/* Single horizontal card: art (left) + body column (right). The hero
+   background blends an album-art tint (tint.js sets --np-tint on
+   .np-view) into --surface. Falls back to plain --surface when the
+   tint isn't set (initial load, missing art, CORS-tainted canvas).
+   The equalizer dot sits at the top-right via .np-eq-slot. */
 .np-card {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: stretch;
   gap: 1rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 1rem;
   background:
     linear-gradient(135deg,
@@ -529,32 +529,34 @@ nav.routes a:hover {
   .np-card { transition: none; }
 }
 
-@media (min-width: 640px) {
-  .np-card {
-    flex-direction: row;
-    align-items: flex-start;
-  }
-}
-
 .np-art-wrap {
   flex: 0 0 auto;
   align-self: center;
 }
 
 .np-art {
-  width: 5rem;
-  height: 5rem;
+  width: 6rem;
+  height: 6rem;
   object-fit: cover;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--border);
   display: block;
 }
 
 @media (min-width: 640px) {
   .np-art {
-    width: 7rem;
-    height: 7rem;
+    width: 7.5rem;
+    height: 7.5rem;
   }
+}
+
+.np-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .np-text {
@@ -563,7 +565,6 @@ nav.routes a:hover {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  justify-content: center;
 }
 
 .np-name {
@@ -578,7 +579,7 @@ nav.routes a:hover {
 .np-track {
   margin: 0;
   font-size: 0.9rem;
-  color: var(--muted);
+  color: var(--fg-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -587,51 +588,36 @@ nav.routes a:hover {
 .np-meta {
   margin: 0;
   font-size: 0.8rem;
-  color: var(--muted);
+  color: var(--fg-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Live VU dot. Positioned at the top-right corner of .np-card.
-   Pulses while data-playing="true"; invisible otherwise. */
-@keyframes vu-pulse {
-  0%   { opacity: 0.9; transform: scale(1); }
-  50%  { opacity: 0.4; transform: scale(0.7); }
-  100% { opacity: 0.9; transform: scale(1); }
-}
-
-.vu-dot {
+/* Equalizer slot — anchored top-right of the card. The icon module's
+   .equalizer wrapper sits inside; its bars animate when nowPlaying is
+   PLAY_STATE (driven by data-state="playing" set by components.js). */
+.np-eq-slot {
   position: absolute;
   top: 0.6rem;
-  right: 0.6rem;
-  width: 0.55rem;
-  height: 0.55rem;
-  border-radius: 50%;
-  background: var(--pill-green);
-  opacity: 0;
-  transition: opacity 200ms;
+  right: 0.7rem;
+  color: var(--accent);
+  font-size: 1.1rem;
   pointer-events: none;
 }
 
-.vu-dot[data-playing="true"] {
-  opacity: 0.9;
-  animation: vu-pulse 1.2s ease-in-out infinite;
-}
-
-/* Transport row — prev / play-pause / next */
+/* Transport row — prev / play-pause / next, left-aligned within body. */
 .np-transport {
   display: flex;
-  justify-content: center;
-  gap: 1rem;
+  justify-content: flex-start;
+  gap: 0.75rem;
 }
 
 .np-btn {
   font: inherit;
-  font-size: 1.4rem;
   line-height: 1;
-  width: 3rem;
-  height: 3rem;
+  width: 2.6rem;
+  height: 2.6rem;
   border: 1px solid var(--border);
   border-radius: 50%;
   background: var(--surface);
@@ -640,7 +626,8 @@ nav.routes a:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 120ms, background 120ms;
+  padding: 0;
+  transition: border-color 120ms, background 120ms, color 120ms;
 }
 
 .np-btn:hover {
@@ -653,9 +640,8 @@ nav.routes a:hover {
 }
 
 .np-btn--play {
-  font-size: 1.2rem;
-  width: 3.5rem;
-  height: 3.5rem;
+  width: 3rem;
+  height: 3rem;
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -665,18 +651,18 @@ nav.routes a:hover {
   color: var(--bg);
 }
 
-/* Source picker pills */
+/* Source picker pills — only READY sources are rendered, so disabled /
+   UNAVAILABLE styling is no longer needed. */
 .np-sources {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin: 0.75rem 0;
 }
 
 .np-source-pill {
   font: inherit;
   font-size: 0.85rem;
-  padding: 0.3rem 0.75rem;
+  padding: 0.3rem 0.85rem;
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface);
@@ -685,7 +671,7 @@ nav.routes a:hover {
   transition: background 120ms, color 120ms, border-color 120ms;
 }
 
-.np-source-pill:not(:disabled):hover {
+.np-source-pill:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -696,39 +682,36 @@ nav.routes a:hover {
   border-color: var(--accent);
 }
 
-.np-source-pill[data-status="UNAVAILABLE"],
-.np-source-pill:disabled {
-  color: var(--muted);
-  background: var(--surface);
-  border-color: var(--border);
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-/* Preset card row (slice 6) */
-.np-presets {
+/* Preset row — 3-column grid of art-style gradient cards. Each card
+   renders the slot number top-left and station name bottom-left.
+   --np-preset-hue is set per slot (deterministic via art.js hashHue)
+   so all six render simultaneously without scheduling concurrent
+   canvas reads. Active preset gets an inset accent border. */
+.np-presets-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 0.5rem;
-  margin: 0.5rem 0;
 }
 
 .np-preset {
   font: inherit;
-  font-size: 0.78rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.2rem;
-  padding: 0.4rem 0.25rem 0.5rem;
+  font-size: 0.85rem;
+  text-align: left;
+  display: block;
+  padding: 0.5rem 0.65rem;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
+  border-radius: 8px;
   color: var(--fg);
   cursor: pointer;
   position: relative;
-  min-height: 4.5rem;
-  transition: border-color 120ms, background 120ms;
+  aspect-ratio: 16 / 10;
+  min-height: 4rem;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg,
+      hsl(var(--np-preset-hue, 220), 55%, 62%) 0%,
+      color-mix(in srgb, hsl(var(--np-preset-hue, 220), 45%, 38%) 70%, var(--surface)) 100%);
+  transition: border-color 120ms, transform 120ms;
 }
 
 .np-preset:not(:disabled):hover {
@@ -736,42 +719,62 @@ nav.routes a:hover {
 }
 
 .np-preset:not(:disabled):active {
-  background: var(--accent);
-  color: var(--bg);
+  transform: scale(0.985);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .np-preset {
+    transition: none;
+  }
+  .np-preset:not(:disabled):active {
+    transform: none;
+  }
+}
+
+.np-preset[data-active="true"] {
+  outline: 2px solid var(--accent);
+  outline-offset: -4px;
 }
 
 .np-preset--empty,
 .np-preset:disabled {
-  color: var(--muted);
+  background: var(--surface);
+  color: var(--fg-muted);
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: 0.7;
 }
 
 .np-preset-num {
   position: absolute;
-  top: 0.2rem;
-  left: 0.3rem;
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: var(--muted);
+  top: 0.4rem;
+  left: 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--bg);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
-.np-preset-art {
-  width: 1.75rem;
-  height: 1.75rem;
-  object-fit: cover;
-  border-radius: 3px;
-  margin-top: 0.6rem;
+.np-preset--empty .np-preset-num {
+  color: var(--fg-muted);
+  text-shadow: none;
 }
 
 .np-preset-name {
-  display: block;
-  width: 100%;
+  position: absolute;
+  bottom: 0.45rem;
+  left: 0.55rem;
+  right: 0.55rem;
+  font-weight: 600;
+  color: var(--bg);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-align: center;
-  padding: 0 0.1rem;
+}
+
+.np-preset--empty .np-preset-name {
+  color: var(--fg-muted);
+  text-shadow: none;
 }
 
 /* STANDBY / asleep state */
@@ -793,55 +796,33 @@ nav.routes a:hover {
 .np-asleep-hint {
   font-size: 0.9rem !important;
   font-weight: normal !important;
-  color: var(--muted);
+  color: var(--fg-muted);
 }
 
-/* --- volume row (slice 3) ---------------------------------------- */
+/* --- volume row -------------------------------------------------- */
 
 .np-volume {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.6rem;
   padding: 0.25rem 0;
 }
 
 .np-vol-icon {
-  font-size: 1.1rem;
   flex: 0 0 auto;
-  color: var(--muted);
+  color: var(--fg-muted);
+  display: inline-flex;
+  align-items: center;
+}
+
+.np-slider-slot {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
 }
 
 .np-slider {
   flex: 1 1 auto;
-  -webkit-appearance: none;
-  appearance: none;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--border);
-  outline: none;
-  cursor: pointer;
-}
-
-.np-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--accent);
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-}
-
-.np-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--accent);
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
 .np-slider:focus-visible {
@@ -856,7 +837,6 @@ nav.routes a:hover {
   border-radius: 50%;
   width: 2rem;
   height: 2rem;
-  font-size: 1rem;
   line-height: 1;
   cursor: pointer;
   color: var(--fg);
@@ -1572,19 +1552,11 @@ nav.routes a:hover {
   }
 
   @container (max-inline-size: 480px) {
-    /* Stack the now-playing card even if the outer viewport is wide. */
-    .np-card {
-      flex-direction: column;
-      align-items: stretch;
-    }
-
+    /* Compact card stays horizontal on narrow viewports; only the
+       art/transport sizes shrink. */
     .np-art {
       width: 5rem;
       height: 5rem;
-    }
-
-    .np-art-wrap {
-      align-self: center;
     }
 
     /* Transport buttons: ≥44px tap target. */
@@ -1598,8 +1570,7 @@ nav.routes a:hover {
       height: 3.25rem;
     }
 
-    /* Volume row: slider stretches the whole width; bump the mute
-       button and slider thumb to 44px tap targets. */
+    /* Volume row: bump the mute and slider thumb for tap targets. */
     .np-mute {
       width: 2.75rem;
       height: 2.75rem;
@@ -1625,15 +1596,10 @@ nav.routes a:hover {
       padding: 0.5rem 1rem;
     }
 
-    /* Preset rows: wrap 6 slots into 3×2 instead of 6×1. */
-    .np-presets,
+    /* Preset assign / row layouts also shift to 3-up on narrow views. */
     .preset-row,
     .station-assign-row {
       grid-template-columns: repeat(3, 1fr);
-    }
-
-    .np-preset {
-      min-height: 5.5rem;
     }
 
     .preset-slot {
@@ -1901,7 +1867,6 @@ nav.routes a:hover {
 /* Strip non-essential motion. Transitions become instant; the VU dot
    stops pulsing; toasts fade in place rather than sliding. */
 @media (prefers-reduced-motion: reduce) {
-  .vu-dot[data-playing="true"] { animation: none; }
   .toast {
     transform: none;
     transition: opacity 200ms ease;

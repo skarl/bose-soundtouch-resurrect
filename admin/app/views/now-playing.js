@@ -1,5 +1,7 @@
-// now-playing — live home view.
-// Art + station name + track/artist + source metadata + transport.
+// now-playing — live home view (compact card + 3-col preset grid).
+// Art + station name + track/artist + source metadata + transport on a
+// single horizontal card; volume in its own row beneath.
+//
 // REST polling runs as a fallback; the primary update path is the WS
 // 'speaker' subscription wired by the view shell.
 //
@@ -9,9 +11,10 @@
 import { html, mount, defineView } from '../dom.js';
 import { store } from '../state.js';
 import { speakerNowPlaying, presetsList } from '../api.js';
-import { setArt } from '../art.js';
+import { setArt, hashHue } from '../art.js';
 import * as actions from '../actions/index.js';
-import { vuDot, updateVuDot } from '../components.js';
+import { equalizer, slider } from '../components.js';
+import { icon } from '../icons.js';
 import { formatVolumeValueText, rovingFocus } from '../a11y.js';
 
 const POLL_MS = 2000;
@@ -53,9 +56,30 @@ function pickMetaLine(np) {
   return parts.join(' · ');
 }
 
+// Title-case an UPPER_SNAKE source key when the parser didn't supply a
+// displayName (some firmware payloads ship empty <sourceItem> bodies).
+function humaniseSourceKey(key) {
+  return String(key || '')
+    .toLowerCase()
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 export default defineView({
   mount(root, _store, _ctx, env) {
-    const vuDotEl = vuDot();
+    const eqEl = equalizer({ playing: false });
+
+    const volumeSlider = slider({
+      min: 0,
+      max: 100,
+      value: 0,
+      step: 1,
+      ariaLabel: 'Volume',
+      throttleMs: 50,
+      onChange: (v) => actions.setVolume(v),
+    });
+    volumeSlider.classList.add('np-slider');
 
     mount(root, html`
       <section class="np-view" data-view="now-playing">
@@ -63,25 +87,27 @@ export default defineView({
           <div class="np-art-wrap">
             <img class="np-art" alt="">
           </div>
-          <div class="np-text">
-            <h1 class="np-name"></h1>
-            <p class="np-track" aria-live="polite" hidden></p>
-            <p class="np-meta" hidden></p>
+          <div class="np-body">
+            <div class="np-text">
+              <h1 class="np-name"></h1>
+              <p class="np-track" aria-live="polite" hidden></p>
+              <p class="np-meta" hidden></p>
+            </div>
+            <div class="np-transport">
+              <button class="np-btn np-btn--prev" type="button" title="Previous" aria-label="Previous track"></button>
+              <button class="np-btn np-btn--play" type="button" title="Play" aria-label="Play"></button>
+              <button class="np-btn np-btn--next" type="button" title="Next" aria-label="Next track"></button>
+            </div>
           </div>
-          ${vuDotEl}
-        </div>
-        <div class="np-transport">
-          <button class="np-btn" type="button" title="Previous" aria-label="Previous track">&#x23EE;</button>
-          <button class="np-btn np-btn--play" type="button" title="Play" aria-label="Play">&#x25B6;</button>
-          <button class="np-btn" type="button" title="Next" aria-label="Next track">&#x23ED;</button>
+          <span class="np-eq-slot" aria-hidden="true"></span>
         </div>
         <div class="np-volume" hidden>
-          <span class="np-vol-icon" aria-hidden="true">&#x1F50A;</span>
-          <input class="np-slider" type="range" min="0" max="100" step="1" aria-label="Volume">
-          <button class="np-mute" type="button" title="Mute" aria-pressed="false">&#x1F507;</button>
+          <span class="np-vol-icon" aria-hidden="true"></span>
+          <span class="np-slider-slot"></span>
+          <button class="np-mute" type="button" title="Mute" aria-pressed="false" aria-label="Mute"></button>
         </div>
-        <div class="np-sources"></div>
-        <div class="np-presets"></div>
+        <div class="np-sources" role="toolbar" aria-label="Sources"></div>
+        <div class="np-presets-grid" role="toolbar" aria-label="Presets"></div>
         <div class="np-asleep" hidden>
           <p>Speaker is asleep</p>
           <p class="np-asleep-hint">Press Play to wake it up.</p>
@@ -96,11 +122,25 @@ export default defineView({
     const metaEl     = root.querySelector('.np-meta');
     const transportEl = root.querySelector('.np-transport');
     const sourcesEl  = root.querySelector('.np-sources');
-    const presetsEl  = root.querySelector('.np-presets');
+    const presetsEl  = root.querySelector('.np-presets-grid');
     const asleepEl   = root.querySelector('.np-asleep');
     const volumeRowEl = root.querySelector('.np-volume');
-    const sliderEl   = root.querySelector('.np-slider');
     const muteEl     = root.querySelector('.np-mute');
+    const eqSlot     = root.querySelector('.np-eq-slot');
+    const sliderSlot = root.querySelector('.np-slider-slot');
+    const volIconSlot = root.querySelector('.np-vol-icon');
+    const btnPrev = root.querySelector('.np-btn--prev');
+    const btnPlay = root.querySelector('.np-btn--play');
+    const btnNext = root.querySelector('.np-btn--next');
+
+    eqSlot.appendChild(eqEl);
+    sliderSlot.appendChild(volumeSlider);
+    volIconSlot.appendChild(icon('vol', 18));
+    btnPrev.appendChild(icon('prev', 22));
+    btnNext.appendChild(icon('next', 22));
+    const playIconRef = { node: icon('play', 22) };
+    btnPlay.appendChild(playIconRef.node);
+    muteEl.appendChild(icon('mute', 16));
 
     // Long-press state — closure-local.
     let longPressTimer    = null;
@@ -114,13 +154,15 @@ export default defineView({
     }
     env.onCleanup(clearLongPress);
 
-    // Preset buttons — built once, mutated in place by applyPresets.
     const presetBtns = [];
 
     function syncPlayBtn(np) {
       const playing = np && np.playStatus === 'PLAY_STATE';
-      btnPlay.textContent = playing ? '⏸' : '▶';
-      btnPlay.title       = playing ? 'Pause' : 'Play';
+      const next = playing ? icon('pause', 22) : icon('play', 22);
+      btnPlay.replaceChild(next, playIconRef.node);
+      playIconRef.node = next;
+      btnPlay.title = playing ? 'Pause' : 'Play';
+      btnPlay.setAttribute('aria-label', playing ? 'Pause' : 'Play');
       btnPlay.dataset.playing = playing ? '1' : '';
     }
 
@@ -129,12 +171,11 @@ export default defineView({
       const level = vol ? vol.targetVolume : 0;
       // Only update slider if the value differs — avoid stomping on an
       // active drag (the user's thumb should stay under their finger).
-      if (sliderEl.value !== String(level)) {
-        sliderEl.value = String(level);
+      if (volumeSlider.value !== String(level)) {
+        volumeSlider.setValue(level);
       }
-      sliderEl.setAttribute('aria-valuetext',
-        formatVolumeValueText(level, Number(sliderEl.max) || 100, !!muted));
-      muteEl.textContent = muted ? '🔊̸' : '🔇';
+      volumeSlider.setAttribute('aria-valuetext',
+        formatVolumeValueText(level, Number(volumeSlider.max) || 100, !!muted));
       muteEl.title = muted ? 'Unmute' : 'Mute';
       muteEl.setAttribute('aria-pressed', muted ? 'true' : 'false');
       muteEl.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
@@ -143,9 +184,11 @@ export default defineView({
 
     function applyNowPlaying(np) {
       const standby = np && np.source === 'STANDBY';
-      cardEl.hidden    = standby;
-      asleepEl.hidden  = !standby;
-      transportEl.hidden = standby;
+      cardEl.hidden     = standby;
+      asleepEl.hidden   = !standby;
+      // Transport sits inside the card now; hiding the card hides it.
+
+      eqEl.setPlaying(!!(np && np.playStatus === 'PLAY_STATE'));
 
       if (standby) return;
 
@@ -166,7 +209,7 @@ export default defineView({
     // Mutate only the DOM nodes for slots that changed. Compare previous
     // slot data (stored in dataset) against the new list so unaffected
     // buttons are left untouched — preserves :active state mid-press.
-    function applyPresets(presets) {
+    function applyPresets(presets, activeContent) {
       for (let i = 0; i < PRESET_SLOTS; i++) {
         const btn = presetBtns[i];
         if (!btn) continue;
@@ -174,36 +217,39 @@ export default defineView({
         const empty = !p || !!p.empty;
 
         const newName = empty ? '' : (p.itemName || `Preset ${i + 1}`);
-        const newArt  = (!empty && typeof p.art === 'string' && p.art.startsWith('http')) ? p.art : '';
+        const isActive = !empty && activeContent
+          && activeContent.source === p.source
+          && (activeContent.location || '') === (p.location || '')
+          && (activeContent.sourceAccount || '') === (p.sourceAccount || '');
 
         if (btn.dataset.renderedEmpty === String(empty)
             && btn.dataset.renderedName === newName
-            && btn.dataset.renderedArt === newArt) {
+            && btn.dataset.renderedActive === String(!!isActive)) {
           continue;
         }
 
-        btn.dataset.renderedEmpty = String(empty);
-        btn.dataset.renderedName  = newName;
-        btn.dataset.renderedArt   = newArt;
+        btn.dataset.renderedEmpty  = String(empty);
+        btn.dataset.renderedName   = newName;
+        btn.dataset.renderedActive = String(!!isActive);
 
         btn.disabled = empty;
         btn.classList.toggle('np-preset--empty', empty);
+        btn.dataset.active = isActive ? 'true' : 'false';
         btn.setAttribute('aria-label',
           empty ? `Preset ${i + 1}, empty` : `Preset ${i + 1}, ${newName}`);
+        btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+
+        // Per-slot deterministic gradient. hashHue keeps the colour
+        // stable across reloads so all six render simultaneously
+        // without scheduling six concurrent canvas reads.
+        if (empty) {
+          btn.style.removeProperty('--np-preset-hue');
+        } else {
+          btn.style.setProperty('--np-preset-hue', String(hashHue(newName)));
+        }
 
         const labelEl = btn.querySelector('.np-preset-name');
-        const imgEl  = btn.querySelector('.np-preset-art');
-
         if (labelEl) labelEl.textContent = empty ? 'Empty' : newName;
-        if (imgEl) {
-          if (newArt) {
-            imgEl.src = newArt;
-            imgEl.removeAttribute('hidden');
-          } else {
-            imgEl.removeAttribute('src');
-            imgEl.setAttribute('hidden', '');
-          }
-        }
       }
     }
 
@@ -297,12 +343,6 @@ export default defineView({
       num.textContent = String(i + 1);
       btn.appendChild(num);
 
-      const img = document.createElement('img');
-      img.className = 'np-preset-art';
-      img.alt = '';
-      img.setAttribute('hidden', '');
-      btn.appendChild(img);
-
       const labelSpan = document.createElement('span');
       labelSpan.className = 'np-preset-name';
       labelSpan.textContent = 'Empty';
@@ -317,35 +357,43 @@ export default defineView({
       presetsEl.appendChild(btn);
       presetBtns.push(btn);
     }
-    presetsEl.setAttribute('role', 'toolbar');
-    presetsEl.setAttribute('aria-label', 'Presets');
 
     function applySourcePills(sources, activeSource) {
-      const existing = sourcesEl.querySelectorAll('.np-source-pill');
-      const sourcesArr = Array.isArray(sources) ? sources : [];
+      const ready = (Array.isArray(sources) ? sources : [])
+        .filter((s) => s && s.status === 'READY');
 
-      if (existing.length !== sourcesArr.length) {
+      const existing = sourcesEl.querySelectorAll('.np-source-pill');
+
+      // Re-render only when the set of READY sources actually changes —
+      // the cheap signature is "source|account" per row, joined.
+      const sigNew = ready.map((s) => `${s.source}|${s.sourceAccount || ''}`).join(',');
+      const sigOld = sourcesEl.dataset.sig || '';
+
+      if (sigNew !== sigOld || existing.length !== ready.length) {
         sourcesEl.textContent = '';
-        for (const src of sourcesArr) {
+        for (const src of ready) {
           const btn = document.createElement('button');
           btn.className = 'np-source-pill';
           btn.type = 'button';
           btn.dataset.source = src.source;
           btn.dataset.account = src.sourceAccount || '';
-          btn.dataset.status = src.status;
           btn.dataset.local = src.isLocal ? 'true' : 'false';
-          btn.textContent = src.displayName || src.source;
+          const label = src.displayName && src.displayName.trim()
+            ? src.displayName.trim()
+            : humaniseSourceKey(src.source);
+          btn.textContent = label;
+          btn.setAttribute('aria-label', label);
           btn.addEventListener('click', onSourceClick);
           sourcesEl.appendChild(btn);
         }
+        sourcesEl.dataset.sig = sigNew;
       }
 
       const pills = sourcesEl.querySelectorAll('.np-source-pill');
       for (const pill2 of pills) {
         const src = pill2.dataset.source;
-        const unavail = pill2.dataset.status === 'UNAVAILABLE';
-        pill2.disabled = unavail;
         pill2.dataset.active = (src === activeSource) ? 'true' : 'false';
+        pill2.setAttribute('aria-pressed', src === activeSource ? 'true' : 'false');
       }
     }
 
@@ -386,22 +434,9 @@ export default defineView({
       sendKey(playing ? 'PAUSE' : 'PLAY');
     }
 
-    const btns = root.querySelectorAll('.np-btn');
-    const btnPrev = btns[0];
-    const btnPlay = btns[1];
-    const btnNext = btns[2];
-
     btnPrev.addEventListener('click', onPrev);
     btnPlay.addEventListener('click', onPlayPause);
     btnNext.addEventListener('click', onNext);
-
-    sliderEl.addEventListener('input', () => {
-      const v = Number(sliderEl.value);
-      const muted = !!(store.state.speaker.volume && store.state.speaker.volume.muteEnabled);
-      sliderEl.setAttribute('aria-valuetext',
-        formatVolumeValueText(v, Number(sliderEl.max) || 100, muted));
-      actions.setVolume(v);
-    });
 
     muteEl.addEventListener('click', () => { actions.toggleMute(); });
 
@@ -469,8 +504,7 @@ export default defineView({
     applyNowPlaying(sp.nowPlaying);
     applyVolume(sp.volume);
     applySourcePills(sp.sources, sp.nowPlaying && sp.nowPlaying.source);
-    applyPresets(sp.presets);
-    updateVuDot(vuDotEl, store.state);
+    applyPresets(sp.presets, sp.nowPlaying && sp.nowPlaying.item);
 
     if (typeof document === 'undefined' || !document.hidden) startPolling();
     if (!store.state.speaker.presets) fetchPresetsOnce();
@@ -481,8 +515,7 @@ export default defineView({
         applyVolume(state.speaker.volume);
         const activeSource = state.speaker.nowPlaying && state.speaker.nowPlaying.source;
         applySourcePills(state.speaker.sources, activeSource);
-        applyPresets(state.speaker.presets);
-        updateVuDot(vuDotEl, state);
+        applyPresets(state.speaker.presets, state.speaker.nowPlaying && state.speaker.nowPlaying.item);
       },
     };
   },
