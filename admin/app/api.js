@@ -2,8 +2,11 @@
 // See admin/PLAN.md § REST API.
 //
 // Surface:
-//   tunein*       — TuneIn forwarder (search / browse / station / probe)
-//   speakerNowPlaying() — speaker proxy /now_playing parser
+//   tunein*              — TuneIn forwarder (search / browse / station / probe)
+//   getNowPlaying()      — speaker proxy /now_playing (canonical name for 0.3+)
+//   speakerNowPlaying()  — alias kept for now-playing.js polling compat
+//   parseNowPlayingXml() — shared parser used by REST and WS paths
+//   parseNowPlayingEl()  — same parser for an already-parsed DOM element
 //   presetsList(), presetsAssign() — presets CGI envelope client
 
 export const apiBase = '/cgi-bin/api/v1';
@@ -93,16 +96,34 @@ export function parseNowPlayingXml(xmlText) {
   if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
 
   const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.querySelector('parsererror')) return null;
+  // Browser signals parse failure via a <parsererror> child; @xmldom/xmldom
+  // (test runtime) does not have querySelector, so check getElementsByTagName.
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
 
-  const np = doc.querySelector('nowPlaying');
+  const nps = doc.getElementsByTagName('nowPlaying');
+  if (!nps || !nps[0]) return null;
+
+  return parseNowPlayingEl(nps[0]);
+}
+
+// Parse an already-resolved <nowPlaying> DOM element — used by the WS
+// dispatch path (nowPlayingUpdated handler) so both REST and WS converge
+// on the same field mapping.
+// Uses getElementsByTagName so it works in both browser (DOMParser) and
+// @xmldom/xmldom (test runtime, which lacks querySelector).
+export function parseNowPlayingEl(np) {
   if (!np) return null;
 
-  const ci = np.querySelector('ContentItem');
-  const itemName = ci && ci.querySelector('itemName');
+  const g = (parent, tag) => {
+    const col = parent.getElementsByTagName(tag);
+    return col && col[0] ? col[0] : null;
+  };
 
-  const text = (sel) => {
-    const el = np.querySelector(sel);
+  const ci = g(np, 'ContentItem');
+  const itemNameEl = ci ? g(ci, 'itemName') : null;
+
+  const text = (tag) => {
+    const el = g(np, tag);
     return el && el.textContent != null ? el.textContent : '';
   };
 
@@ -110,7 +131,7 @@ export function parseNowPlayingXml(xmlText) {
     source:        np.getAttribute('source') || '',
     sourceAccount: np.getAttribute('sourceAccount') || '',
     item: {
-      name:     itemName && itemName.textContent ? itemName.textContent : '',
+      name:     itemNameEl ? (itemNameEl.textContent || '') : '',
       location: ci ? (ci.getAttribute('location') || '') : '',
       type:     ci ? (ci.getAttribute('type') || '') : '',
     },
@@ -120,6 +141,10 @@ export function parseNowPlayingXml(xmlText) {
     playStatus: text('playStatus'),
   };
 }
+
+// getNowPlaying() is the canonical 0.3+ name consumed by the now-playing
+// view and the slice-2 REST polling fallback.
+export const getNowPlaying = speakerNowPlaying;
 
 // --- presets --------------------------------------------------------
 //

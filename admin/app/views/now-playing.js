@@ -1,28 +1,32 @@
-// now-playing — 0.2 header-strip variant.
-// Read-only: current station name + art + 6 preset slots, polled
-// every 2s while the tab is visible. No transport, no volume, no
-// source switching, no preset tap-to-play — those land in 0.3.
+// now-playing — 0.3 full home view.
+// Art + station name + track/artist + source metadata + transport.
+// Reuses polling from 0.2 and adds WS-driven mutation via the
+// 'speaker' subscription (set up by router for the #/ route).
 //
-// Render strategy (see admin/PLAN.md § Render strategy):
-//   init() mounts a static DOM tree once; update() mutates only the
-//   affected nodes when state.speaker changes. No re-render.
+// Render strategy: init() builds the DOM once; update() mutates cached
+// refs in place — never re-renders. See admin/app/dom.js.
 
 import { html, mount } from '../dom.js';
 import { store, setPresets, setNowPlaying } from '../state.js';
 import { speakerNowPlaying, presetsList } from '../api.js';
 import { setArt } from '../art.js';
+import { postKey } from '../transport.js';
 
 const POLL_MS = 2000;
-const PRESET_SLOTS = 6;
 
-// Refs to mutable DOM nodes — populated by init(), used by update().
-let nameEl    = null;
-let trackEl   = null;
-let artEl     = null;
-let presetEls = [];
+// Cached DOM refs — populated by init(), used by update().
+let artEl      = null;
+let nameEl     = null;
+let trackEl    = null;
+let metaEl     = null;
+let cardEl     = null;
+let asleepEl   = null;
+let transportEl = null;
+let btnPrev    = null;
+let btnPlay    = null;
+let btnNext    = null;
 
-// Polling state — module-scoped so visibilitychange can pause/resume
-// even though the view's lifecycle is owned by the router.
+// Polling state
 let pollTimer       = null;
 let inFlight        = false;
 let visibilityBound = false;
@@ -40,13 +44,9 @@ async function pollOnce() {
   inFlight = true;
   try {
     const np = await speakerNowPlaying();
-    // Only mutate if we're still the active view (the DOM refs would
-    // otherwise point at detached nodes). The store update is harmless
-    // either way — the next view's subscriber will overwrite.
     setNowPlaying(np);
   } catch (_err) {
-    // Network blip / proxy error / parse error — leave previous state
-    // visible. Persistent errors surface via the toast layer.
+    // Network blip — leave previous state visible.
   } finally {
     inFlight = false;
     if (!document.hidden && pollTimer != null) {
@@ -55,10 +55,6 @@ async function pollOnce() {
   }
 }
 
-// One-shot presets fetch. Presets change rarely (only when a user
-// assigns one), so we don't poll them — slice 5's POST reconciles the
-// list via its own response, and 0.3's WebSocket will replace this
-// boot fetch with <presetsUpdated> events.
 async function fetchPresetsOnce() {
   try {
     const env = await presetsList();
@@ -66,13 +62,12 @@ async function fetchPresetsOnce() {
       setPresets(env.data);
     }
   } catch (_err) {
-    // Same posture as pollOnce: keep the last known state on error.
+    // Non-fatal.
   }
 }
 
 function startPolling() {
   if (pollTimer != null) return;
-  // Kick off immediately so the strip populates without waiting 2s.
   pollTimer = setTimeout(pollOnce, 0);
 }
 
@@ -80,7 +75,6 @@ function onVisibilityChange() {
   if (document.hidden) {
     clearPoll();
   } else if (nameEl) {
-    // We're still mounted (nameEl still points at a live node); resume.
     startPolling();
   }
 }
@@ -91,19 +85,17 @@ function bindVisibilityOnce() {
   visibilityBound = true;
 }
 
+// --- text helpers ---------------------------------------------------
+
 function renderName(np) {
   if (!np) return '';
-  // Prefer the ContentItem's itemName (station name); fall back to
-  // track for sources where ContentItem.itemName is empty.
   return (np.item && np.item.name) || np.track || '';
 }
 
-// Build the "now playing" line under the station name. TuneIn returns
-// inconsistent fields per station: some put the song in <artist>
-// ("Wheatus - Teenage Dirtbag"), others in <track>, others in both,
-// and some just stuff the station tagline in both. We dedupe against
-// the station name (case-insensitive) and against each other, then
-// join with a thin em-dash. Returns '' when nothing useful remains.
+// Deduplicate track vs artist vs station name (case-insensitive) and
+// join with em-dash. TuneIn streams often put the current song in
+// <artist> and the station tagline in <track> — render whatever is
+// distinct and non-empty.
 function pickTrackLine(np, stationName) {
   if (!np) return '';
   const norm = (s) => (typeof s === 'string' ? s.trim() : '');
@@ -111,141 +103,144 @@ function pickTrackLine(np, stationName) {
   const track  = norm(np.track);
   const artist = norm(np.artist);
   const useArtist = artist && artist.toLowerCase() !== station;
-  const useTrack  = track  && track.toLowerCase()  !== station
-                          && track.toLowerCase()  !== artist.toLowerCase();
+  const useTrack  = track && track.toLowerCase() !== station
+                          && track.toLowerCase() !== artist.toLowerCase();
   const parts = [];
   if (useArtist) parts.push(artist);
   if (useTrack)  parts.push(track);
-  return parts.join(' — ');
+  return parts.join(' – ');
 }
+
+// "TUNEIN · 128 kbps · liveRadio" from the nowPlaying object.
+// Fields are absent on STANDBY / AUX; returns '' rather than dots.
+function pickMetaLine(np) {
+  if (!np) return '';
+  const parts = [];
+  if (np.source && np.source !== 'STANDBY') parts.push(np.source);
+  // ContentItem type carries the stream type (liveRadio, podcast, etc.)
+  const type = np.item && np.item.type;
+  if (type) parts.push(type);
+  return parts.join(' · ');
+}
+
+// --- play-pause icon -----------------------------------------------
+
+function syncPlayBtn(np) {
+  if (!btnPlay) return;
+  const playing = np && np.playStatus === 'PLAY_STATE';
+  btnPlay.textContent = playing ? '⏸' : '▶';
+  btnPlay.title       = playing ? 'Pause' : 'Play';
+  btnPlay.dataset.playing = playing ? '1' : '';
+}
+
+// --- mutator --------------------------------------------------------
 
 function applyNowPlaying(np) {
-  if (!nameEl) return;
-  const name = renderName(np);
-  nameEl.textContent = name;
+  if (!cardEl) return;
 
-  // "Now playing" line under the station name. TuneIn streams put the
-  // current song in <artist> and the station tagline in <track>, the
-  // opposite way around from what the field names suggest. Render
-  // whatever distinct info we can build from both, station-name
-  // duplicates filtered (case-insensitive). A future marquee will
-  // surface long combinations when we run out of space.
-  if (trackEl) {
-    trackEl.textContent = pickTrackLine(np, name);
-    trackEl.toggleAttribute('hidden', !trackEl.textContent);
-  }
+  const standby = np && np.source === 'STANDBY';
+  cardEl.hidden    = standby;
+  asleepEl.hidden  = !standby;
+  transportEl.hidden = standby;
+
+  if (standby) return;
+
+  const name = renderName(np);
+  nameEl.textContent  = name;
+  trackEl.textContent = np ? pickTrackLine(np, name) : '';
+  trackEl.toggleAttribute('hidden', !trackEl.textContent);
+  metaEl.textContent  = np ? pickMetaLine(np) : '';
+  metaEl.toggleAttribute('hidden', !metaEl.textContent);
 
   const artUrl = np && typeof np.art === 'string' && np.art.startsWith('http')
-    ? np.art
-    : '';
+    ? np.art : '';
   setArt(artEl, artUrl, name);
+
+  syncPlayBtn(np);
 }
 
-function applyPresets(presets) {
-  if (!presetEls.length) return;
-  for (let i = 0; i < PRESET_SLOTS; i++) {
-    const slot = presetEls[i];
-    if (!slot) continue;
-    const p = presets && presets[i] ? presets[i] : null;
-    const labelEl = slot.querySelector('.preset-name');
-    const imgEl   = slot.querySelector('.preset-art');
+// --- transport click handlers --------------------------------------
 
-    if (!p || p.empty) {
-      slot.classList.add('empty');
-      if (labelEl) labelEl.textContent = 'Empty';
-      if (imgEl) {
-        imgEl.removeAttribute('src');
-        imgEl.setAttribute('hidden', '');
-      }
-      continue;
-    }
+let keyInFlight = false;
 
-    slot.classList.remove('empty');
-    const name = p.itemName || `Preset ${i + 1}`;
-    if (labelEl) labelEl.textContent = name;
-    if (imgEl) {
-      const url = (typeof p.art === 'string' && p.art.startsWith('http')) ? p.art : '';
-      setArt(imgEl, url, name);
-    }
+async function sendKey(key) {
+  if (keyInFlight) return;
+  keyInFlight = true;
+  try {
+    await postKey(key);
+  } finally {
+    keyInFlight = false;
   }
 }
 
+function onPrev()  { sendKey('PREV_TRACK'); }
+function onNext()  { sendKey('NEXT_TRACK'); }
+function onPlayPause() {
+  const np = store.state.speaker.nowPlaying;
+  const playing = np && np.playStatus === 'PLAY_STATE';
+  sendKey(playing ? 'PAUSE' : 'PLAY');
+}
+
+// --- view lifecycle -------------------------------------------------
+
 export default {
-  init(root /* , _store, _ctx */) {
-    // Build the 6 preset slot nodes ahead of time so we can keep refs.
-    const slotNodes = [];
-    for (let i = 0; i < PRESET_SLOTS; i++) {
-      const slot = document.createElement('div');
-      slot.className = 'preset-slot empty';
-      slot.dataset.slot = String(i + 1);
-
-      const num = document.createElement('span');
-      num.className = 'preset-num';
-      num.textContent = String(i + 1);
-      slot.appendChild(num);
-
-      const img = document.createElement('img');
-      img.className = 'preset-art';
-      img.alt = '';
-      img.setAttribute('hidden', '');
-      slot.appendChild(img);
-
-      const name = document.createElement('span');
-      name.className = 'preset-name';
-      name.textContent = 'Empty';
-      slot.appendChild(name);
-
-      slotNodes.push(slot);
-    }
-
-    const presetRow = document.createElement('div');
-    presetRow.className = 'preset-row';
-    for (const n of slotNodes) presetRow.appendChild(n);
-
+  init(root) {
     mount(root, html`
-      <section class="now-playing-strip" data-view="now-playing">
-        <header class="np-header">
-          <img class="np-art" alt="">
+      <section class="np-view" data-view="now-playing">
+        <div class="np-card">
+          <div class="np-art-wrap">
+            <img class="np-art" alt="">
+          </div>
           <div class="np-text">
             <h1 class="np-name"></h1>
             <p class="np-track" hidden></p>
+            <p class="np-meta" hidden></p>
           </div>
-        </header>
-        ${presetRow}
+        </div>
+        <div class="np-transport">
+          <button class="np-btn" type="button" title="Previous" aria-label="Previous track">&#x23EE;</button>
+          <button class="np-btn np-btn--play" type="button" title="Play" aria-label="Play">&#x25B6;</button>
+          <button class="np-btn" type="button" title="Next" aria-label="Next track">&#x23ED;</button>
+        </div>
+        <div class="np-asleep" hidden>
+          <p>Speaker is asleep</p>
+          <p class="np-asleep-hint">Press Play to wake it up.</p>
+        </div>
       </section>
     `);
 
-    nameEl    = root.querySelector('.np-name');
-    trackEl   = root.querySelector('.np-track');
-    artEl     = root.querySelector('.np-art');
-    presetEls = slotNodes;
+    cardEl     = root.querySelector('.np-card');
+    artEl      = root.querySelector('.np-art');
+    nameEl     = root.querySelector('.np-name');
+    trackEl    = root.querySelector('.np-track');
+    metaEl     = root.querySelector('.np-meta');
+    transportEl = root.querySelector('.np-transport');
+    asleepEl   = root.querySelector('.np-asleep');
 
-    // Paint with whatever's already in the store (may be null on first
-    // mount). The next poll tick / external update will refresh it.
+    const btns = root.querySelectorAll('.np-btn');
+    btnPrev = btns[0];
+    btnPlay = btns[1];
+    btnNext = btns[2];
+
+    btnPrev.addEventListener('click', onPrev);
+    btnPlay.addEventListener('click', onPlayPause);
+    btnNext.addEventListener('click', onNext);
+
     applyNowPlaying(store.state.speaker.nowPlaying);
-    applyPresets(store.state.speaker.presets);
 
     bindVisibilityOnce();
     if (!document.hidden) startPolling();
-    // Fire-and-forget: populate state.speaker.presets on first mount.
-    // Skipped if the store already has them (e.g. user came back from
-    // station detail after a successful assign).
     if (!store.state.speaker.presets) fetchPresetsOnce();
   },
 
   update(state, changedKey) {
     if (changedKey !== 'speaker') return;
     applyNowPlaying(state.speaker.nowPlaying);
-    applyPresets(state.speaker.presets);
   },
 
-  // Not part of the view interface yet (router doesn't call it), but
-  // exposed for tests + future router-managed teardown. Idempotent.
   _teardown() {
     clearPoll();
-    nameEl    = null;
-    trackEl   = null;
-    artEl     = null;
-    presetEls = [];
+    cardEl = artEl = nameEl = trackEl = metaEl = null;
+    transportEl = asleepEl = btnPrev = btnPlay = btnNext = null;
   },
 };

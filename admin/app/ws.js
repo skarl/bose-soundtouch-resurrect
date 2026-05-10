@@ -2,34 +2,42 @@
 // Owns the WebSocket lifecycle; internals are not exported.
 // See admin/PLAN.md § Live updates and § State management.
 
+import { parseNowPlayingEl } from './api.js';
+
 let socket = null;
 
 // --- XML dispatch ---------------------------------------------------
 
 // Dispatch table for events that arrive inside <updates …>…</updates>.
-// Each handler receives (innerElement, state). Returning early on an
+// Each handler receives (innerElement, store). Returning early on an
 // unknown tag is safe — the firmware freely adds tags we haven't mapped yet.
 const ENVELOPE_HANDLERS = {
-  volumeUpdated(el, state) {             // TODO slice 3
-    void el; void state;
+  volumeUpdated(el, store) {             // TODO slice 3
+    void el; void store;
   },
-  nowPlayingUpdated(el, state) {         // TODO slice 4
-    void el; void state;
+  nowPlayingUpdated(el, store) {
+    const nps = el.getElementsByTagName('nowPlaying');
+    const np = nps && nps[0];
+    if (!np) return;
+    const parsed = parseNowPlayingEl(np);
+    if (!parsed) return;
+    store.state.speaker.nowPlaying = parsed;
+    store.touch('speaker');
   },
-  nowSelectionUpdated(el, state) {       // TODO slice 6
-    void el; void state;
+  nowSelectionUpdated(el, store) {       // TODO slice 6
+    void el; void store;
   },
-  sourcesUpdated(el, state) {            // TODO slice 5
-    void el; void state;
+  sourcesUpdated(el, store) {            // TODO slice 5
+    void el; void store;
   },
-  presetsUpdated(el, state) {            // TODO slice 6
-    void el; void state;
+  presetsUpdated(el, store) {            // TODO slice 6
+    void el; void store;
   },
-  keyEvent(el, state) {                  // TODO slice 8
-    void el; void state;
+  keyEvent(el, store) {                  // TODO slice 8
+    void el; void store;
   },
-  connectionStateUpdated(el, state) {    // TODO slice 2
-    void el; void state;
+  connectionStateUpdated(el, store) {    // TODO slice 2
+    void el; void store;
   },
 };
 
@@ -60,7 +68,7 @@ export function dispatch(xmlText, store) {
   if (tag === 'updates') {
     for (const child of root.children) {
       const handler = ENVELOPE_HANDLERS[child.tagName];
-      if (handler) handler(child, store.state);
+      if (handler) handler(child, store);
     }
     return;
   }
