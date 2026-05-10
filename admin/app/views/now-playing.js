@@ -1,7 +1,7 @@
-// now-playing — 0.3 full home view.
+// now-playing — live home view.
 // Art + station name + track/artist + source metadata + transport.
-// Reuses polling from 0.2 and adds WS-driven mutation via the
-// 'speaker' subscription (set up by router for the #/ route).
+// REST polling runs as a fallback; the primary update path is the WS
+// 'speaker' subscription set up by the router for the #/ route.
 //
 // Render strategy: init() builds the DOM once; update() mutates cached
 // refs in place — never re-renders. See admin/app/dom.js.

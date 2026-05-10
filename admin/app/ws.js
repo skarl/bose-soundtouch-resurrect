@@ -268,8 +268,8 @@ const ENVELOPE_HANDLERS = {
   },
   connectionStateUpdated(el, store) {
     // The speaker sends this when network topology changes (e.g. a
-    // second device connects or disconnects). No state to update yet;
-    // slice 5 (sources) will decode the payload when it needs to.
+    // second device connects or disconnects). The payload is not decoded —
+    // the SPA refetches /sources on the next sourcesUpdated event instead.
     void el; void store;
   },
 };

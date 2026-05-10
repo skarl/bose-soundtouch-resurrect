@@ -256,7 +256,13 @@ curl -X POST -H 'Content-Type: application/xml' \
   -d '<volume>50</volume>' \
   http://$SPEAKER:8090/volume
 
-# Press preset N (1..6)
+# Press preset N (1..6) — NOTE: on firmware trunk r46330 (and probably
+# others), PRESET_N key events return 200 but do NOT actually recall the
+# preset. Use /select with the preset's stored ContentItem instead:
+#   curl -X POST -H 'Content-Type: application/xml' \
+#     -d '<ContentItem source="TUNEIN" sourceAccount="" type="stationurl" location="…"/>' \
+#     http://$SPEAKER:8090/select
+# See admin/app/views/now-playing.js#onPresetClick for the working path.
 curl -X POST -H 'Content-Type: application/xml' \
   -d '<key state="press" sender="Gabbo">PRESET_3</key>' \
   http://$SPEAKER:8090/key
