@@ -8,7 +8,7 @@
 //
 // See admin/PLAN.md § Routing (#/preset/N).
 
-import { store, setPresets } from '../state.js';
+import { store } from '../state.js';
 import { presetsAssign, presetsList, tuneinProbe } from '../api.js';
 import { showToast } from '../toast.js';
 import { classify, reshape } from '../reshape.js';
@@ -129,7 +129,7 @@ async function doAssign(slot, sid, stationName) {
   }
 
   if (envelope && envelope.ok && Array.isArray(envelope.data)) {
-    setPresets(envelope.data);
+    store.update('speaker', (s) => { s.speaker.presets = envelope.data; });
     showToast(`Saved to preset ${slot}`);
     // Close the modal via history.
     location.hash = '#/';
@@ -140,7 +140,9 @@ async function doAssign(slot, sid, stationName) {
   const detail = errObj.message ? `${errObj.code}: ${errObj.message}` : errObj.code;
   showToast(`Assign failed (${detail})`);
   presetsList().then((env) => {
-    if (env && env.ok && Array.isArray(env.data)) setPresets(env.data);
+    if (env && env.ok && Array.isArray(env.data)) {
+      store.update('speaker', (s) => { s.speaker.presets = env.data; });
+    }
   }).catch(() => {});
 }
 

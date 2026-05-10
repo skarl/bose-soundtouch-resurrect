@@ -47,6 +47,11 @@ function observable(initial) {
       if (!subs.has(key)) throw new Error(`unknown state key: ${key}`);
       notify(key);
     },
+    update(key, mutator) {
+      if (!subs.has(key)) throw new Error(`unknown state key: ${key}`);
+      mutator(store.state);
+      notify(key);
+    },
   };
   return store;
 }
@@ -66,23 +71,6 @@ export const store = observable({
   ws: { connected: false, mode: 'offline', lastEvent: null },
   ui: { toast: null, testPlaying: null },
 });
-
-// Update state.speaker.nowPlaying and notify 'speaker' subscribers.
-// now-playing.js calls this on every successful poll tick.
-export function setNowPlaying(np) {
-  store.state.speaker.nowPlaying = np;
-  store.touch('speaker');
-}
-
-// Reconcile state.speaker.presets from the presets CGI envelope's
-// `data` array. Defensive — the CGI guarantees a length-6 array, but
-// store the value verbatim so any missing slots surface as `undefined`
-// rather than masked. Notifies 'speaker' subscribers (now-playing).
-export function setPresets(list) {
-  if (!Array.isArray(list)) return;
-  store.state.speaker.presets = list;
-  store.touch('speaker');
-}
 
 // Prepend an entry to state.caches.recentlyViewed, dedupe by sid, cap
 // at RECENT_MAX, persist to localStorage, and notify 'caches'

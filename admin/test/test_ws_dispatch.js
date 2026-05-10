@@ -1,5 +1,5 @@
-// Tests for app/ws.js dispatch() — feed XML strings through the parser
-// and assert state mutations on a fake store, no live speaker required.
+// Tests for app/ws.js dispatch() — top-level XML routing only.
+// Per-field mutation tests live in test_speaker_state.js.
 //
 // Run locally:
 //   node --test admin/test
@@ -79,15 +79,15 @@ test('malformed XML does not throw', () => {
   assert.doesNotThrow(() => dispatch('<not valid xml', store));
 });
 
-test('sourcesUpdated hint-only event does not throw and triggers refetch (async)', async () => {
-  // The hint-only <sourcesUpdated/> has no inline sources list.
-  // dispatch() fires getSources() async; we just assert no synchronous throw.
+test('<updates> envelope routes child tags to speakerDispatch without throwing', async () => {
+  // sourcesUpdated is hint-only and triggers an async fetch; we just assert
+  // no synchronous throw from the envelope routing.
   const xml = await fixture('sources-updated.xml');
   const store = makeStore();
   assert.doesNotThrow(() => dispatch(xml, store));
 });
 
-test('presetsUpdated does not throw and triggers async refetch', async () => {
+test('presetsUpdated envelope does not throw', async () => {
   const xml = await fixture('presets-updated.xml');
   const store = makeStore();
   assert.doesNotThrow(() => dispatch(xml, store));

@@ -1,14 +1,9 @@
-// WebSocket deep module. Public surface: connect(state), disconnect().
-// Owns the WebSocket lifecycle; internals are not exported.
+// WebSocket lifecycle module. Public surface: connect(store), disconnect().
+// Owns the WebSocket lifecycle, backoff, polling fallback, and top-level
+// XML routing. Per-field fetch/parse/apply logic lives in speaker-state.js.
 // See admin/PLAN.md § Live updates and § State management.
 
-import {
-  getSpeakerInfo, getNowPlaying, presetsList,
-  parseNowPlayingEl,
-  getVolume, parseVolumeEl,
-  getSources, parseSourcesEl,
-} from './api.js';
-import { setNowPlaying, setPresets } from './state.js';
+import { reconcile, dispatch as speakerDispatch } from './speaker-state.js';
 import { showToast } from './toast.js';
 import { wasRecentOutgoing } from './io-ledger.js';
 
@@ -19,12 +14,6 @@ let userInitiatedClose = false;
 // presetsUpdated events in quick succession when reordering slots.
 let lastPresetsToastAt = 0;
 const PRESETS_TOAST_GAP_MS = 1500;
-
-// Injected by now-playing.js after it creates its volume sender.
-// Called by volumeUpdated so the sender can suppress redundant POSTs
-// when the speaker already reflects the queued level.
-let volumeConfirmFn = null;
-export function setVolumeConfirmFn(fn) { volumeConfirmFn = fn; }
 
 // --- Backoff sequencer ----------------------------------------------
 
@@ -108,43 +97,9 @@ function watchSpeakerButtons(store) {
 
 // --- Polling fallback -----------------------------------------------
 
-async function pollTick() {
-  if (!storeRef) return;
-  if (typeof document !== 'undefined' && document.hidden) return;
-  try {
-    const [info, np, env, vol, sources] = await Promise.allSettled([
-      getSpeakerInfo(),
-      getNowPlaying(),
-      presetsList(),
-      getVolume(),
-      getSources(),
-    ]);
-    if (info.status === 'fulfilled' && info.value) {
-      storeRef.state.speaker.info = info.value;
-      storeRef.touch('speaker');
-    }
-    if (np.status === 'fulfilled' && np.value) {
-      setNowPlaying(np.value);
-    }
-    if (env.status === 'fulfilled' && env.value && env.value.ok && Array.isArray(env.value.data)) {
-      setPresets(env.value.data);
-    }
-    if (vol.status === 'fulfilled' && vol.value) {
-      storeRef.state.speaker.volume = vol.value;
-      storeRef.touch('speaker');
-    }
-    if (sources.status === 'fulfilled' && sources.value) {
-      storeRef.state.speaker.sources = sources.value;
-      storeRef.touch('speaker');
-    }
-  } catch (_err) {
-    // Network errors are non-fatal; next tick will retry.
-  }
-}
-
 function startPolling() {
   if (pollInterval != null) return;
-  pollInterval = setInterval(pollTick, 2000);
+  pollInterval = setInterval(() => reconcile(storeRef), 2000);
 }
 
 function stopPolling() {
@@ -153,126 +108,7 @@ function stopPolling() {
   pollInterval = null;
 }
 
-// --- Full state refetch (called after WS hello) ---------------------
-
-async function refetchAll() {
-  if (!storeRef) return;
-  try {
-    const [info, np, env, vol, sources] = await Promise.allSettled([
-      getSpeakerInfo(),
-      getNowPlaying(),
-      presetsList(),
-      getVolume(),
-      getSources(),
-    ]);
-    if (info.status === 'fulfilled' && info.value) {
-      storeRef.state.speaker.info = info.value;
-      storeRef.touch('speaker');
-    }
-    if (np.status === 'fulfilled' && np.value) {
-      setNowPlaying(np.value);
-    }
-    if (env.status === 'fulfilled' && env.value && env.value.ok && Array.isArray(env.value.data)) {
-      setPresets(env.value.data);
-    }
-    if (vol.status === 'fulfilled' && vol.value) {
-      storeRef.state.speaker.volume = vol.value;
-      storeRef.touch('speaker');
-    }
-    if (sources.status === 'fulfilled' && sources.value) {
-      storeRef.state.speaker.sources = sources.value;
-      storeRef.touch('speaker');
-    }
-  } catch (_err) {
-    // Non-fatal; state was already live via WS events.
-  }
-}
-
 // --- XML dispatch ---------------------------------------------------
-
-// Dispatch table for events that arrive inside <updates …>…</updates>.
-// Each handler receives (innerElement, store). Returning early on an
-// unknown tag is safe — the firmware freely adds tags we haven't mapped yet.
-const ENVELOPE_HANDLERS = {
-  volumeUpdated(el, store) {
-    const volEls = el.getElementsByTagName('volume');
-    const volEl = volEls && volEls[0];
-    if (!volEl) return;
-    const parsed = parseVolumeEl(volEl);
-    if (!parsed) return;
-    store.state.speaker.volume = parsed;
-    store.touch('speaker');
-    if (volumeConfirmFn) volumeConfirmFn(parsed.actualVolume);
-  },
-  nowPlayingUpdated(el, store) {
-    const nps = el.getElementsByTagName('nowPlaying');
-    const np = nps && nps[0];
-    if (!np) return;
-    const parsed = parseNowPlayingEl(np);
-    if (!parsed) return;
-    store.state.speaker.nowPlaying = parsed;
-    store.touch('speaker');
-  },
-  nowSelectionUpdated(el, store) {
-    // <nowSelectionUpdated><preset id="N"><ContentItem …/></preset></nowSelectionUpdated>
-    // The id attribute is the preset slot number (1-based). Emit a toast
-    // so the user knows which preset is now active regardless of whether
-    // the trigger was a hardware button, another tab, or this tab's tap.
-    const presets = el.getElementsByTagName('preset');
-    const preset = presets && presets[0];
-    if (preset) {
-      const slot = preset.getAttribute('id');
-      if (slot) showToast(`Preset ${slot} selected`);
-    }
-    void store;
-  },
-  sourcesUpdated(el, store) {
-    // The firmware sends <sourcesUpdated deviceID="…"/> as a hint-only
-    // event — no inline sources list. Refetch /sources for the new state.
-    // Some firmware variants may embed a <sources> child; try that first
-    // so we avoid a round-trip when the data is already there.
-    const sourcesList = el.getElementsByTagName('sources');
-    if (sourcesList && sourcesList[0]) {
-      const parsed = parseSourcesEl(sourcesList[0]);
-      if (parsed) {
-        store.state.speaker.sources = parsed;
-        store.touch('speaker');
-        return;
-      }
-    }
-    getSources().then((sources) => {
-      if (!sources) return;
-      store.state.speaker.sources = sources;
-      store.touch('speaker');
-    }).catch(() => {});
-  },
-  presetsUpdated(el, store) {
-    // <presetsUpdated/> is a hint-only event (parallel to sourcesUpdated).
-    // Refetch /presets via the existing CGI parser — one source of truth
-    // for slot ordering, art enrichment, and empty-slot detection.
-    presetsList().then((env) => {
-      if (!env || !env.ok || !Array.isArray(env.data)) return;
-      setPresets(env.data);
-    }).catch(() => {});
-
-    const now = Date.now();
-    if (now - lastPresetsToastAt >= PRESETS_TOAST_GAP_MS) {
-      lastPresetsToastAt = now;
-      showToast('Presets changed');
-    }
-    void el; void store;
-  },
-  keyEvent(el, store) {
-    store.state.ws.lastEvent = Date.now();
-    store.touch('ws');
-  },
-  connectionStateUpdated(el, store) {
-    // The speaker sends this when network topology changes (e.g. a
-    // second device connects or disconnects). The payload is not decoded —
-    // the SPA refetches /sources on the next sourcesUpdated event instead.
-    void el; void store;
-  },
-};
 
 // Dispatch a single parsed frame against the store state.
 // Exported so test_ws_dispatch.js can drive it without a live socket.
@@ -294,7 +130,7 @@ export function dispatch(xmlText, store) {
     store.state.ws.connected = true;
     store.state.ws.mode = 'ws';
     store.touch('ws');
-    refetchAll();
+    reconcile(store);
     return;
   }
 
@@ -306,8 +142,29 @@ export function dispatch(xmlText, store) {
 
   if (tag === 'updates') {
     for (const child of root.children) {
-      const handler = ENVELOPE_HANDLERS[child.tagName];
-      if (handler) handler(child, store);
+      if (child.tagName === 'nowSelectionUpdated') {
+        // Not a field-state event — just a "preset N selected" toast.
+        const presets = child.getElementsByTagName('preset');
+        const preset = presets && presets[0];
+        if (preset) {
+          const slot = preset.getAttribute('id');
+          if (slot) showToast(`Preset ${slot} selected`);
+        }
+        // Also trigger a presets refetch so the row stays in sync.
+        // Pass a minimal fake element so speakerDispatch's hint-only path fires.
+        speakerDispatch({ tagName: 'presetsUpdated', getElementsByTagName: () => null }, store);
+        continue;
+      }
+
+      if (child.tagName === 'presetsUpdated') {
+        const now = Date.now();
+        if (now - lastPresetsToastAt >= PRESETS_TOAST_GAP_MS) {
+          lastPresetsToastAt = now;
+          showToast('Presets changed');
+        }
+      }
+
+      speakerDispatch(child, store);
     }
     return;
   }

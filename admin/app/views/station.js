@@ -21,7 +21,7 @@
 
 import { html, mount } from '../dom.js';
 import { tuneinStation, tuneinProbe, presetsAssign, presetsList, previewStream } from '../api.js';
-import { addRecentlyViewed, setPresets } from '../state.js';
+import { store, addRecentlyViewed } from '../state.js';
 import { classify, reshape } from '../reshape.js';
 import { showToast } from '../toast.js';
 import { setArt } from '../art.js';
@@ -428,7 +428,7 @@ async function handleAssignClick(root, sid, slot, ctx) {
     btn.dataset.busy = '';
     // Best-effort refetch so the user sees the actual speaker state.
     presetsList().then((env) => {
-      if (env && env.ok && Array.isArray(env.data)) setPresets(env.data);
+      if (env && env.ok && Array.isArray(env.data)) store.update('speaker', (s) => { s.speaker.presets = env.data; });
     }).catch(() => { /* surfaced via the original toast already */ });
     return;
   }
@@ -438,7 +438,7 @@ async function handleAssignClick(root, sid, slot, ctx) {
   btn.dataset.busy = '';
 
   if (envelope && envelope.ok && Array.isArray(envelope.data)) {
-    setPresets(envelope.data);
+    store.update('speaker', (s) => { s.speaker.presets = envelope.data; });
     showToast(`Saved to preset ${slot}`);
     return;
   }
@@ -448,7 +448,7 @@ async function handleAssignClick(root, sid, slot, ctx) {
   const detail = err.message ? `${err.code}: ${err.message}` : err.code;
   showToast(`Save failed (${detail})`);
   presetsList().then((env) => {
-    if (env && env.ok && Array.isArray(env.data)) setPresets(env.data);
+    if (env && env.ok && Array.isArray(env.data)) store.update('speaker', (s) => { s.speaker.presets = env.data; });
   }).catch(() => { /* keep the toast as the user-facing signal */ });
 }
 
