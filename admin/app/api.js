@@ -145,6 +145,37 @@ export async function presetsList() {
   return body;
 }
 
+// POST /preview with {id, name, json} — writes the per-station Bose
+// JSON atomically and asks the speaker to /select it. Used by the
+// station-detail audition button so the user can hear the chosen
+// stream on Bo before committing it as a preset.
+export async function previewStream(payload) {
+  const res = await fetch(`${apiBase}/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+  });
+  let body;
+  try { body = await res.json(); }
+  catch (err) { throw new Error(`previewStream: malformed response (HTTP ${res.status})`); }
+  return body;
+}
+
+// POST /speaker/key — hardware key event. Used to send POWER for
+// "stop preview" (the speaker treats POWER as standby).
+export async function speakerKey(name, state) {
+  const xml = `<key state="${state}" sender="Gabbo">${name}</key>`;
+  const res = await fetch(`${apiBase}/speaker/key`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: xml,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`speakerKey: HTTP ${res.status}`);
+  return true;
+}
+
 // POST /presets/:slot with {id, slot, name, kind, json}.
 // Slot is 1..6; payload must include matching `slot` and `kind:"playable"`
 // (the CGI rejects anything else with a structured error).

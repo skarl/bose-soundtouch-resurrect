@@ -20,7 +20,7 @@
 // See admin/PLAN.md § View specs / station detail.
 
 import { html, mount } from '../dom.js';
-import { tuneinStation, tuneinProbe, presetsAssign, presetsList } from '../api.js';
+import { tuneinStation, tuneinProbe, presetsAssign, presetsList, previewStream, speakerKey } from '../api.js';
 import { addRecentlyViewed, setPresets } from '../state.js';
 import { classify, reshape } from '../reshape.js';
 import { showToast } from '../toast.js';
@@ -75,14 +75,16 @@ function fmtCodec(stream) {
 
 // --- stream chooser + audition --------------------------------------
 //
-// Module-scoped because the chosen URL must survive the metadata fetch
-// races and a single <audio> element should outlive each row click.
-// stopAudition() is also wired to hashchange so the audition stops the
-// moment the user leaves the station view.
+// Audition plays on the speaker, not in the browser. Clicking ▶ on a
+// row writes that stream's URL into the resolver entry for the station
+// (atomically) and POSTs /select to the speaker, so Bo plays the
+// user's chosen stream right now. Clicking the same row's ▶ again
+// sends POWER (standby) to stop. Navigating away from the station
+// view also stops automatically.
 
 let chosenStreamUrl = '';
-let auditionAudio   = null;
 let auditionRow     = null;
+let auditionCtx     = null;   // {sid, name, getBose} captured at row render
 let hashListenerInstalled = false;
 
 function installHashStopOnce() {
@@ -93,16 +95,6 @@ function installHashStopOnce() {
   });
 }
 
-function getOrCreateAudioEl() {
-  if (auditionAudio) return auditionAudio;
-  auditionAudio = new Audio();
-  auditionAudio.preload = 'none';
-  auditionAudio.addEventListener('ended',  () => markRowPlaying(null));
-  auditionAudio.addEventListener('pause',  () => markRowPlaying(null));
-  auditionAudio.addEventListener('error',  () => markRowPlaying(null));
-  return auditionAudio;
-}
-
 function markRowPlaying(rowEl) {
   if (auditionRow && auditionRow !== rowEl) {
     auditionRow.classList.remove('is-playing');
@@ -111,25 +103,52 @@ function markRowPlaying(rowEl) {
   if (auditionRow) auditionRow.classList.add('is-playing');
 }
 
-function stopAudition() {
-  if (auditionAudio) {
-    auditionAudio.pause();
-    auditionAudio.removeAttribute('src');
-    auditionAudio.load();
-  }
+async function stopAudition() {
+  const wasPlaying = auditionRow != null;
   markRowPlaying(null);
+  if (wasPlaying) {
+    // Tell the speaker to stop. POWER toggles between play and
+    // standby; on this firmware sending press+release is reliable.
+    try {
+      await speakerKey('POWER', 'press');
+      await speakerKey('POWER', 'release');
+    } catch (_e) { /* best-effort */ }
+  }
 }
 
-function auditionStream(url, rowEl) {
-  const audio = getOrCreateAudioEl();
-  // Toggle: clicking the currently-playing row stops.
-  if (auditionRow === rowEl && !audio.paused) {
+async function auditionStream(url, rowEl, ctx) {
+  // Toggle off if the user clicks the currently-playing row.
+  if (auditionRow === rowEl) {
     stopAudition();
     return;
   }
-  audio.src = url;
-  audio.play().then(() => markRowPlaying(rowEl))
-              .catch(() => markRowPlaying(null));
+  if (!ctx || !ctx.getBose || !ctx.getName) return;
+  // Read the live name at click time. Describe.ashx races Tune.ashx,
+  // and the chooser renders on Tune's response, so capturing the name
+  // at render time can stamp the resolver JSON with `sid` (e.g.
+  // "s17490") instead of the friendly name. Evaluating here also
+  // means a re-click after Describe lands picks up the real name.
+  const liveName = ctx.getName();
+  const bose = ctx.getBose(url);
+  if (!bose) {
+    showToast('No playable streams to audition');
+    return;
+  }
+  bose.name = liveName;
+  markRowPlaying(rowEl);
+  try {
+    const env = await previewStream({ id: ctx.sid, name: liveName, json: bose });
+    if (!env || env.ok !== true) {
+      const code = env && env.error && env.error.code;
+      showToast(`Audition failed${code ? ': ' + code : ''}`);
+      markRowPlaying(null);
+      return;
+    }
+    showToast(`Playing on Bo: ${liveName}`);
+  } catch (err) {
+    showToast(`Audition failed: ${err.message || 'transport error'}`);
+    markRowPlaying(null);
+  }
 }
 
 function selectStream(url, listEl) {
@@ -148,11 +167,12 @@ function fmtReliability(stream) {
   return Number.isFinite(r) && r > 0 ? `${r}%` : '';
 }
 
-function renderStreamList(streams) {
+function renderStreamList(streams, ctx) {
   const list = document.createElement('div');
   list.className = 'station-streams';
   list.setAttribute('aria-label', 'Stream chooser');
 
+  auditionCtx = ctx || null;
   const initial = bestStream(streams) || streams[0];
   chosenStreamUrl = initial ? initial.streamUrl || initial.url : '';
 
@@ -195,7 +215,7 @@ function renderStreamList(streams) {
     audition.addEventListener('click', (ev) => {
       ev.stopPropagation();
       selectStream(url, list);
-      auditionStream(url, row);
+      auditionStream(url, row, auditionCtx);
     });
 
     list.appendChild(row);
@@ -313,11 +333,33 @@ function applyVerdict(root, sid, verdict, ctx) {
     verdictEl.textContent = detail || 'Playable';
 
     // Render the stream chooser (radios + audition buttons) under
-    // the verdict, between it and the assign row.
+    // the verdict, between it and the assign row. The chooser needs
+    // a way to build a Bose JSON for the URL the user clicked, so
+    // that previewStream() can stage it on the resolver and /select
+    // on the speaker. We pass a getBose(chosenUrl) closure that calls
+    // reshape() once and patches in the chosen streamUrl — same
+    // override the assign path uses.
+    const auditionGetBose = (chosenUrl) => {
+      if (!ctx || !ctx.tuneinJson) return null;
+      const previewName = ctx.getName ? ctx.getName() : sid;
+      const j = reshape(ctx.tuneinJson, sid, previewName);
+      if (!j) return null;
+      if (chosenUrl && j.audio && Array.isArray(j.audio.streams)) {
+        const match = j.audio.streams.find((s) => s.streamUrl === chosenUrl);
+        if (match) j.audio.streamUrl = match.streamUrl;
+      }
+      return j;
+    };
     const existing = root.querySelector('.station-streams');
     if (existing) existing.remove();
     if (streams.length > 0) {
-      verdictEl.insertAdjacentElement('afterend', renderStreamList(streams));
+      verdictEl.insertAdjacentElement('afterend', renderStreamList(streams, {
+        sid,
+        // Evaluated at click time, not at render — Describe may still
+        // be racing the probe when this list mounts.
+        getName: () => (ctx && ctx.getName ? ctx.getName() : sid),
+        getBose: auditionGetBose,
+      }));
     }
     installHashStopOnce();
 
