@@ -12,6 +12,7 @@ import { speakerNowPlaying, presetsList } from '../api.js';
 import { setArt } from '../art.js';
 import * as actions from '../actions/index.js';
 import { vuDot, updateVuDot } from '../components.js';
+import { formatVolumeValueText, rovingFocus } from '../a11y.js';
 
 const POLL_MS = 2000;
 const PRESET_SLOTS = 6;
@@ -64,7 +65,7 @@ export default defineView({
           </div>
           <div class="np-text">
             <h1 class="np-name"></h1>
-            <p class="np-track" hidden></p>
+            <p class="np-track" aria-live="polite" hidden></p>
             <p class="np-meta" hidden></p>
           </div>
           ${vuDotEl}
@@ -131,9 +132,12 @@ export default defineView({
       if (sliderEl.value !== String(level)) {
         sliderEl.value = String(level);
       }
+      sliderEl.setAttribute('aria-valuetext',
+        formatVolumeValueText(level, Number(sliderEl.max) || 100, !!muted));
       muteEl.textContent = muted ? '🔊̸' : '🔇';
       muteEl.title = muted ? 'Unmute' : 'Mute';
       muteEl.setAttribute('aria-pressed', muted ? 'true' : 'false');
+      muteEl.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
       volumeRowEl.hidden = !vol;
     }
 
@@ -184,6 +188,8 @@ export default defineView({
 
         btn.disabled = empty;
         btn.classList.toggle('np-preset--empty', empty);
+        btn.setAttribute('aria-label',
+          empty ? `Preset ${i + 1}, empty` : `Preset ${i + 1}, ${newName}`);
 
         const labelEl = btn.querySelector('.np-preset-name');
         const imgEl  = btn.querySelector('.np-preset-art');
@@ -256,12 +262,35 @@ export default defineView({
       location.hash = `#/preset/${slot}`;
     }
 
+    // Shift+Enter opens the reassign modal — keyboard parity with the
+    // pointer long-press / contextmenu paths. Plain Enter / Space falls
+    // through to the default <button> click (recall preset).
+    function onPresetKeydown(evt) {
+      const btn = evt.currentTarget;
+      const slot = btn.dataset.slot;
+      if (evt.key === 'Enter' && evt.shiftKey && slot && !btn.disabled) {
+        evt.preventDefault();
+        location.hash = `#/preset/${slot}`;
+        return;
+      }
+      const newIdx = rovingFocus(presetBtns.length, presetBtns.indexOf(btn), evt.key);
+      if (newIdx !== presetBtns.indexOf(btn) && newIdx >= 0) {
+        evt.preventDefault();
+        for (const b of presetBtns) b.tabIndex = -1;
+        presetBtns[newIdx].tabIndex = 0;
+        presetBtns[newIdx].focus();
+      }
+    }
+
     for (let i = 0; i < PRESET_SLOTS; i++) {
       const btn = document.createElement('button');
       btn.className = 'np-preset np-preset--empty';
       btn.type = 'button';
       btn.dataset.slot = String(i + 1);
       btn.disabled = true;
+      // Roving tabindex: only the first preset is in the tab order. Arrow
+      // keys move focus within the row; Tab leaves to the next control.
+      btn.tabIndex = i === 0 ? 0 : -1;
 
       const num = document.createElement('span');
       num.className = 'np-preset-num';
@@ -284,9 +313,12 @@ export default defineView({
       btn.addEventListener('pointerup',     onPresetPointerUp);
       btn.addEventListener('pointercancel', onPresetPointerCancel);
       btn.addEventListener('contextmenu',   onPresetContextMenu);
+      btn.addEventListener('keydown',       onPresetKeydown);
       presetsEl.appendChild(btn);
       presetBtns.push(btn);
     }
+    presetsEl.setAttribute('role', 'toolbar');
+    presetsEl.setAttribute('aria-label', 'Presets');
 
     function applySourcePills(sources, activeSource) {
       const existing = sourcesEl.querySelectorAll('.np-source-pill');
@@ -364,7 +396,11 @@ export default defineView({
     btnNext.addEventListener('click', onNext);
 
     sliderEl.addEventListener('input', () => {
-      actions.setVolume(Number(sliderEl.value));
+      const v = Number(sliderEl.value);
+      const muted = !!(store.state.speaker.volume && store.state.speaker.volume.muteEnabled);
+      sliderEl.setAttribute('aria-valuetext',
+        formatVolumeValueText(v, Number(sliderEl.max) || 100, muted));
+      actions.setVolume(v);
     });
 
     muteEl.addEventListener('click', () => { actions.toggleMute(); });

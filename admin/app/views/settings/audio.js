@@ -12,6 +12,7 @@
 import { html, mount, defineView } from '../../dom.js';
 import { getBassCapabilities, getBalanceCapabilities } from '../../api.js';
 import * as actions from '../../actions/index.js';
+import { formatBassValueText, formatBalanceValueText } from '../../a11y.js';
 
 const BASS_FALLBACK    = { min: -9, max: 0,  def: 0 };
 const BALANCE_FALLBACK = { min: -7, max: 7,  def: 0 };
@@ -50,6 +51,8 @@ export default defineView({
       if (typeof level !== 'number') return;
       if (bassEl.value !== String(level)) bassEl.value = String(level);
       bassOut.textContent = String(level);
+      bassEl.setAttribute('aria-valuetext',
+        formatBassValueText(level, Number(bassEl.min) || BASS_FALLBACK.min, Number(bassEl.max) || BASS_FALLBACK.max));
     }
 
     function applyBalance(balance) {
@@ -58,6 +61,8 @@ export default defineView({
       if (typeof level !== 'number') return;
       if (balEl.value !== String(level)) balEl.value = String(level);
       balOut.textContent = String(level);
+      balEl.setAttribute('aria-valuetext',
+        formatBalanceValueText(level, Number(balEl.min) || BALANCE_FALLBACK.min, Number(balEl.max) || BALANCE_FALLBACK.max));
     }
 
     function applyMono(dsp) {
@@ -70,12 +75,16 @@ export default defineView({
     bassEl.addEventListener('input', () => {
       const v = Number(bassEl.value);
       bassOut.textContent = String(v);
+      bassEl.setAttribute('aria-valuetext',
+        formatBassValueText(v, Number(bassEl.min) || BASS_FALLBACK.min, Number(bassEl.max) || BASS_FALLBACK.max));
       actions.setBass(v);
     });
 
     balEl.addEventListener('input', () => {
       const v = Number(balEl.value);
       balOut.textContent = String(v);
+      balEl.setAttribute('aria-valuetext',
+        formatBalanceValueText(v, Number(balEl.min) || BALANCE_FALLBACK.min, Number(balEl.max) || BALANCE_FALLBACK.max));
       actions.setBalance(v);
     });
 

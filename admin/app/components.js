@@ -27,12 +27,22 @@ const PILL_LABELS = {
   polling:      'polling',
 };
 
+const PILL_ARIA = {
+  connecting:   'Connection: connecting',
+  ws:           'Connection: live',
+  offline:      'Connection: offline',
+  reconnecting: 'Connection: reconnecting',
+  polling:      'Connection: polling',
+};
+
 export function connectionPill(state) {
   const pill = document.createElement('span');
   pill.className = 'conn-pill';
+  pill.setAttribute('role', 'status');
   const mode = (state && state.ws && state.ws.mode) || 'offline';
   pill.dataset.state = mode;
   pill.textContent = PILL_LABELS[mode] || mode;
+  pill.setAttribute('aria-label', PILL_ARIA[mode] || `Connection: ${mode}`);
   return pill;
 }
 
@@ -40,6 +50,7 @@ export function updatePill(pill, state) {
   const mode = (state && state.ws && state.ws.mode) || 'offline';
   pill.dataset.state = mode;
   pill.textContent = PILL_LABELS[mode] || mode;
+  pill.setAttribute('aria-label', PILL_ARIA[mode] || `Connection: ${mode}`);
 }
 
 // Theme-toggle button for the app header. Clicking cycles the preference
