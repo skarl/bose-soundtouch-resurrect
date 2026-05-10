@@ -73,6 +73,136 @@ function fmtCodec(stream) {
   return typeof codec === 'string' ? codec.toUpperCase() : '';
 }
 
+// --- stream chooser + audition --------------------------------------
+//
+// Module-scoped because the chosen URL must survive the metadata fetch
+// races and a single <audio> element should outlive each row click.
+// stopAudition() is also wired to hashchange so the audition stops the
+// moment the user leaves the station view.
+
+let chosenStreamUrl = '';
+let auditionAudio   = null;
+let auditionRow     = null;
+let hashListenerInstalled = false;
+
+function installHashStopOnce() {
+  if (hashListenerInstalled) return;
+  hashListenerInstalled = true;
+  window.addEventListener('hashchange', () => {
+    if (!location.hash.startsWith('#/station/')) stopAudition();
+  });
+}
+
+function getOrCreateAudioEl() {
+  if (auditionAudio) return auditionAudio;
+  auditionAudio = new Audio();
+  auditionAudio.preload = 'none';
+  auditionAudio.addEventListener('ended',  () => markRowPlaying(null));
+  auditionAudio.addEventListener('pause',  () => markRowPlaying(null));
+  auditionAudio.addEventListener('error',  () => markRowPlaying(null));
+  return auditionAudio;
+}
+
+function markRowPlaying(rowEl) {
+  if (auditionRow && auditionRow !== rowEl) {
+    auditionRow.classList.remove('is-playing');
+  }
+  auditionRow = rowEl;
+  if (auditionRow) auditionRow.classList.add('is-playing');
+}
+
+function stopAudition() {
+  if (auditionAudio) {
+    auditionAudio.pause();
+    auditionAudio.removeAttribute('src');
+    auditionAudio.load();
+  }
+  markRowPlaying(null);
+}
+
+function auditionStream(url, rowEl) {
+  const audio = getOrCreateAudioEl();
+  // Toggle: clicking the currently-playing row stops.
+  if (auditionRow === rowEl && !audio.paused) {
+    stopAudition();
+    return;
+  }
+  audio.src = url;
+  audio.play().then(() => markRowPlaying(rowEl))
+              .catch(() => markRowPlaying(null));
+}
+
+function selectStream(url, listEl) {
+  chosenStreamUrl = url;
+  if (!listEl) return;
+  for (const row of listEl.querySelectorAll('.station-stream')) {
+    const isMe = row.dataset.url === url;
+    row.classList.toggle('is-selected', isMe);
+    const radio = row.querySelector('input[type="radio"]');
+    if (radio) radio.checked = isMe;
+  }
+}
+
+function fmtReliability(stream) {
+  const r = Number(stream && stream.reliability);
+  return Number.isFinite(r) && r > 0 ? `${r}%` : '';
+}
+
+function renderStreamList(streams) {
+  const list = document.createElement('div');
+  list.className = 'station-streams';
+  list.setAttribute('aria-label', 'Stream chooser');
+
+  const initial = bestStream(streams) || streams[0];
+  chosenStreamUrl = initial ? initial.streamUrl || initial.url : '';
+
+  for (const s of streams) {
+    const url = s.streamUrl || s.url;
+    if (!url) continue;
+
+    const row = document.createElement('div');
+    row.className = 'station-stream';
+    row.dataset.url = url;
+
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'stream-choice';
+    radio.checked = url === chosenStreamUrl;
+    if (radio.checked) row.classList.add('is-selected');
+
+    const audition = document.createElement('button');
+    audition.type = 'button';
+    audition.className = 'station-stream-audition';
+    audition.setAttribute('aria-label', 'Audition this stream');
+    audition.textContent = '▶'; // ▶ — toggles to ⏸ via .is-playing CSS
+
+    const meta = document.createElement('span');
+    meta.className = 'station-stream-meta';
+    const bits = Number(s.bitrate) > 0 ? `${s.bitrate} kbps` : '';
+    const parts = [bits, fmtCodec(s), fmtReliability(s)].filter(Boolean);
+    meta.textContent = parts.join(' . ') || url;
+
+    row.appendChild(radio);
+    row.appendChild(audition);
+    row.appendChild(meta);
+
+    // Clicking anywhere on the row selects it. Audition button also
+    // selects, so the auditioned stream is what gets assigned.
+    row.addEventListener('click', (ev) => {
+      if (ev.target === audition) return;     // handled below
+      selectStream(url, list);
+    });
+    audition.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      selectStream(url, list);
+      auditionStream(url, row);
+    });
+
+    list.appendChild(row);
+  }
+  return list;
+}
+
 function buildAssignRow() {
   const wrap = document.createElement('div');
   wrap.className = 'station-assign-row';
@@ -181,9 +311,24 @@ function applyVerdict(root, sid, verdict, ctx) {
     verdictEl.classList.remove('is-gated', 'is-dark');
     verdictEl.classList.add('is-playable');
     verdictEl.textContent = detail || 'Playable';
+
+    // Render the stream chooser (radios + audition buttons) under
+    // the verdict, between it and the assign row.
+    const existing = root.querySelector('.station-streams');
+    if (existing) existing.remove();
+    if (streams.length > 0) {
+      verdictEl.insertAdjacentElement('afterend', renderStreamList(streams));
+    }
+    installHashStopOnce();
+
     enableAssignButtons(root, sid, ctx);
     return;
   }
+
+  // Non-playable verdicts: drop any prior stream list.
+  const oldList = root.querySelector('.station-streams');
+  if (oldList) oldList.remove();
+  stopAudition();
 
   // gated or dark — replace assign block with friendly message + link.
   const message = verdict.kind === 'gated'
@@ -234,6 +379,15 @@ async function handleAssignClick(root, sid, slot, ctx) {
   if (!bose) {
     showToast(`Cannot save: no playable streams for ${sid}`);
     return;
+  }
+  // Override the auto-picked top-level streamUrl with the user's
+  // selection from the chooser (if they made one). Keep the full
+  // streams[] list intact as fallbacks for the speaker. We don't
+  // touch reshape() itself — the reshape contract test fixtures
+  // still pin the auto-pick path against resolver/build.py.
+  if (chosenStreamUrl && bose.audio && Array.isArray(bose.audio.streams)) {
+    const match = bose.audio.streams.find((s) => s.streamUrl === chosenStreamUrl);
+    if (match) bose.audio.streamUrl = match.streamUrl;
   }
 
   btn.dataset.busy = '1';

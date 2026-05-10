@@ -481,6 +481,78 @@ nav.routes a:hover {
   color: #7a1f1f;
 }
 
+/* --- stream chooser ---------------------------------------------- */
+/* One row per stream returned by Tune.ashx. Click anywhere on the
+   row to select; click ▶ to audition (in the browser, not on the
+   speaker). The currently-selected stream is the one used when the
+   user assigns to a preset slot below. */
+
+.station-streams {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem;
+}
+
+.station-stream {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.station-stream:hover {
+  background: #f5f5f5;
+}
+
+.station-stream.is-selected {
+  background: #e7f3ff;
+  outline: 1px solid var(--accent);
+}
+
+.station-stream-audition {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.station-stream-audition:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.station-stream.is-playing .station-stream-audition {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+.station-stream.is-playing .station-stream-audition::before {
+  content: '\23F8'; /* ⏸ U+23F8 PAUSE SYMBOL */
+}
+.station-stream.is-playing .station-stream-audition {
+  font-size: 0;          /* hide the original ▶ glyph */
+}
+.station-stream.is-playing .station-stream-audition::before {
+  font-size: 0.85rem;
+}
+
+.station-stream-meta {
+  flex: 1 1 auto;
+  font-size: 0.9rem;
+  color: var(--fg);
+}
+
 .station-assign__label {
   margin: 0 0 0.5rem;
   color: var(--muted);
