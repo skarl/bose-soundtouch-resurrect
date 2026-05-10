@@ -1957,14 +1957,18 @@ main {
     "body"
     "mini"
     "tabs";
-  min-height: 100vh;
-  min-height: 100dvh;
+  /* height (not min-height): pin the grid to the viewport so the 1fr
+     body row absorbs overflow inside .shell-body's own scroll container.
+     min-height let the body grow past the viewport, pushing mini + tabs
+     below the fold on mobile. */
+  height: 100vh;
+  height: 100dvh;
   background: var(--bg);
   color: var(--fg);
 }
 
 .shell-header { grid-area: header; }
-.shell-body   { grid-area: body; }
+.shell-body   { grid-area: body; min-height: 0; }
 .shell-mini   { grid-area: mini; }
 .shell-tabs   { grid-area: tabs; }
 /* The rail is desktop-only — collapse it to zero rows in mobile mode

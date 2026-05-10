@@ -463,3 +463,44 @@ test('mini player: standby tap fires actions.pressKey("POWER")', async () => {
     globalThis.fetch = realFetch;
   }
 });
+
+// --- mobile sticky-bottom: shell layout regression -----------------
+//
+// .shell must use height (not min-height) so the 1fr body row absorbs
+// overflow inside .shell-body's own scroll container; otherwise mini +
+// tabs scroll off-screen on mobile when the body content is tall.
+// .shell-body needs min-height: 0 to let the grid row contain overflow.
+
+test('shell css: .shell pins to viewport height, not min-height', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const css = fs.readFileSync(path.resolve('admin/style.css'), 'utf8');
+  const shellRule = css.match(/^\.shell\s*\{([^}]+)\}/m);
+  assert.ok(shellRule, 'found .shell rule');
+  const body = shellRule[1];
+  assert.ok(/\bheight:\s*100vh\b/.test(body),  'has height: 100vh');
+  assert.ok(/\bheight:\s*100dvh\b/.test(body), 'has height: 100dvh fallback');
+  assert.ok(!/\bmin-height:\s*100v?dh?\b/.test(body),
+    '.shell must NOT use min-height for the viewport pin');
+});
+
+test('shell css: .shell-body declares min-height: 0 so overflow contains', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const css = fs.readFileSync(path.resolve('admin/style.css'), 'utf8');
+  const rule = css.match(/^\.shell-body\s*\{([^}]+)\}/m);
+  assert.ok(rule, 'found .shell-body rule');
+  assert.ok(/\bmin-height:\s*0\b/.test(rule[1]),
+    'shell-body needs min-height: 0 — the standard CSS-grid overflow gotcha');
+});
+
+test('index.html: mini and tabs come after body in DOM order (mobile pin)', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const html = fs.readFileSync(path.resolve('admin/index.html'), 'utf8');
+  const idxBody = html.indexOf('class="shell-body"');
+  const idxMini = html.indexOf('class="shell-mini"');
+  const idxTabs = html.indexOf('class="shell-tabs"');
+  assert.ok(idxBody > 0 && idxMini > idxBody, 'mini after body');
+  assert.ok(idxTabs > idxMini, 'tabs after mini');
+});
