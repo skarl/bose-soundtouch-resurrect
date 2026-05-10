@@ -181,11 +181,70 @@ this project (or instead of it). They're complementary, not exclusive.
 
 Stream URLs occasionally rotate (TuneIn's choice, not ours — typically
 months apart). When that happens, the affected preset stops playing
-silently. The fix is rerunning `resolver/build.py` and re-pushing the
-station files; the resolver picks up new files immediately, no
-reboot.
+silently. Two ways to fix:
+
+- From a laptop: rerun `resolver/build.py` and re-push the station
+  files. The resolver picks up new files immediately; no reboot.
+- From a browser on the LAN: open the admin at
+  `http://<speaker>:8181/`, hit **Settings → Speaker → Refresh all
+  presets**. The on-speaker `refresh-all` CGI re-probes TuneIn for
+  every slot and atomically rewrites any drifted JSON in place.
 
 This is the only ongoing maintenance the project asks of you.
+
+## The browser admin (added in 0.4)
+
+The admin SPA is a single-page app served by the same `busybox httpd`
+that serves the resolver tree. Same docroot, no separate process, no
+extra port — `http://<speaker>:8181/` returns `index.html` and
+everything under `/app/`, `/cgi-bin/api/v1/`, and `/fonts/` is the
+admin; everything under `/bmx/`, `/marge/`, `/v1/` is the resolver.
+
+Architecture in three layers:
+
+1. **Static SPA** — `index.html` + `style.css` + an ES-module tree
+   under `/app/`. No build step (vanilla CSS, native ES modules,
+   tagged-template DOM). Cache-busted via `?v=<git-describe>` query
+   strings rewritten at deploy time.
+2. **Shell CGIs under `/cgi-bin/api/v1/`** — `tunein` (forwarder for
+   browse / search / probe), `presets` (atomic file-write +
+   `/storePreset`), `speaker` (wildcard proxy to `localhost:8090` with
+   a same-origin CSRF guard), `refresh-all` (bulk re-probe + atomic
+   resolver rewrite). All busybox-shell, all linted by shellcheck.
+3. **WebSocket client** — connects to the speaker's port 8080 with the
+   `gabbo` subprotocol. Reconnect with exponential backoff + full
+   jitter; REST polling fallback when WS is down. The admin reflects
+   speaker state in real time and surfaces side-channel changes
+   ("pressed on speaker") as toasts.
+
+The admin is **self-contained on the speaker**. Fonts (Geist + Geist
+Mono) live under `/mnt/nv/resolver/fonts/` and are referenced by
+relative URL — the LAN can be cut off from the public internet and
+the admin still loads. No CDN, no Google Fonts, no `unpkg`.
+
+User-facing surface as of 0.4:
+
+- Now-playing — transport, volume, source picker, preset row,
+  long-press to assign.
+- Browse — Genre / Location / Language drill via TuneIn's outline.
+- Search — debounced TuneIn search; landing page shows recently
+  viewed and popular.
+- Station detail — metadata, probe state, 3×2 preset grid, test-play.
+- Settings — Appearance (theme), Speaker (name / power / sleep),
+  Audio (bass / balance / mono-stereo), Bluetooth (own MAC + active
+  device), Multi-room (placeholder), Network (signal bars),
+  System (firmware / capabilities / WS log).
+
+What the admin deliberately does **not** expose:
+
+- `/lowPowerStandby` — a one-shot trigger that suspends the speaker's
+  WiFi radio and locks the LAN out. Even idempotent reads would
+  trigger it on this firmware.
+- `/notification` — handler returns HTTP 500 `CLIENT_XML_ERROR` for
+  every observed body shape; verified across the open-source
+  ecosystem to be non-functional on this firmware family.
+- Wi-Fi reconfiguration — easy to lock yourself out.
+- Firmware updates — already blocked by the cloud shutdown.
 
 ## The TuneIn API quirk
 

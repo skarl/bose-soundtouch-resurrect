@@ -44,8 +44,6 @@ the speaker as a live-controlled surface.
   `/selectLocalSource`.
 - WS-driven feel: "pressed on speaker" toasts, connection-state pill,
   live VU dot, dark mode.
-- **Factory reset** (single button + confirm dialog) — promoted from
-  0.4 because it's the recovery hatch when anything goes wrong.
 
 ### 0.4 — settings + high-variance polish (~3 days, wide error bars)
 
@@ -53,10 +51,13 @@ The long tail. Each settings sub-section is empirical
 (test-on-real-speaker, fix surprises) — its own release where slips
 don't block 0.2 / 0.3.
 
-- Settings view: Speaker (name, power, sleep timer, low-power),
-  Audio (bass, balance, mono/stereo), Bluetooth, Multi-room, Network
-  (read-only), System (firmware, capabilities), Notifications gizmo.
+- Settings view: Appearance (theme picker), Speaker (name, power,
+  sleep timer), Audio (bass, balance, mono/stereo), Bluetooth (own
+  MAC + active device), Multi-room (placeholder), Network (read-only,
+  signal bars), System (firmware, MAC, capabilities, recents, WS log).
 - `refresh-all` CGI — on-speaker `build.py` equivalent.
+- Four-zone app shell, design-token palette, SVG icon module,
+  self-hosted Geist fonts, shared design components.
 - Polish: album-art-tinted hero (CORS-on-canvas risk),
   mobile-remote container queries, accessibility pass.
 
@@ -70,6 +71,18 @@ Out of scope across all three:
 - Multi-speaker control (one speaker per admin instance).
 - Internationalisation (English-only strings; the architecture
   doesn't block adding more later).
+- **Factory reset** — closed not-planned. The on-speaker
+  hardware-button sequence remains the supported recovery path; a
+  software-triggered factory reset has the same lock-yourself-out
+  risk as Wi-Fi reconfig with no upside.
+- **`/lowPowerStandby` toggle** — the firmware endpoint is a
+  one-shot trigger that suspends the WiFi radio. Even an apparently
+  idempotent GET locks the LAN out until a hardware power-cycle. The
+  admin omits the control entirely and `scripts/verify.sh` never
+  probes it.
+- **Notifications gizmo** — closed not-planned. Bo's `/notification`
+  handler returns HTTP 500 `CLIENT_XML_ERROR 1019` for every body
+  shape; the wider open-source ecosystem hits the same wall.
 
 ## Architecture
 
@@ -347,10 +360,15 @@ POST /cgi-bin/api/v1/speaker/volume            (0.3)
 POST /cgi-bin/api/v1/speaker/key               (0.3)
 POST /cgi-bin/api/v1/speaker/select            (0.3)
 POST /cgi-bin/api/v1/speaker/selectLocalSource (0.3)
-…plus name, bass, balance, balanceCapabilities, DSPMonoStereo,
-  systemtimeout, lowPowerStandby, getZone, setZone, bluetoothInfo,
-  enterBluetoothPairing, clearBluetoothPaired, networkInfo,
-  notification, capabilities, recents                          (0.4)
+…plus name, bass, balance, DSPMonoStereo, systemtimeout, getZone,
+  setZone, bluetoothInfo, enterBluetoothPairing, clearBluetoothPaired,
+  networkInfo, capabilities, recents                            (0.4)
+
+  Notably absent: lowPowerStandby (firmware-quirk footgun — see
+  Out-of-scope above) and notification (firmware handler returns
+  CLIENT_XML_ERROR for every body shape; closed not-planned).
+  /balanceCapabilities is requested but 404s on this firmware; the
+  admin falls back to a default {-7..7} range.
 ```
 
 Wildcard proxy means new endpoints work without CGI changes.
@@ -570,19 +588,15 @@ storePreset call atomically.
 Single page with collapsible sections. Each section reads its state
 via the speaker proxy on view-entry; writes go through the proxy too.
 
-| Section                | Content                                                                 |
-| ---------------------- | ----------------------------------------------------------------------- |
-| **Speaker**            | Name (editable), power state, sleep timer (`/systemtimeout`), low-power standby |
-| **Audio**              | Bass slider, balance slider, mono/stereo switch                         |
-| **Bluetooth**          | Paired devices list, "Enter pairing mode" button, "Clear pairings"      |
-| **Multi-room**         | Current zone (master/members), add/remove slaves (DLNA discovery list)  |
-| **Network**            | SSID (read-only), IP, MAC, signal strength                              |
-| **System**             | Firmware version, MAC, capabilities, supported endpoints, "Send test notification", **Factory reset** (with confirm dialog showing what gets wiped) |
-| **Notifications gizmo**| Free-text input → `POST /notification` to the speaker. Banner appears on the speaker. |
-
-Note: factory reset itself ships in **0.3** as a single button with
-confirm dialog (the recovery hatch). 0.4 wraps it into the settings
-view alongside the rest.
+| Section          | Content                                                                 |
+| ---------------- | ----------------------------------------------------------------------- |
+| **Appearance**   | Four-way theme picker (auto / graphite / cream / terminal); persists in `localStorage`. |
+| **Speaker**      | Name (editable), power on/off (via `/key POWER` — `/standby` is rejected by the firmware), sleep timer (`/systemtimeout`). |
+| **Audio**        | Bass slider, balance slider, mono/stereo switch.                        |
+| **Bluetooth**    | Speaker's own `BluetoothMACAddress`, currently-connected device sourced from `/now_playing`'s `<connectionStatusInfo>`, "Enter pairing mode", "Clear pairings". (Paired-device list is not exposed by this firmware — `/bluetoothInfo` only returns the speaker's own MAC.) |
+| **Multi-room**   | Placeholder. State, parsers, and actions ship; the picker is parked pending a multi-speaker test rig. |
+| **Network**      | SSID (read-only), IP, MAC, signal bars (4-bar visual).                  |
+| **System**       | Firmware version, MAC, capabilities, recently-played list, live WebSocket event log. |
 
 ## Polish features ("the gizmos")
 
@@ -590,11 +604,15 @@ view alongside the rest.
 |---|---|
 | "Pressed on speaker" toasts (`<keyEvent>` from WS → corner toast) | 0.3 (if WS spike succeeds) |
 | Connection-state pill ("live" / "reconnecting" / "polling" / "speaker asleep") | 0.3 |
-| Live VU dot — subtle pulse while `playStatus === "PLAY_STATE"` | 0.3 |
-| Dark mode (auto via `prefers-color-scheme` + manual toggle) | 0.3 |
+| Live VU dot — subtle pulse while `playStatus === "PLAY_STATE"` | 0.3 (replaced in 0.4 by the inline equalizer animation in the now-playing card) |
+| Dark mode (auto via `prefers-color-scheme` + manual toggle) | 0.3 (extended in 0.4 to a four-way theme cycle: auto / graphite / cream / terminal) |
 | Album-art-tinted hero (Canvas.getImageData → CSS custom property) | 0.4 (CORS-on-canvas risk) |
 | Mobile-remote layout (container queries; phone-shaped at narrow widths) | 0.4 |
-| Accessibility pass (focus rings, ARIA, keyboard nav) | 0.4 |
+| Accessibility pass (focus rings, ARIA, keyboard nav, prefers-reduced-motion) | 0.4 |
+| Four-zone app shell (header / body / mini-player / bottom tabs) with desktop side-rail at ≥960px | 0.4 |
+| Inline SVG icon module (Lucide-flavoured) replacing Unicode glyphs | 0.4 |
+| Self-hosted Geist + Geist Mono fonts (no CDN; admin works offline-LAN) | 0.4 |
+| Shared design components (pill / switch / slider / equalizer / stationArt) | 0.4 |
 
 ## File layout (repo source)
 
@@ -638,7 +656,7 @@ admin/
 After deploy, the admin lands at:
 
 ```
-/mnt/nv/resolver/{index.html, style.css, app/, cgi-bin/api/v1/, ws-test.html}
+/mnt/nv/resolver/{index.html, style.css, app/, cgi-bin/api/v1/, fonts/, ws-test.html}
 ```
 
 (No port-80 changes, no Shepherd modifications, no `port80-router.sh`.)
@@ -646,16 +664,22 @@ After deploy, the admin lands at:
 ## Build, deploy, uninstall
 
 **No build step.** Pure static files + ES modules + shell CGIs.
-`git clone` and you can deploy.
+`git clone` and you can deploy. Fonts and any other static assets are
+self-hosted alongside the SPA — speaker-served code never depends on
+an external host (no CDN, no `fonts.googleapis.com`, no `unpkg`). The
+admin loads cleanly even when the user's home internet is down.
 
 ### `admin/deploy.sh <speaker-ip>`
 
 1. Sanity-check SSH access and that the resolver is already deployed
    (`ssh <speaker> test -f /mnt/nv/resolver/bmx/registry/v1/services`).
    The admin layers on top of `scripts/deploy.sh`.
-2. Substitute `?v=$VERSION` into `index.html` from `git describe --tags`.
-3. Push `index.html`, `style.css`, `app/`, `ws-test.html` to
-   `/mnt/nv/resolver/`.
+2. Substitute `?v=$VERSION` into `index.html` from `git describe --tags`,
+   and append `?v=$VERSION` to every static `from '...js'` /
+   `import('...js')` so transitive ES modules invalidate at the same
+   time as `index.html`.
+3. Push `index.html`, `style.css`, `app/`, `fonts/`, `httpd.conf`,
+   `ws-test.html` to `/mnt/nv/resolver/`.
 4. Push `cgi-bin/api/v1/*` to `/mnt/nv/resolver/cgi-bin/api/v1/`,
    `chmod +x`.
 5. Verify `http://<speaker>:8181/` returns the SPA shell (200 with
@@ -663,7 +687,7 @@ After deploy, the admin lands at:
 
 ### `admin/uninstall.sh <speaker-ip>`
 
-Removes the admin tree (`index.html`, `style.css`, `app/`,
+Removes the admin tree (`index.html`, `style.css`, `app/`, `fonts/`,
 `cgi-bin/api/v1/`, `ws-test.html`) but leaves the resolver intact.
 The existing `scripts/uninstall.sh` continues to handle full project
 removal.
@@ -741,7 +765,7 @@ A `mock-speaker.py` for offline iteration is **out of scope** for
 | Release | Includes | Days |
 | ------- | -------- | ---- |
 | **0.2** | Hash router, state.js, dom.js, api client, tunein forwarder CGI, presets CGI, speaker GET-only proxy, fixtures + CI tests, browse/search/station views, thin polled now-playing header, deploy.sh, verify.sh extension, ws-test.html | ~3 |
-| **0.3** | WebSocket (gabbo subprotocol) + reconnect, full now-playing view (transport, volume, source, preset row), speaker proxy POST endpoints, "pressed on speaker" toasts, connection pill, live VU dot, dark mode, factory reset | ~2.5 |
+| **0.3** | WebSocket (gabbo subprotocol) + reconnect, full now-playing view (transport, volume, source, preset row), speaker proxy POST endpoints, "pressed on speaker" toasts, connection pill, live VU dot, dark mode | ~2.5 |
 | **0.4** | Settings view (7 sub-sections), refresh-all CGI, album-art tint, mobile-remote container queries, accessibility pass | ~3 (wide error bars) |
 | **Total** | | **~8.5** |
 

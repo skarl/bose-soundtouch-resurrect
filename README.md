@@ -18,6 +18,7 @@ filesystem and streams audio directly from the radio station's CDN.
 | 6 preset buttons (TuneIn radio)             | ✅ working          |
 | Bose SoundTouch app — pairing, presets, vol | ✅ working          |
 | Spotify Connect, AUX, Bluetooth             | ✅ working (always was) |
+| Browser admin (any LAN device)              | ✅ now-playing, transport, volume, source, presets, browse, search, settings |
 | Bose SoundTouch app — in-app station browse | ⚠ partial — see [docs/compatibility.md](docs/compatibility.md) |
 | Stereo pair / multi-room                    | ⚠ partial — untested |
 | Firmware updates                            | ❌ blocked — speaker firmware is frozen forever |
@@ -127,8 +128,15 @@ output of `scripts/verify.sh`.
 │   ├── responses/                Static templates (registry, etc.).
 │   └── shepherd-resolver.xml     Daemon config for auto-start at boot.
 │
-├── admin/                        Browser-based admin UI (planned).
-│   └── PLAN.md                   Design plan.
+├── admin/                        Browser-based admin UI.
+│   ├── PLAN.md                   Original design plan (historical).
+│   ├── index.html                SPA shell + four-zone layout.
+│   ├── style.css                 Vanilla, mobile-first, container-query layout.
+│   ├── app/                      ES module tree — router, store, views, WS client.
+│   ├── cgi-bin/api/v1/           Shell CGIs: tunein / presets / speaker proxy / refresh-all.
+│   ├── fonts/                    Self-hosted Geist + Geist Mono.
+│   ├── deploy.sh                 Push the admin tree to a speaker.
+│   └── uninstall.sh              Remove the admin tree (resolver stays).
 │
 └── scripts/                      Helpers.
     ├── enable-ssh-stick.sh        Prep a USB stick for the SSH-enable trick.
@@ -147,13 +155,15 @@ output of `scripts/verify.sh`.
   stream URL for a given station every so often. When a preset suddenly
   stops playing, run `./scripts/refresh-streams.sh <speaker-ip>`. About
   two minutes of work.
-- **In-app station browse / search** isn't fully covered — the
-  on-speaker resolver answers preset playback but not the
-  `/v1/navigate` and `/v1/search` calls the SoundTouch app uses to
-  browse the catalogue. If you need that, run an external
-  SoundCork-style emulator on the side; this project does not include
-  one. See [docs/architecture.md](docs/architecture.md) for what's
-  emulated and what isn't.
+- **In-app station browse / search** (in the SoundTouch mobile app)
+  isn't fully covered — the on-speaker resolver answers preset
+  playback but not the `/v1/navigate` and `/v1/search` calls the app
+  uses to browse the catalogue. The browser admin at
+  `http://<speaker>:8181/` covers browse and search end-to-end via
+  TuneIn directly, so for most users that's the path of least
+  resistance. If you specifically want the mobile app's catalogue,
+  run an external SoundCork-style emulator alongside this project.
+  See [docs/architecture.md](docs/architecture.md).
 - **No firmware patches.** Bose stopped issuing updates. If a security
   issue surfaces in the speaker's firmware, this project can't ship a
   fix.
@@ -161,7 +171,11 @@ output of `scripts/verify.sh`.
 ## Status
 
 Working in production on a SoundTouch 10. All six preset buttons drive
-TuneIn streams via the on-speaker resolver. No external host required.
+TuneIn streams via the on-speaker resolver. The browser admin at
+`http://<speaker>:8181/` covers now-playing, transport, volume, source
+switching, presets, station browse + search, and a settings page
+(speaker, audio, bluetooth, multi-room, network, system). No external
+host required.
 
 ## Project documents
 

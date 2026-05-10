@@ -7,6 +7,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.4.0] - 2026-05-10
+
+### Added
+
+- **Settings page** (`#/settings`) with seven collapsible sub-sections:
+  - **Appearance** — four-way theme picker (auto / graphite / cream /
+    terminal); persists in `localStorage`.
+  - **Speaker** — name (editable), power on/off, sleep timer.
+  - **Audio** — bass slider, balance slider, mono/stereo switch.
+  - **Bluetooth** — speaker MAC, currently-connected device (sourced
+    from `/now_playing`'s `<connectionStatusInfo>`), enter-pairing and
+    clear-paired actions.
+  - **Multi-room** — placeholder explaining the section is parked
+    pending a multi-speaker test rig. Underlying state, parsers, and
+    actions all ship and stay testable for a future revival.
+  - **Network** — read-only SSID, IP, MAC, signal bars (4-bar visual).
+  - **System** — firmware version, MAC, capabilities, recently-played
+    list, live WebSocket event log.
+- **Four-zone app shell** — header / body / mini-player / bottom tabs.
+  At ≥960px the bottom tabs migrate to a left side-rail. Pure CSS
+  container queries; no JS resize observer.
+- **SVG icon module** — 19 inline Lucide-flavoured glyphs plus an
+  animated equalizer; replaces the Unicode-glyph fallbacks throughout.
+- **Shared design components** — `pill`, `switch`, `slider`,
+  `equalizer`, `stationArt`. Used across now-playing v2, station detail
+  v2, browse + search v2, and every settings sub-view.
+- **Now-playing v2** — compact card layout, dynamic source switcher
+  (collapses to icons when sources exceed the row), three-column
+  preset grid with art-style cards.
+- **Browse + search v2** — visual station cards (`resultCard`) with
+  art, location, genre, and bitrate pill. Empty-state search shows a
+  two-column "Recently viewed" / "Popular" landing.
+- **Station detail v2** — 3×2 preset assignment grid (slot number,
+  current occupant, genre tag) plus a full-width gradient
+  `Test play` CTA.
+- **`refresh-all` CGI** — `POST /cgi-bin/api/v1/refresh-all` re-probes
+  every preset slot against TuneIn and atomically rewrites any
+  resolver JSON whose stream URLs have drifted. The on-speaker
+  equivalent of running `python3 resolver/build.py` from a laptop.
+- **Self-hosted Geist + Geist Mono fonts** — under `admin/fonts/`,
+  served from `/fonts/` on the speaker. No CDN dependency: the admin
+  works whether or not the user's home internet is up.
+- **Album-art-tinted now-playing hero** — samples the dominant colour
+  from the current artwork via canvas; falls back to a neutral tint
+  if the host blocks `getImageData` (CORS).
+- **Mobile-remote container queries** — phone-shaped layout at narrow
+  widths; widens gracefully on tablet / desktop.
+- **Accessibility pass** — visible focus rings on every interactive
+  element, ARIA `valuetext` on sliders, roving `tabindex` for tab
+  bars, full `prefers-reduced-motion` compliance.
+
+### Changed
+
+- **View shell refactor** — every view exports a `defineView()` shape
+  with explicit `mount` / `update` / `unmount` hooks. Five existing
+  views migrated. `mountChild()` cascades cleanup so nested sub-views
+  tear down deterministically.
+- **`speaker-state.js`** centralises per-section fetch + WS event
+  wiring (volume, sources, bass, balance, DSPMonoStereo,
+  bluetoothInfo, networkInfo, recents, zone, info). Each settings
+  sub-view subscribes to its slice without re-deriving the seam.
+
+### Fixed
+
+- **Power toggles via `/key POWER`, not `/standby`**. Bo's firmware
+  rejects every body shape we tried for `POST /standby`. The
+  `/key POWER` press+release pair is honoured reliably and is what
+  the SoundTouch app uses internally.
+
+### Firmware quirks discovered
+
+Calling these out so future maintainers don't re-derive them:
+
+- **`/lowPowerStandby` is a one-shot trigger, not a toggle.** Every
+  observed call (GET or POST, any body) puts the speaker into deep
+  standby — its WiFi radio drops, the LAN can't reach it, recovery
+  needs a hardware power-cycle. The admin deliberately omits this
+  control and `scripts/verify.sh` deliberately never probes the
+  endpoint.
+- **`/notification` returns HTTP 500 `CLIENT_XML_ERROR 1019` for
+  every body shape.** Verified across the wider open-source
+  ecosystem (`libsoundtouch`, `bosesoundtouchapi`, openHAB, Home
+  Assistant) — none has a working POST. The notifications gizmo
+  was dropped from scope.
+- **`/bluetoothInfo` only returns the speaker's own
+  `BluetoothMACAddress`.** Verified on Bo with an iPhone actively
+  paired and audio-routed: the `<pairedList>` element documented in
+  some references never materialises. The admin reads the
+  currently-connected device from `/now_playing`'s
+  `<connectionStatusInfo>` instead.
+- **`/standby` rejects every body shape** — use `/key POWER` instead.
+- **`/setPower` 404s entirely** — not registered on this firmware.
+- **`/balanceCapabilities` 404s** — the admin falls back to a default
+  `{-7..7}` range.
+
+### Deferred
+
+- **Multi-room master/member rendering** — the standalone state
+  ships, the settings sub-view is a one-line placeholder. Validating
+  the picker UX needs a second SoundTouch on the LAN, which the
+  test rig (Bo) doesn't have. State, parsers, actions, and tests all
+  remain in the codebase for a future revival.
+
+### Closed without shipping
+
+- **Factory reset** — closed not-planned. The recovery hatch was
+  promoted to 0.3 in PLAN.md but never implemented; the on-speaker
+  hardware-button sequence remains the supported path.
+- **Notifications gizmo** — closed not-planned (see firmware quirks).
+
 ## [v0.3.0] - 2026-05-10
 
 ### Added
