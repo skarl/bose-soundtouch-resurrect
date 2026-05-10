@@ -18,6 +18,11 @@ import { recordOutgoing } from '../io-ledger.js';
 const POLL_MS = 2000;
 const PRESET_SLOTS = 6;
 
+// Long-press state — one timer per active press; shared across all preset buttons.
+let longPressTimer    = null;
+let longPressCancelled = false;
+const LONG_PRESS_MS   = 600;
+
 // Cached DOM refs — populated by init(), used by update().
 let artEl      = null;
 let nameEl     = null;
@@ -242,6 +247,11 @@ function applyPresets(presets) {
 async function onPresetClick(evt) {
   const btn = evt.currentTarget;
   const slot = btn.dataset.slot;
+  // Swallow the click that follows a long-press.
+  if (longPressCancelled) {
+    longPressCancelled = false;
+    return;
+  }
   if (!slot || btn.disabled) return;
   // Bo's firmware silently ignores `/key PRESET_N` press+release and
   // returns 400 on `/selectPreset`. The reliable recall path is
@@ -263,6 +273,41 @@ async function onPresetClick(evt) {
     // Non-fatal — the next nowPlayingUpdated / nowSelectionUpdated will
     // confirm or deny the switch.
   }
+}
+
+function clearLongPress() {
+  if (longPressTimer != null) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+}
+
+function onPresetPointerDown(evt) {
+  // Only primary pointer (left button / single touch).
+  if (evt.button !== undefined && evt.button !== 0) return;
+  const btn = evt.currentTarget;
+  const slot = btn.dataset.slot;
+  if (!slot || btn.disabled) return;
+  clearLongPress();
+  longPressCancelled = false;
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null;
+    longPressCancelled = true;
+    location.hash = `#/preset/${slot}`;
+  }, LONG_PRESS_MS);
+}
+
+function onPresetPointerUp()     { clearLongPress(); }
+function onPresetPointerCancel() { clearLongPress(); }
+
+function onPresetContextMenu(evt) {
+  evt.preventDefault();
+  const btn = evt.currentTarget;
+  const slot = btn.dataset.slot;
+  if (!slot || btn.disabled) return;
+  clearLongPress();
+  longPressCancelled = false;
+  location.hash = `#/preset/${slot}`;
 }
 
 // --- source picker pills -------------------------------------------
@@ -419,6 +464,10 @@ export default {
       btn.appendChild(label);
 
       btn.addEventListener('click', onPresetClick);
+      btn.addEventListener('pointerdown',   onPresetPointerDown);
+      btn.addEventListener('pointerup',     onPresetPointerUp);
+      btn.addEventListener('pointercancel', onPresetPointerCancel);
+      btn.addEventListener('contextmenu',   onPresetContextMenu);
       presetsEl.appendChild(btn);
       presetBtns.push(btn);
     }
@@ -472,6 +521,8 @@ export default {
 
   _teardown() {
     clearPoll();
+    clearLongPress();
+    longPressCancelled = false;
     cardEl = artEl = nameEl = trackEl = metaEl = null;
     transportEl = sourcesEl = presetsEl = asleepEl = null;
     btnPrev = btnPlay = btnNext = null;
