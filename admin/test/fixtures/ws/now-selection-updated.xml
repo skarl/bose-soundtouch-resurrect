@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Fired when the active preset selection changes (hardware button or API). -->
+<!-- Shape confirmed against libsoundtouch and bosesoundtouchapi references. -->
+<updates deviceID="000C8AABCDEF">
+  <nowSelectionUpdated>
+    <preset id="3">
+      <ContentItem source="TUNEIN" type="stationurl"
+                   location="/v1/playback/station/s42824"
+                   sourceAccount="" isPresetable="true">
+        <itemName>Antenne Bayern</itemName>
+        <containerArt>https://cdn-profiles.tunein.com/s42824/images/logoq.jpg</containerArt>
+      </ContentItem>
+    </preset>
+  </nowSelectionUpdated>
+</updates>

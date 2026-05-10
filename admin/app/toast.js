@@ -24,6 +24,7 @@ function ensureContainer() {
 // short enough that no one will.
 export function showToast(message, dwellMs) {
   if (typeof message !== 'string' || !message) return null;
+  if (typeof document === 'undefined') return null;
 
   const container = ensureContainer();
   const node = document.createElement('div');

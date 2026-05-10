@@ -504,6 +504,75 @@ nav.routes a:hover {
   opacity: 0.5;
 }
 
+/* Preset card row (slice 6) */
+.np-presets {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.np-preset {
+  font: inherit;
+  font-size: 0.78rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.4rem 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+  position: relative;
+  min-height: 4.5rem;
+  transition: border-color 120ms, background 120ms;
+}
+
+.np-preset:not(:disabled):hover {
+  border-color: var(--accent);
+}
+
+.np-preset:not(:disabled):active {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.np-preset--empty,
+.np-preset:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.np-preset-num {
+  position: absolute;
+  top: 0.2rem;
+  left: 0.3rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.np-preset-art {
+  width: 1.75rem;
+  height: 1.75rem;
+  object-fit: cover;
+  border-radius: 3px;
+  margin-top: 0.6rem;
+}
+
+.np-preset-name {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  padding: 0 0.1rem;
+}
+
 /* STANDBY / asleep state */
 .np-asleep {
   border: 1px solid var(--border);
