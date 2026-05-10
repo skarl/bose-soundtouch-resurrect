@@ -10,6 +10,9 @@ import {
   postEnterBluetoothPairing,
   postClearBluetoothPaired,
   postRefreshAll,
+  postSetZone,
+  postAddZoneSlave,
+  postRemoveZoneSlave,
 } from '../api.js';
 import { recordOutgoing, wasRecent } from './ledger.js';
 import { controllerFor, volumeCtl, bassCtl, balanceCtl } from './sliders.js';
@@ -78,6 +81,21 @@ export async function enterBluetoothPairing() {
 export async function clearBluetoothPaired() {
   recordOutgoing('bluetooth');
   await postClearBluetoothPaired();
+}
+
+export async function setZone(zone) {
+  recordOutgoing('zone');
+  await postSetZone(zone);
+}
+
+export async function addZoneSlave(zone) {
+  recordOutgoing('zone');
+  await postAddZoneSlave(zone);
+}
+
+export async function removeZoneSlave(zone) {
+  recordOutgoing('zone');
+  await postRemoveZoneSlave(zone);
 }
 
 export async function refreshAll() {

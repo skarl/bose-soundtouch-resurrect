@@ -28,6 +28,8 @@ import {
   getDSPMonoStereo,
   getRecents,
   parseRecentsEl,
+  getZone,
+  parseZoneEl,
 } from './api.js';
 import * as actions from './actions/index.js';
 
@@ -155,7 +157,15 @@ export const FIELDS = [
     },
   },
   { name: 'dspMonoStereo', fetcher: getDSPMonoStereo },
-  { name: 'zone',          fetcher: () => Promise.resolve(null) },
+  {
+    name: 'zone',
+    fetcher: getZone,
+    eventTag: 'zoneUpdated',
+    parseInline(el) {
+      const zones = el.getElementsByTagName('zone');
+      return zones && zones[0] ? parseZoneEl(zones[0]) : null;
+    },
+  },
   { name: 'bluetooth',     fetcher: getBluetoothInfo },
   // No reliable WS event for /networkInfo — connectionStateUpdated
   // covers the Wi-Fi flap separately (state.ws). Refetched on settings

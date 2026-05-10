@@ -26,6 +26,11 @@
 //   parseNetworkInfoXml(), parseNetworkInfoEl() — networkInfo parsers
 //   getCapabilities(), parseCapabilitiesXml(), parseCapabilitiesEl()
 //   getRecents(), parseRecentsXml(), parseRecentsEl()
+//   getZone(), parseZoneXml(), parseZoneEl() — multi-room zone state
+//   postSetZone(), postAddZoneSlave(), postRemoveZoneSlave()
+//   getListMediaServers(), parseListMediaServersXml(), parseListMediaServersEl()
+//     — discovery surface; SoundTouch peers appear as media_servers
+//       whose manufacturer contains "Bose"
 //   presetsList(), presetsAssign() — presets CGI envelope client
 
 export const apiBase = '/cgi-bin/api/v1';
@@ -1113,6 +1118,196 @@ export async function postClearBluetoothPaired() {
     cache: 'no-store',
   });
   if (!res.ok) throw new Error(`postClearBluetoothPaired: HTTP ${res.status}`);
+}
+
+// --- multi-room zone -----------------------------------------------
+
+// GET /cgi-bin/api/v1/speaker/getZone → parsed zone object.
+// Bose firmware accepts only GET on /getZone (POST returns 400).
+export async function getZone() {
+  const res = await fetch(`${apiBase}/speaker/getZone`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getZone: HTTP ${res.status}`);
+  return parseZoneXml(await res.text());
+}
+
+// Parse the speaker's <zone> XML into:
+//   { master, masterIpAddress, isMaster, members: [{ipAddress, deviceID, role}, ...] }
+//
+// Reference shapes:
+//
+//   Standalone (captured from Bo, single-speaker network):
+//     <zone />
+//
+//   Master (synthesised from libsoundtouch/bosesoundtouchapi clients):
+//     <zone master="MASTER_DEVID">
+//       <member ipaddress="..." role="LEFT">SLAVE_DEVID</member>
+//     </zone>
+//
+//   Member (synthesised, slave-side view):
+//     <zone master="MASTER_DEVID" senderIPAddress="MASTER_IP" senderIsMaster="false">
+//       <member ipaddress="..." [role="..."]>DEVID</member>
+//     </zone>
+//
+// `senderIPAddress` is set on the slave's view (forwarded from master)
+// and absent on the master's own /getZone response. We use that as the
+// master/member discriminator (matches libsoundtouch's `is_master`).
+//
+// Standalone returns a non-null object with master='' and members=[]
+// so the view can branch on `members.length` and presence of `master`.
+export function parseZoneXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+  const els = doc.getElementsByTagName('zone');
+  if (!els || !els[0]) return null;
+  return parseZoneEl(els[0]);
+}
+
+export function parseZoneEl(el) {
+  if (!el) return null;
+  const master          = el.getAttribute('master') || '';
+  const masterIpAddress = el.getAttribute('senderIPAddress') || '';
+  const isMaster        = !!master && masterIpAddress === '';
+
+  const memberEls = el.getElementsByTagName('member');
+  const members = [];
+  for (let i = 0; i < memberEls.length; i++) {
+    const m = memberEls[i];
+    members.push({
+      deviceID:  (m.textContent || '').trim(),
+      ipAddress: m.getAttribute('ipaddress') || '',
+      role:      m.getAttribute('role') || '',
+    });
+  }
+
+  return { master, masterIpAddress, isMaster, members };
+}
+
+// POST /cgi-bin/api/v1/speaker/setZone — replace the current zone.
+// Body shape (from libsoundtouch's _create_zone):
+//   <zone master="MASTER_DEVID" senderIPAddress="MASTER_IP">
+//     <member ipaddress="SLAVE_IP">SLAVE_DEVID</member>
+//   </zone>
+//
+// `zone` arg: { master, senderIPAddress?, members: [{deviceID, ipAddress}, ...] }.
+export async function postSetZone(zone) {
+  const body = buildZoneXml(zone, { includeSenderIP: true });
+  const res = await fetch(`${apiBase}/speaker/setZone`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postSetZone: HTTP ${res.status}`);
+}
+
+// POST /cgi-bin/api/v1/speaker/addZoneSlave — extend an existing zone.
+// libsoundtouch omits `senderIPAddress` here (only `master`).
+export async function postAddZoneSlave(zone) {
+  const body = buildZoneXml(zone, { includeSenderIP: false });
+  const res = await fetch(`${apiBase}/speaker/addZoneSlave`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postAddZoneSlave: HTTP ${res.status}`);
+}
+
+// POST /cgi-bin/api/v1/speaker/removeZoneSlave — drop slaves from a zone.
+// Same body shape as addZoneSlave. Per libsoundtouch: removing the last
+// slave dissolves the zone; from the slave's side, the documented "leave"
+// is the master invoking removeZoneSlave on that member.
+export async function postRemoveZoneSlave(zone) {
+  const body = buildZoneXml(zone, { includeSenderIP: false });
+  const res = await fetch(`${apiBase}/speaker/removeZoneSlave`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postRemoveZoneSlave: HTTP ${res.status}`);
+}
+
+function buildZoneXml(zone, { includeSenderIP }) {
+  const master = (zone && zone.master) || '';
+  const senderIP = (zone && zone.senderIPAddress) || '';
+  const members = (zone && Array.isArray(zone.members)) ? zone.members : [];
+  const attrs = `master="${master}"` +
+    (includeSenderIP && senderIP ? ` senderIPAddress="${senderIP}"` : '');
+  const memberXml = members.map((m) => {
+    const ip = m.ipAddress || '';
+    const id = m.deviceID || '';
+    return `<member ipaddress="${ip}">${id}</member>`;
+  }).join('');
+  return `<zone ${attrs}>${memberXml}</zone>`;
+}
+
+// --- discovery (multi-room peer picker) -----------------------------
+
+// GET /cgi-bin/api/v1/speaker/listMediaServers → array of peer objects.
+// SoundTouch firmware emits this via UPnP/SSDP discovery, which on a
+// single-speaker network returns DLNA media servers (router etc.) but
+// no SoundTouch peers. parseListMediaServersEl filters to Bose-marked
+// entries so the multi-room picker doesn't show the user's FRITZ!Box.
+//
+// Returns [] on no peers, null on parse failure.
+export async function getListMediaServers() {
+  const res = await fetch(`${apiBase}/speaker/listMediaServers`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getListMediaServers: HTTP ${res.status}`);
+  return parseListMediaServersXml(await res.text());
+}
+
+// Parse <ListMediaServersResponse> XML. Reference shape (from Bo):
+//   <ListMediaServersResponse>
+//     <media_server id="..." mac="..." ip="..." manufacturer="..."
+//                   model_name="..." friendly_name="..."
+//                   model_description="..." location="..."/>
+//     ...
+//   </ListMediaServersResponse>
+export function parseListMediaServersXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+  const els = doc.getElementsByTagName('ListMediaServersResponse');
+  if (!els || !els[0]) return null;
+  return parseListMediaServersEl(els[0]);
+}
+
+// Filters to entries the firmware identifies as Bose/SoundTouch. We
+// keep `mac`, `ip`, and `name` (preferring friendly_name) — that's
+// everything the picker needs to render and to call addZoneSlave.
+export function parseListMediaServersEl(el) {
+  if (!el) return null;
+  const items = el.getElementsByTagName('media_server');
+  const out = [];
+  for (let i = 0; i < items.length; i++) {
+    const m = items[i];
+    const manuf = m.getAttribute('manufacturer') || '';
+    const model = m.getAttribute('model_name') || '';
+    const desc  = m.getAttribute('model_description') || '';
+    if (!/Bose/i.test(manuf) && !/SoundTouch/i.test(model) && !/SoundTouch/i.test(desc)) {
+      continue;
+    }
+    const name = (m.getAttribute('friendly_name') || '').trim() ||
+                 (m.getAttribute('model_name') || '').trim() ||
+                 'SoundTouch speaker';
+    out.push({
+      mac:  m.getAttribute('mac') || '',
+      ip:   m.getAttribute('ip')  || '',
+      name,
+      model,
+    });
+  }
+  return out;
 }
 
 // POST /presets/:slot with {id, slot, name, kind, json}.

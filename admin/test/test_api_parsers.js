@@ -28,6 +28,8 @@ import {
   parseDSPMonoStereoXml, parseDSPMonoStereoEl,
   parseCapabilitiesXml, parseCapabilitiesEl,
   parseRecentsXml, parseRecentsEl,
+  parseZoneXml, parseZoneEl,
+  parseListMediaServersXml, parseListMediaServersEl,
 } from '../app/api.js';
 import { dispatch } from '../app/ws.js';
 
@@ -679,4 +681,90 @@ test('recentsUpdated dispatch sets state.speaker.recents and touches speaker', a
   assert.equal(recents[0].source, 'TUNEIN');
   assert.equal(recents[1].itemName, '95.5 Charivari');
   assert.ok(store._touched.includes('speaker'), 'speaker key was touched');
+});
+
+// --- parseZoneXml --------------------------------------------------
+
+test('parseZoneXml: standalone <zone/> → empty members, no master', async () => {
+  const xml = await fixture('zone-standalone.xml');
+  const zone = parseZoneXml(xml);
+  assert.ok(zone, 'returns a non-null object');
+  assert.equal(zone.master, '');
+  assert.equal(zone.masterIpAddress, '');
+  assert.equal(zone.isMaster, false);
+  assert.ok(Array.isArray(zone.members));
+  assert.equal(zone.members.length, 0);
+});
+
+test('parseZoneXml: master shape — isMaster=true, members populated', async () => {
+  const xml = await fixture('zone-master.xml');
+  const zone = parseZoneXml(xml);
+  assert.ok(zone);
+  assert.equal(zone.master, '3415139ABD77');
+  assert.equal(zone.masterIpAddress, '');
+  assert.equal(zone.isMaster, true, 'no senderIPAddress → master view');
+  assert.equal(zone.members.length, 2);
+  assert.equal(zone.members[0].deviceID, '689E19D55555');
+  assert.equal(zone.members[0].ipAddress, '192.168.178.40');
+  assert.equal(zone.members[0].role, 'LEFT');
+});
+
+test('parseZoneXml: member shape — senderIPAddress set, isMaster=false', async () => {
+  const xml = await fixture('zone-member.xml');
+  const zone = parseZoneXml(xml);
+  assert.ok(zone);
+  assert.equal(zone.master, '689E19D55555');
+  assert.equal(zone.masterIpAddress, '192.168.178.40');
+  assert.equal(zone.isMaster, false, 'senderIPAddress → slave view');
+  assert.equal(zone.members.length, 2);
+});
+
+test('parseZoneXml: empty string returns null', () => {
+  assert.equal(parseZoneXml(''), null);
+});
+
+test('parseZoneXml: non-zone XML returns null', () => {
+  assert.equal(parseZoneXml('<volume>0</volume>'), null);
+});
+
+test('parseZoneEl: null input returns null', () => {
+  assert.equal(parseZoneEl(null), null);
+});
+
+test('parseZoneEl: parses a DOM element directly', async () => {
+  const xml = await fixture('zone-master.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const els = doc.getElementsByTagName('zone');
+  const zone = parseZoneEl(els && els[0]);
+  assert.ok(zone);
+  assert.equal(zone.master, '3415139ABD77');
+  assert.equal(zone.members.length, 2);
+});
+
+// --- parseListMediaServersXml --------------------------------------
+
+test('parseListMediaServersXml: standalone (only DLNA peers, no Bose) returns []', async () => {
+  const xml = await fixture('list-media-servers.xml');
+  const peers = parseListMediaServersXml(xml);
+  assert.ok(Array.isArray(peers));
+  assert.equal(peers.length, 0, 'AVM FRITZ!Box entries are filtered out');
+});
+
+test('parseListMediaServersXml: keeps Bose-marked entries with mac/ip/name', async () => {
+  const xml = await fixture('list-media-servers-with-bose.xml');
+  const peers = parseListMediaServersXml(xml);
+  assert.ok(Array.isArray(peers));
+  assert.equal(peers.length, 1);
+  assert.equal(peers[0].mac, '689E19D55555');
+  assert.equal(peers[0].ip, '192.168.178.40');
+  assert.equal(peers[0].name, 'Kitchen');
+  assert.equal(peers[0].model, 'SoundTouch 20');
+});
+
+test('parseListMediaServersXml: empty string returns null', () => {
+  assert.equal(parseListMediaServersXml(''), null);
+});
+
+test('parseListMediaServersEl: null input returns null', () => {
+  assert.equal(parseListMediaServersEl(null), null);
 });

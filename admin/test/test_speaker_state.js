@@ -359,3 +359,31 @@ test('registry: recents field has fetcher + eventTag + parseInline', () => {
   assert.equal(entry.eventTag, 'recentsUpdated');
   assert.equal(typeof entry.parseInline, 'function');
 });
+
+// --- zone WS dispatch ----------------------------------------------
+
+test('dispatch: inline payload (zoneUpdated) → field applied, single touch', async () => {
+  const xml = await wsFixture('zone-updated.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const child = doc.documentElement.children[0]; // <zoneUpdated>
+
+  const store = makeStore();
+  await dispatch(child, store);
+
+  assert.equal(store._touched.length, 1, 'touch called exactly once');
+  assert.equal(store._touched[0], 'speaker');
+  const zone = store.state.speaker.zone;
+  assert.ok(zone, 'zone is set');
+  assert.equal(zone.master, '3415139ABD77');
+  assert.equal(zone.isMaster, true);
+  assert.equal(zone.members.length, 1);
+  assert.equal(zone.members[0].deviceID, '689E19D55555');
+});
+
+test('registry: zone field has fetcher + eventTag + parseInline', () => {
+  const entry = FIELDS.find((f) => f.name === 'zone');
+  assert.ok(entry, 'zone entry exists in FIELDS');
+  assert.equal(typeof entry.fetcher, 'function');
+  assert.equal(entry.eventTag, 'zoneUpdated');
+  assert.equal(typeof entry.parseInline, 'function');
+});
