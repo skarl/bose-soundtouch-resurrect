@@ -6,12 +6,58 @@
 // href/src/dataset on real elements.
 
 import { setArt } from './art.js';
+import { icon } from './icons.js';
 import * as theme from './theme.js';
 
-// Connection-state pill. Returns a <span> node with data-state reflecting
-// state.ws.mode. The caller is responsible for subscribing to 'ws' and
-// calling updatePill(pill, state) when mode changes — never re-creating
-// the node.
+// pill({ tone, pulse, text }) — generic status badge.
+// Tones map to .pill--{tone}; the optional pulse dot is a tiny child span.
+// The returned element has an update({ tone, pulse, text }) method so
+// callers can mutate without re-creating the node (re-creating loses
+// surrounding focus / hover state).
+const PILL_TONES = new Set(['live', 'ok', 'warn', 'danger']);
+
+export function pill({ tone = 'ok', pulse = false, text = '' } = {}) {
+  const el = document.createElement('span');
+  el.setAttribute('class', 'pill');
+  el.setAttribute('role', 'status');
+
+  const dot = document.createElement('span');
+  dot.setAttribute('class', 'pill__dot');
+  dot.setAttribute('aria-hidden', 'true');
+
+  const label = document.createElement('span');
+  label.setAttribute('class', 'pill__text');
+
+  el.appendChild(dot);
+  el.appendChild(label);
+
+  function apply({ tone: nextTone, pulse: nextPulse, text: nextText }) {
+    const t = PILL_TONES.has(nextTone) ? nextTone : 'ok';
+    for (const cls of ['pill--live', 'pill--ok', 'pill--warn', 'pill--danger']) {
+      el.classList.remove(cls);
+    }
+    el.classList.add(`pill--${t}`);
+    el.setAttribute('data-tone', t);
+    if (nextPulse) {
+      dot.classList.add('pill__dot--on');
+    } else {
+      dot.classList.remove('pill__dot--on');
+    }
+    label.textContent = nextText == null ? '' : String(nextText);
+  }
+
+  apply({ tone, pulse, text });
+  el.update = (next = {}) => apply({
+    tone:  next.tone  != null ? next.tone  : el.getAttribute('data-tone'),
+    pulse: next.pulse != null ? next.pulse : dot.classList.contains('pill__dot--on'),
+    text:  next.text  != null ? next.text  : label.textContent,
+  });
+  return el;
+}
+
+// Connection-state pill. Wraps pill() with the WS mode → tone/text mapping.
+// CSS keeps the legacy .conn-pill[data-state="…"] selectors in place so any
+// downstream override still works; we layer them on top of pill().
 //
 // Supported data-state values (CSS drives colour via [data-state="…"]):
 //   connecting   — socket opened, hello not yet received
@@ -19,7 +65,7 @@ import * as theme from './theme.js';
 //   offline      — socket closed, no reconnect scheduled
 //   reconnecting — first close, backoff timer running
 //   polling      — second+ close, falling back to REST while retrying
-const PILL_LABELS = {
+const CONN_PILL_LABELS = {
   connecting:   'connecting…',
   ws:           'live',
   offline:      'offline',
@@ -27,7 +73,7 @@ const PILL_LABELS = {
   polling:      'polling',
 };
 
-const PILL_ARIA = {
+const CONN_PILL_ARIA = {
   connecting:   'Connection: connecting',
   ws:           'Connection: live',
   offline:      'Connection: offline',
@@ -35,22 +81,199 @@ const PILL_ARIA = {
   polling:      'Connection: polling',
 };
 
-export function connectionPill(state) {
-  const pill = document.createElement('span');
-  pill.className = 'conn-pill';
-  pill.setAttribute('role', 'status');
-  const mode = (state && state.ws && state.ws.mode) || 'offline';
-  pill.dataset.state = mode;
-  pill.textContent = PILL_LABELS[mode] || mode;
-  pill.setAttribute('aria-label', PILL_ARIA[mode] || `Connection: ${mode}`);
-  return pill;
+const CONN_PILL_TONE = {
+  connecting:   'warn',
+  ws:           'live',
+  offline:      'danger',
+  reconnecting: 'warn',
+  polling:      'ok',
+};
+
+function modeOf(state) {
+  return (state && state.ws && state.ws.mode) || 'offline';
 }
 
-export function updatePill(pill, state) {
-  const mode = (state && state.ws && state.ws.mode) || 'offline';
-  pill.dataset.state = mode;
-  pill.textContent = PILL_LABELS[mode] || mode;
-  pill.setAttribute('aria-label', PILL_ARIA[mode] || `Connection: ${mode}`);
+function applyConnPill(el, mode) {
+  const tone = CONN_PILL_TONE[mode] || 'ok';
+  el.update({ tone, pulse: tone === 'live', text: CONN_PILL_LABELS[mode] || mode });
+  el.setAttribute('data-state', mode);
+  el.setAttribute('aria-label', CONN_PILL_ARIA[mode] || `Connection: ${mode}`);
+}
+
+export function connectionPill(state) {
+  const el = pill({ tone: 'ok', text: '' });
+  el.classList.add('conn-pill');
+  applyConnPill(el, modeOf(state));
+  return el;
+}
+
+export function updatePill(el, state) {
+  applyConnPill(el, modeOf(state));
+}
+
+// switchEl({ checked, label, onChange }) — binary toggle with proper
+// role="switch" + aria-checked. The returned element exposes toggle()
+// and setChecked(next) so callers (and tests) can flip programmatically;
+// click + Space + Enter all funnel through toggle().
+export function switchEl({ checked = false, label = '', onChange } = {}) {
+  const btn = document.createElement('button');
+  btn.setAttribute('type', 'button');
+  btn.setAttribute('class', 'switch');
+  btn.setAttribute('role', 'switch');
+  if (label) btn.setAttribute('aria-label', label);
+
+  const track = document.createElement('span');
+  track.setAttribute('class', 'switch__track');
+  const thumb = document.createElement('span');
+  thumb.setAttribute('class', 'switch__thumb');
+  track.appendChild(thumb);
+  btn.appendChild(track);
+
+  let state = !!checked;
+
+  function paint() {
+    btn.setAttribute('aria-checked', state ? 'true' : 'false');
+    btn.setAttribute('data-checked', state ? 'true' : 'false');
+  }
+
+  function setChecked(next) {
+    const nv = !!next;
+    if (nv === state) return;
+    state = nv;
+    paint();
+  }
+
+  function toggle() {
+    state = !state;
+    paint();
+    if (typeof onChange === 'function') onChange(state);
+  }
+
+  paint();
+
+  btn.addEventListener('click', toggle);
+  btn.addEventListener('keydown', (evt) => {
+    if (evt.key === ' ' || evt.key === 'Enter') {
+      evt.preventDefault();
+      toggle();
+    }
+  });
+
+  btn.toggle = toggle;
+  btn.setChecked = setChecked;
+  Object.defineProperty(btn, 'checked', { get: () => state });
+  return btn;
+}
+
+// slider({ min, max, value, step, onChange, ariaLabel, throttleMs })
+// Wraps <input type="range"> with a leading-and-trailing throttle on
+// onChange — fires immediately on the first move so volume feels live,
+// then trails the final value at the end of the throttle window so the
+// resting position is never lost. 50ms matches the existing volume-POST
+// cadence (admin/app/actions/sliders.js).
+export function slider({
+  min = 0,
+  max = 100,
+  value = 0,
+  step = 1,
+  onChange,
+  ariaLabel,
+  throttleMs = 50,
+} = {}) {
+  const input = document.createElement('input');
+  input.setAttribute('type', 'range');
+  input.setAttribute('class', 'slider');
+  input.setAttribute('min',  String(min));
+  input.setAttribute('max',  String(max));
+  input.setAttribute('step', String(step));
+  input.setAttribute('value', String(value));
+  if (ariaLabel) input.setAttribute('aria-label', ariaLabel);
+
+  const fire = throttleLeadingTrailing((v) => {
+    if (typeof onChange === 'function') onChange(v);
+  }, throttleMs);
+
+  input.addEventListener('input', () => {
+    fire(Number(input.value));
+  });
+
+  input.setValue = (v) => {
+    input.value = String(v);
+    input.setAttribute('value', String(v));
+  };
+  return input;
+}
+
+// throttleLeadingTrailing(fn, ms) — invoke immediately, then suppress
+// further calls for ms; if any arrived during the suppression window,
+// fire once more at the end with the most-recent argument. Exposed
+// separately so it has a unit test independent of any DOM event loop.
+export function throttleLeadingTrailing(fn, ms) {
+  let timer = null;
+  let pending = null;
+  let hasPending = false;
+  return function throttled(arg) {
+    if (timer == null) {
+      fn(arg);
+      timer = setTimeout(function tick() {
+        if (hasPending) {
+          const v = pending;
+          pending = null;
+          hasPending = false;
+          fn(v);
+          timer = setTimeout(tick, ms);
+        } else {
+          timer = null;
+        }
+      }, ms);
+    } else {
+      pending = arg;
+      hasPending = true;
+    }
+  };
+}
+
+// equalizer({ playing }) — wraps icon('equalizer') in a parent that
+// toggles data-state="playing", which is the selector style.css already
+// uses to drive the bar animation (and to honour prefers-reduced-motion).
+// Exposes setPlaying(next) so callers don't reach into dataset.
+export function equalizer({ playing = false } = {}) {
+  const wrap = document.createElement('span');
+  wrap.setAttribute('class', 'equalizer');
+  wrap.appendChild(icon('equalizer'));
+
+  function setPlaying(next) {
+    if (next) wrap.setAttribute('data-state', 'playing');
+    else wrap.removeAttribute('data-state');
+  }
+
+  setPlaying(playing);
+  wrap.setPlaying = setPlaying;
+  return wrap;
+}
+
+// stationArt({ url, name, size }) — uniform art slot that delegates
+// loading + hashed-name fallback to setArt(). Wraps an <img> in a sized
+// box so callers don't have to repeat the box-art-image pattern.
+// update({ url, name }) re-points the image without re-creating the node.
+export function stationArt({ url = '', name = '', size = 48 } = {}) {
+  const wrap = document.createElement('span');
+  wrap.setAttribute('class', 'station-art');
+  wrap.setAttribute('style', `width:${size}px;height:${size}px`);
+
+  const img = document.createElement('img');
+  img.setAttribute('class', 'station-art__img');
+  img.setAttribute('loading', 'lazy');
+  wrap.appendChild(img);
+
+  setArt(img, url, name);
+
+  wrap.update = ({ url: nextUrl, name: nextName } = {}) => {
+    const u = nextUrl != null ? nextUrl : (img.src || '');
+    const n = nextName != null ? nextName : (img.alt || '');
+    setArt(img, u || '', n || '');
+  };
+  return wrap;
 }
 
 // Theme-toggle button for the app header. Clicking cycles the preference

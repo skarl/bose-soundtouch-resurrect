@@ -2,19 +2,25 @@
 <html lang="en" data-theme="graphite">
 <head>
 <meta charset="utf-8">
-<title>icons demo</title>
+<title>components demo</title>
 <link rel="stylesheet" href="../style.css">
 <style>
-  body { margin: 2rem; font-family: system-ui, sans-serif; }
+  body { margin: 2rem; font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); }
   h2 { margin: 2rem 0 0.5rem; font-size: 1rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1rem; }
-  .cell { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem; border: 1px solid currentColor; border-radius: 6px; opacity: 0.95; }
+  .cell { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; }
   .cell .stack { display: inline-flex; align-items: center; gap: 0.4rem; }
   .cell .label { font-family: ui-monospace, monospace; font-size: 0.85rem; opacity: 0.7; }
   .toolbar { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
-  .toolbar button { padding: 0.4rem 0.75rem; border: 1px solid currentColor; background: transparent; color: inherit; border-radius: 4px; cursor: pointer; font: inherit; }
+  .toolbar button { padding: 0.4rem 0.75rem; border: 1px solid var(--border); background: transparent; color: inherit; border-radius: 4px; cursor: pointer; font: inherit; }
+  .row { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; padding: 0.75rem 0; border-bottom: 1px dashed var(--border); }
+  .row .group { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; }
+  .row .group .label { font-family: ui-monospace, monospace; font-size: 0.8rem; opacity: 0.7; min-width: 6rem; }
   .eq-row { display: flex; gap: 2rem; align-items: center; font-size: 1.5rem; }
-  .eq-row .group { display: inline-flex; align-items: center; gap: 0.5rem; }
+  .slider-cell { display: grid; grid-template-columns: 6rem 1fr 3rem; gap: 0.75rem; align-items: center; padding: 0.5rem 0; }
+  .slider-cell output { font-family: ui-monospace, monospace; font-size: 0.85rem; text-align: right; }
+  .art-row { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+  .art-row .group { display: inline-flex; flex-direction: column; align-items: center; gap: 0.35rem; font-size: 0.75rem; }
 </style>
 </head>
 <body>
@@ -22,28 +28,49 @@
     <button data-theme-set="graphite">graphite</button>
     <button data-theme-set="cream">cream</button>
     <button data-theme-set="terminal">terminal</button>
+    <button data-theme-set="light">light</button>
+    <button data-theme-set="dark">dark</button>
   </div>
 
-  <h2>14 px</h2>
+  <h2>icons — 14 / 16 / 24 px</h2>
+  <h3 style="margin:1rem 0 .5rem;font-size:.8rem;opacity:.6">14 px</h3>
   <div id="g14" class="grid"></div>
-
-  <h2>16 px (default)</h2>
+  <h3 style="margin:1rem 0 .5rem;font-size:.8rem;opacity:.6">16 px (default)</h3>
   <div id="g16" class="grid"></div>
-
-  <h2>24 px</h2>
+  <h3 style="margin:1rem 0 .5rem;font-size:.8rem;opacity:.6">24 px</h3>
   <div id="g24" class="grid"></div>
 
-  <h2>equalizer</h2>
+  <h2>equalizer (idle vs playing)</h2>
   <div class="eq-row">
     <div class="group"><span>idle:</span><span id="eq-idle"></span></div>
-    <div class="group" data-state="playing"><span>playing:</span><span id="eq-play"></span></div>
+    <div class="group"><span>playing:</span><span id="eq-play"></span></div>
+    <button id="eq-toggle" type="button">toggle</button>
   </div>
+
+  <h2>pill (status badge)</h2>
+  <div class="row" id="pill-row"></div>
+  <p style="font-size:.8rem;opacity:.7;margin-top:.25rem">
+    Click any pill to toggle its pulse dot. The "live" pill animates by default.
+  </p>
+
+  <h2>switch (binary toggle)</h2>
+  <div class="row" id="switch-row"></div>
+
+  <h2>slider (50 ms throttled)</h2>
+  <div id="slider-row"></div>
+  <p style="font-size:.8rem;opacity:.7;margin-top:.25rem">
+    Drag and watch the "fired" counter — leading + trailing only, regardless of input rate.
+  </p>
+
+  <h2>stationArt (with / without url)</h2>
+  <div class="art-row" id="art-row"></div>
 
 <script type="module">
   import { icon, ICON_NAMES } from '../app/icons.js';
+  import { pill, switchEl, slider, equalizer, stationArt } from '../app/components.js';
 
+  // --- icon grids ---------------------------------------------------
   const STATIC = ICON_NAMES.filter((n) => n !== 'equalizer');
-
   for (const [id, size] of [['g14', 14], ['g16', 16], ['g24', 24]]) {
     const root = document.getElementById(id);
     for (const name of STATIC) {
@@ -61,9 +88,111 @@
     }
   }
 
-  document.getElementById('eq-idle').appendChild(icon('equalizer'));
-  document.getElementById('eq-play').appendChild(icon('equalizer'));
+  // --- equalizer ----------------------------------------------------
+  const eqIdle = equalizer({ playing: false });
+  const eqPlay = equalizer({ playing: true });
+  document.getElementById('eq-idle').appendChild(eqIdle);
+  document.getElementById('eq-play').appendChild(eqPlay);
+  let playing = true;
+  document.getElementById('eq-toggle').addEventListener('click', () => {
+    playing = !playing;
+    eqPlay.setPlaying(playing);
+  });
 
+  // --- pills --------------------------------------------------------
+  const pillRow = document.getElementById('pill-row');
+  for (const tone of ['live', 'ok', 'warn', 'danger']) {
+    const wrap = document.createElement('div');
+    wrap.className = 'group';
+    const lbl = document.createElement('span');
+    lbl.className = 'label';
+    lbl.textContent = tone;
+    const p = pill({ tone, pulse: tone === 'live', text: tone });
+    p.style.cursor = 'pointer';
+    p.addEventListener('click', () => {
+      const dotOn = p.querySelector('.pill__dot').classList.contains('pill__dot--on');
+      p.update({ pulse: !dotOn });
+    });
+    wrap.appendChild(lbl);
+    wrap.appendChild(p);
+    pillRow.appendChild(wrap);
+  }
+
+  // --- switches -----------------------------------------------------
+  const switchRow = document.getElementById('switch-row');
+  for (const [label, initial, disabled] of [
+    ['Off',      false, false],
+    ['On',       true,  false],
+    ['Disabled', true,  true],
+  ]) {
+    const group = document.createElement('div');
+    group.className = 'group';
+    const lbl = document.createElement('span');
+    lbl.className = 'label';
+    lbl.textContent = label;
+    const out = document.createElement('output');
+    out.style.fontFamily = 'ui-monospace, monospace';
+    out.style.fontSize = '0.8rem';
+    out.textContent = String(initial);
+    const s = switchEl({
+      checked: initial,
+      label,
+      onChange: (v) => { out.textContent = String(v); },
+    });
+    if (disabled) s.disabled = true;
+    group.appendChild(lbl);
+    group.appendChild(s);
+    group.appendChild(out);
+    switchRow.appendChild(group);
+  }
+
+  // --- sliders ------------------------------------------------------
+  const sliderRow = document.getElementById('slider-row');
+  for (const [label, opts] of [
+    ['Volume',  { min: 0,   max: 100, value: 35, step: 1, ariaLabel: 'Volume',  throttleMs: 50 }],
+    ['Bass',    { min: -9,  max: 9,   value: 0,  step: 1, ariaLabel: 'Bass',    throttleMs: 50 }],
+    ['Balance', { min: -7,  max: 7,   value: 0,  step: 1, ariaLabel: 'Balance', throttleMs: 50 }],
+  ]) {
+    const cell = document.createElement('div');
+    cell.className = 'slider-cell';
+    const lbl = document.createElement('span');
+    lbl.className = 'label';
+    lbl.textContent = label;
+    const counter = document.createElement('output');
+    counter.textContent = '0 fired';
+    let fired = 0;
+    const s = slider({
+      ...opts,
+      onChange: (v) => {
+        fired++;
+        counter.textContent = `${fired} fired (=${v})`;
+      },
+    });
+    cell.appendChild(lbl);
+    cell.appendChild(s);
+    cell.appendChild(counter);
+    sliderRow.appendChild(cell);
+  }
+
+  // --- station art --------------------------------------------------
+  const artRow = document.getElementById('art-row');
+  for (const [label, opts] of [
+    ['url',      { url: 'https://placehold.co/96x96/png',     name: 'Real',       size: 96 }],
+    ['no url',   { url: '',                                   name: 'BBC Radio 1', size: 96 }],
+    ['no name',  { url: '',                                   name: '',           size: 96 }],
+    ['48 px',    { url: '',                                   name: 'Small',      size: 48 }],
+  ]) {
+    const group = document.createElement('div');
+    group.className = 'group';
+    const a = stationArt(opts);
+    const lbl = document.createElement('span');
+    lbl.textContent = label;
+    group.appendChild(a);
+    group.appendChild(lbl);
+    artRow.appendChild(group);
+  }
+
+  // --- theme toolbar -----------------------------------------------
   for (const btn of document.querySelectorAll('[data-theme-set]')) {
     btn.addEventListener('click', () => {
       document.documentElement.setAttribute('data-theme', btn.dataset.themeSet);
