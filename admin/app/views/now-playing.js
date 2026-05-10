@@ -11,7 +11,8 @@
 import { html, mount, defineView } from '../dom.js';
 import { store } from '../state.js';
 import { speakerNowPlaying, presetsList } from '../api.js';
-import { setArt, hashHue } from '../art.js';
+import { setArt } from '../art.js';
+import { hashHue } from '../tint.js';
 import * as actions from '../actions/index.js';
 import { equalizer, slider } from '../components.js';
 import { icon } from '../icons.js';

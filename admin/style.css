@@ -1117,38 +1117,6 @@ nav.routes a:hover {
   outline: 1px solid var(--accent);
 }
 
-.station-stream-audition {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  width: 1.75rem;
-  height: 1.75rem;
-  font-size: 0.85rem;
-  line-height: 1;
-  cursor: pointer;
-  flex: 0 0 auto;
-}
-
-.station-stream-audition:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.station-stream.is-playing .station-stream-audition {
-  background: var(--accent);
-  color: var(--bg);
-  border-color: var(--accent);
-}
-.station-stream.is-playing .station-stream-audition::before {
-  content: '\23F8'; /* ⏸ U+23F8 PAUSE SYMBOL */
-}
-.station-stream.is-playing .station-stream-audition {
-  font-size: 0;          /* hide the original ▶ glyph */
-}
-.station-stream.is-playing .station-stream-audition::before {
-  font-size: 0.85rem;
-}
-
 .station-stream-meta {
   flex: 1 1 auto;
   font-size: 0.9rem;
@@ -1602,6 +1570,14 @@ nav.routes a:hover {
       grid-template-columns: repeat(3, 1fr);
     }
 
+    .station-test-play {
+      min-height: 3.5rem;
+    }
+
+    .np-preset {
+      min-height: 5.5rem;
+    }
+
     .preset-slot {
       min-height: 5.5rem;
     }
@@ -1612,14 +1588,9 @@ nav.routes a:hover {
       align-items: stretch;
     }
 
-    .station-stream-audition {
-      width: 2.75rem;
-      height: 2.75rem;
-      font-size: 1rem;
-    }
-
-    .station-assign-btn {
-      min-height: 2.75rem;
+    .station-assign-btn,
+    .station-preset-cell {
+      min-height: 4rem;
     }
   }
 }
@@ -2217,3 +2188,148 @@ nav.routes a:hover {
     display: none !important;
   }
 }
+
+/* --- station detail v2 (#60) -------------------------------------- */
+/* Three-up preset grid replaces the inline 6-button assign row; each
+   cell shows slot number, current occupant, and a small genre tag.
+   Long names truncate. The full-width gradient Test play CTA sits
+   between the stream chooser and the assign grid. */
+
+.station-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, auto);
+  gap: 0.5rem;
+}
+
+.station-preset-cell {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  gap: 0.25rem 0.5rem;
+  align-items: center;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  min-height: 4rem;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.station-preset-cell__slot {
+  grid-row: 1 / span 2;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--muted);
+  width: 1.25rem;
+  text-align: center;
+}
+
+.station-preset-cell__occupant {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 0.95rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.station-preset-cell__tag {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  min-height: 1.1rem;
+}
+
+.station-preset-cell:not(:disabled):hover {
+  border-color: var(--accent);
+}
+
+.station-preset-cell--empty .station-preset-cell__occupant {
+  color: var(--muted);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.station-preset-cell.is-current {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.station-preset-cell:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.station-preset-cell.is-busy {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+/* Full-width gradient Test play CTA. Background gradient is set per
+   station via inline style (stationGradient(name) → linear-gradient).
+   White text + soft shadow read on every theme; subtitle is a softer
+   line beneath the main label. */
+.station-test-play {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  padding: 0.85rem 1rem;
+  border: 0;
+  border-radius: 10px;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+
+.station-test-play__label {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.station-test-play__sub {
+  font-size: 0.8rem;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.station-test-play:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+}
+
+.station-test-play:not(:disabled):active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.station-test-play:disabled,
+.station-test-play.is-busy {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .station-preset-cell,
+  .station-test-play {
+    transition: none;
+  }
+  .station-test-play:not(:disabled):hover,
+  .station-test-play:not(:disabled):active {
+    transform: none;
+  }
+}
+

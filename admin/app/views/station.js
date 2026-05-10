@@ -23,6 +23,8 @@ import { tuneinStation, presetsList } from '../api.js';
 import { store, addRecentlyViewed } from '../state.js';
 import { showToast } from '../toast.js';
 import { setArt } from '../art.js';
+import { stationGradient } from '../tint.js';
+import { pill } from '../components.js';
 import { probe, assignToPreset, buildBosePayload } from '../probe.js';
 import { previewStream } from '../actions/index.js';
 
@@ -77,19 +79,75 @@ function fmtReliability(stream) {
   return Number.isFinite(r) && r > 0 ? `${r}%` : '';
 }
 
-function buildAssignRow() {
+function buildAssignGrid() {
   const wrap = document.createElement('div');
-  wrap.className = 'station-assign-row';
+  wrap.className = 'station-presets-grid';
   for (let n = 1; n <= ASSIGN_SLOTS; n++) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'station-assign-btn';
+    btn.className = 'station-preset-cell station-assign-btn';
     btn.dataset.slot = String(n);
-    btn.textContent = String(n);
     btn.disabled = true;
+
+    const slotLabel = document.createElement('span');
+    slotLabel.className = 'station-preset-cell__slot';
+    slotLabel.textContent = String(n);
+
+    const occupant = document.createElement('span');
+    occupant.className = 'station-preset-cell__occupant';
+    occupant.textContent = 'Empty';
+
+    const tag = document.createElement('span');
+    tag.className = 'station-preset-cell__tag';
+
+    btn.appendChild(slotLabel);
+    btn.appendChild(occupant);
+    btn.appendChild(tag);
     wrap.appendChild(btn);
   }
   return wrap;
+}
+
+// Update one cell from a preset slot. Falls back to "Empty" + no tag
+// for unset slots; long names truncate via CSS ellipsis. The active
+// inset accent (slot already holds this station) is keyed off
+// .is-current — applied here when the slot's location matches sid.
+function paintPresetCell(btn, slotIndex, preset, sid) {
+  const occupant = btn.querySelector('.station-preset-cell__occupant');
+  const tagWrap  = btn.querySelector('.station-preset-cell__tag');
+  if (!occupant || !tagWrap) return;
+
+  const empty = !preset || preset.empty === true;
+  const name  = empty ? '' : (preset.itemName || `Preset ${slotIndex + 1}`);
+  const genre = empty ? '' : presetGenreLabel(preset);
+  const isCurrent = !empty && typeof preset.location === 'string'
+    && preset.location === sid;
+
+  occupant.textContent = empty ? 'Empty' : name;
+  btn.classList.toggle('station-preset-cell--empty', empty);
+  btn.classList.toggle('is-current', isCurrent);
+  btn.setAttribute('aria-label', empty
+    ? `Assign to preset ${slotIndex + 1}, currently empty`
+    : `Assign to preset ${slotIndex + 1}, currently ${name}`);
+
+  tagWrap.replaceChildren();
+  if (genre) tagWrap.appendChild(pill({ tone: 'ok', text: genre }));
+}
+
+// Pick a short tag for the preset cell. Probed Bose JSON doesn't carry
+// genre on /presets, so we surface the source/account or location code
+// — anything short and stable that helps disambiguate identically-named
+// stations across slots.
+function presetGenreLabel(preset) {
+  if (!preset || typeof preset !== 'object') return '';
+  const src = typeof preset.source === 'string' ? preset.source : '';
+  if (src && src !== 'INTERNET_RADIO') return src.toLowerCase();
+  if (typeof preset.location === 'string' && preset.location) {
+    return preset.location.length > 8
+      ? preset.location.slice(0, 8) + '…'
+      : preset.location;
+  }
+  return src ? src.toLowerCase() : '';
 }
 
 function renderSkeleton(root, sid) {
@@ -103,7 +161,7 @@ function renderSkeleton(root, sid) {
   heading.className = 'station-assign__label';
   heading.textContent = 'Set as preset:';
   assignBox.appendChild(heading);
-  assignBox.appendChild(buildAssignRow());
+  assignBox.appendChild(buildAssignGrid());
 
   mount(root, html`
     <section class="station-detail" data-view="station" data-sid="${sid}">
@@ -120,6 +178,31 @@ function renderSkeleton(root, sid) {
       ${assignBox}
     </section>
   `);
+}
+
+// Full-width gradient CTA shown above the assign grid on playable
+// stations. Click streams the chosen stream to the speaker without
+// touching the persistent preset slots. Subtitle is muted secondary
+// text; the gradient is keyed off the station name so the same station
+// always renders the same hue across reloads.
+function buildTestPlayButton(name) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'station-test-play';
+  btn.dataset.testPlay = '1';
+  btn.style.backgroundImage = stationGradient(name);
+
+  const label = document.createElement('span');
+  label.className = 'station-test-play__label';
+  label.textContent = 'Test play';
+
+  const sub = document.createElement('span');
+  sub.className = 'station-test-play__sub';
+  sub.textContent = 'Stream a test sample without saving';
+
+  btn.appendChild(label);
+  btn.appendChild(sub);
+  return btn;
 }
 
 function applyMetadata(root, stationBody, fallbackName) {
@@ -182,28 +265,21 @@ export default defineView({
     }
 
     renderSkeleton(root, sid);
+    repaintPresetCells();
 
-    // Audition + assign closure state. Audition plays on the speaker,
+    // Audition + assign closure state. Test play streams to the speaker,
     // not in the browser. Bo stays tuned until the user picks
     // something else — no auto-stop on toggle-click or navigation.
     let chosenStreamUrl = '';
-    let auditionRow     = null;
-    let auditionCtx     = null;
+    let testPlayCtx     = null;
+    let testPlayBusy    = false;
 
     let stationName = sid;
     let stationArt = '';
     const getName = () => stationName;
     const getArt  = () => stationArt;
 
-    function markRowPlaying(rowEl) {
-      if (auditionRow && auditionRow !== rowEl) {
-        auditionRow.classList.remove('is-playing');
-      }
-      auditionRow = rowEl;
-      if (auditionRow) auditionRow.classList.add('is-playing');
-    }
-
-    async function auditionStream(url, rowEl, actx) {
+    async function auditionStream(url, actx) {
       if (!actx || !actx.getProbe || !actx.getName) return;
       // Read the live name at click time — Describe.ashx may still be
       // racing the probe when the stream list mounts.
@@ -213,19 +289,16 @@ export default defineView({
         showToast('No playable streams to audition');
         return;
       }
-      markRowPlaying(rowEl);
       try {
         const envelope = await previewStream({ id: actx.sid, name: liveName, json: bose });
         if (!envelope || envelope.ok !== true) {
           const code = envelope && envelope.error && envelope.error.code;
           showToast(`Audition failed${code ? ': ' + code : ''}`);
-          markRowPlaying(null);
           return;
         }
         showToast(`Playing on Bo: ${liveName}`);
       } catch (err) {
         showToast(`Audition failed: ${err.message || 'transport error'}`);
-        markRowPlaying(null);
       }
     }
 
@@ -245,7 +318,7 @@ export default defineView({
       list.className = 'station-streams';
       list.setAttribute('aria-label', 'Stream chooser');
 
-      auditionCtx = actx || null;
+      testPlayCtx = actx || null;
       const initial = bestStream(streams) || streams[0];
       chosenStreamUrl = initial ? initial.streamUrl || initial.url : '';
 
@@ -263,12 +336,6 @@ export default defineView({
         radio.checked = url === chosenStreamUrl;
         if (radio.checked) row.classList.add('is-selected');
 
-        const audition = document.createElement('button');
-        audition.type = 'button';
-        audition.className = 'station-stream-audition';
-        audition.setAttribute('aria-label', 'Audition this stream');
-        audition.textContent = '▶'; // ▶ — toggles to ⏸ via .is-playing CSS
-
         const meta = document.createElement('span');
         meta.className = 'station-stream-meta';
         const bits = Number(s.bitrate) > 0 ? `${s.bitrate} kbps` : '';
@@ -276,20 +343,9 @@ export default defineView({
         meta.textContent = parts.join(' . ') || url;
 
         row.appendChild(radio);
-        row.appendChild(audition);
         row.appendChild(meta);
 
-        // Clicking anywhere on the row selects it. Audition button also
-        // selects, so the auditioned stream is what gets assigned.
-        row.addEventListener('click', (ev) => {
-          if (ev.target === audition) return;
-          selectStream(url, list);
-        });
-        audition.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          selectStream(url, list);
-          auditionStream(url, row, auditionCtx);
-        });
+        row.addEventListener('click', () => selectStream(url, list));
 
         list.appendChild(row);
       }
@@ -314,26 +370,41 @@ export default defineView({
         verdictEl.classList.add('is-playable');
         verdictEl.textContent = detail || 'Playable';
 
-        const existing = root.querySelector('.station-streams');
-        if (existing) existing.remove();
+        const oldList = root.querySelector('.station-streams');
+        if (oldList) oldList.remove();
+        const oldCta = root.querySelector('.station-test-play');
+        if (oldCta) oldCta.remove();
+
+        let anchor = verdictEl;
         if (streams.length > 0) {
-          verdictEl.insertAdjacentElement('afterend', renderStreamList(streams, {
+          const list = renderStreamList(streams, {
             sid,
             getName: () => (actx && actx.getName ? actx.getName() : sid),
             getProbe: () => (actx && actx.probe ? actx.probe : null),
-          }));
+          });
+          anchor.insertAdjacentElement('afterend', list);
+          anchor = list;
         }
 
+        // Test play CTA goes between the stream chooser and the assign
+        // grid. Reuses chosenStreamUrl from the chooser; preserves the
+        // existing previewStream callsite (auditionStream → previewStream).
+        const cta = buildTestPlayButton(actx && actx.getName ? actx.getName() : sid);
+        cta.addEventListener('click', () => onTestPlayClick(cta));
+        anchor.insertAdjacentElement('afterend', cta);
+
         enableAssignButtons(actx);
+        repaintPresetCells();
         return;
       }
 
-      // Non-playable verdicts: drop any prior stream list. We
+      // Non-playable verdicts: drop any prior stream list + CTA. We
       // deliberately don't tell the speaker to stop — Bo keeps playing
       // whatever it's playing until the user picks something else.
       const oldList = root.querySelector('.station-streams');
       if (oldList) oldList.remove();
-      markRowPlaying(null);
+      const oldCta = root.querySelector('.station-test-play');
+      if (oldCta) oldCta.remove();
 
       const message = verdict.kind === 'gated'
         ? "This station isn't available from this client right now."
@@ -347,6 +418,32 @@ export default defineView({
       more.href = '#/browse';
       more.textContent = 'More like this →';
       assignEl.replaceChildren(more);
+    }
+
+    async function onTestPlayClick(cta) {
+      if (testPlayBusy) return;
+      if (!testPlayCtx || !chosenStreamUrl) {
+        showToast('No playable streams to test');
+        return;
+      }
+      testPlayBusy = true;
+      cta.classList.add('is-busy');
+      cta.disabled = true;
+      try {
+        await auditionStream(chosenStreamUrl, testPlayCtx);
+      } finally {
+        testPlayBusy = false;
+        cta.classList.remove('is-busy');
+        cta.disabled = false;
+      }
+    }
+
+    function repaintPresetCells() {
+      const presets = (store.state.speaker && store.state.speaker.presets) || [];
+      const cells = root.querySelectorAll('.station-preset-cell');
+      cells.forEach((cell, idx) => {
+        paintPresetCell(cell, idx, presets[idx] || null, sid);
+      });
     }
 
     function enableAssignButtons(actx) {
@@ -371,26 +468,25 @@ export default defineView({
 
       btn.dataset.busy = '1';
       btn.disabled = true;
-      const originalLabel = btn.textContent;
-      btn.textContent = '...';
+      btn.classList.add('is-busy');
 
       let envelope;
       try {
         envelope = await assignToPreset(actx.probe, slot, { name, art, chosenStreamUrl });
       } catch (err) {
         showToast(`Save failed: ${err.message || 'transport error'}`);
-        btn.textContent = originalLabel;
         btn.disabled = false;
         btn.dataset.busy = '';
+        btn.classList.remove('is-busy');
         presetsList().then((envv) => {
           if (envv && envv.ok && Array.isArray(envv.data)) store.update('speaker', (s) => { s.speaker.presets = envv.data; });
         }).catch(() => { /* surfaced via the original toast already */ });
         return;
       }
 
-      btn.textContent = originalLabel;
       btn.disabled = false;
       btn.dataset.busy = '';
+      btn.classList.remove('is-busy');
 
       if (envelope && envelope.ok) {
         showToast(`Saved to preset ${slot}`);
@@ -437,6 +533,8 @@ export default defineView({
         applyProbeError(root, err);
       });
 
-    return {};
+    return {
+      speaker() { repaintPresetCells(); },
+    };
   },
 });

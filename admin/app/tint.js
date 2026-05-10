@@ -53,6 +53,29 @@ export function dominantColor(imageData) {
   };
 }
 
+// djb2-ish hash → hue in [0,360). Cheap, plenty of spread for our
+// inputs (a few dozen station names). Shared by art.js (initial-letter
+// avatar fallback) and views/station.js (per-station gradient CTAs).
+export function hashHue(s) {
+  let h = 5381;
+  const str = String(s || '');
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h) % 360;
+}
+
+// CSS linear-gradient string keyed off hashHue(name). Used by the
+// station-detail Test play CTA so each station's gradient is stable
+// across reloads. Two stops, fixed saturation/lightness — anything
+// fancier should land in tint.js so it stays themeable from one place.
+export function stationGradient(name) {
+  const hue = hashHue(name);
+  const a = `hsl(${hue}, 70%, 48%)`;
+  const b = `hsl(${(hue + 35) % 360}, 70%, 38%)`;
+  return `linear-gradient(135deg, ${a}, ${b})`;
+}
+
 export function applyTint(imgElement) {
   if (!imgElement || typeof document === 'undefined') return;
   const root = document.querySelector('.np-view');

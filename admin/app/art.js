@@ -7,7 +7,7 @@
 // The fallback is an inline data: URI; no extra request, scales to
 // any size, rerenderable per-name.
 
-import { applyTint } from './tint.js';
+import { applyTint, hashHue } from './tint.js';
 
 export function setArt(imgEl, url, name) {
   if (!imgEl) return;
@@ -39,15 +39,3 @@ function fallbackDataUri(name) {
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
-// djb2-ish hash → hue in [0,360). Cheap, plenty of spread for our
-// inputs (a few dozen station names). Exported so the preset card grid
-// can derive a deterministic per-station tint without sampling canvas
-// for every slot — the hashHue path skips the CORS / draw cycle that
-// tint.js needs for the live now-playing card.
-export function hashHue(s) {
-  let h = 5381;
-  for (let i = 0; i < (s || '').length; i++) {
-    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h) % 360;
-}
