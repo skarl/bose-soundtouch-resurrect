@@ -153,17 +153,12 @@ emit_slot_json() {
 # clobber the caller's.
 fetch_and_emit_presets() {
     fp_body="$TMPDIR_FALLBACK/presets.$$.body"
-    fp_hdr="$TMPDIR_FALLBACK/presets.$$.hdr"
 
-    if ! wget -q -S -O "$fp_body" "${SPEAKER_BASE}/presets" 2>"$fp_hdr"; then
-        rm -f "$fp_body" "$fp_hdr"
-        return 1
-    fi
-
-    fp_status=$(grep -E '^[[:space:]]*HTTP/' "$fp_hdr" \
-        | tail -n 1 | awk '{print $2}')
-    if [ -z "$fp_status" ] || [ "$fp_status" -ge 400 ] 2>/dev/null; then
-        rm -f "$fp_body" "$fp_hdr"
+    # busybox wget exits 0 on 2xx and nonzero on 4xx/5xx/network error,
+    # so we don't need `-S` to inspect headers (and busybox doesn't
+    # support that flag anyway).
+    if ! wget -q -O "$fp_body" "${SPEAKER_BASE}/presets"; then
+        rm -f "$fp_body"
         return 1
     fi
 
@@ -171,7 +166,7 @@ fetch_and_emit_presets() {
     # use a function-uncommon variable name; POSIX sh has no `local`
     # and `emit_slot_json` walks the same memory.
     all_xml=$(tr '\n' ' ' <"$fp_body")
-    rm -f "$fp_body" "$fp_hdr"
+    rm -f "$fp_body"
 
     printf '{"ok":true,"data":['
     sep=''
@@ -392,23 +387,18 @@ handle_post() {
     sp_url="${SPEAKER_BASE}/storePreset?id=${body_slot}"
     sp_body_file="$TMPDIR_FALLBACK/presets-sp.$$.body"
     sp_resp_file="$TMPDIR_FALLBACK/presets-sp.$$.resp"
-    sp_hdr_file="$TMPDIR_FALLBACK/presets-sp.$$.hdr"
     printf '%s' "$sp_body" >"$sp_body_file"
 
+    # busybox wget: exit 0 on 2xx, nonzero on 4xx/5xx/network error.
+    # We additionally inspect the response body because the speaker
+    # sometimes returns 200 with an <errors><error>...</error> payload.
     sp_ok=1
-    if ! wget -q -S -O "$sp_resp_file" \
+    if ! wget -q -O "$sp_resp_file" \
         --header='Content-Type: application/xml' \
         --post-file="$sp_body_file" \
-        "$sp_url" 2>"$sp_hdr_file"; then
+        "$sp_url"; then
         sp_ok=0
     fi
-    sp_status=$(grep -E '^[[:space:]]*HTTP/' "$sp_hdr_file" \
-        | tail -n 1 | awk '{print $2}')
-    if [ -z "$sp_status" ] || [ "$sp_status" -ge 400 ] 2>/dev/null; then
-        sp_ok=0
-    fi
-    # Speakers sometimes return 200 with an <errors><error>...</error>
-    # payload. Treat any <error> tag in the response as failure.
     if grep -q '<error' "$sp_resp_file" 2>/dev/null; then
         sp_ok=0
     fi
@@ -420,11 +410,11 @@ handle_post() {
             sp_err="speaker rejected storePreset"
         fi
         sp_err_j=$(json_escape "$sp_err")
-        rm -f "$sp_body_file" "$sp_resp_file" "$sp_hdr_file"
+        rm -f "$sp_body_file" "$sp_resp_file"
         emit_error '502 Bad Gateway' STOREPRESET_REJECTED "$sp_err_j"
         return 0
     fi
-    rm -f "$sp_body_file" "$sp_resp_file" "$sp_hdr_file"
+    rm -f "$sp_body_file" "$sp_resp_file"
 
     # Success — return the now-current full presets list.
     if fetch_and_emit_presets >"$TMPDIR_FALLBACK/presets-out.$$"; then

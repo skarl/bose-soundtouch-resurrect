@@ -65,72 +65,70 @@ fi
 
 METHOD="${REQUEST_METHOD:-GET}"
 
-# Stage the upstream response in a tempfile so we can read its headers
-# (status + content-type) before deciding what to emit. -S writes the
-# response status and headers to stderr; we capture both streams.
+# Stage the upstream response body in a tempfile so we can pull its
+# Content-Type and status (captured separately by curl's -w) before
+# deciding what envelope to emit.
 TMPDIR_FALLBACK="${TMPDIR:-/tmp}"
 BODY_FILE="$TMPDIR_FALLBACK/speaker-proxy.$$.body"
-HDR_FILE="$TMPDIR_FALLBACK/speaker-proxy.$$.hdr"
 
 cleanup() {
-    rm -f "$BODY_FILE" "$HDR_FILE"
+    rm -f "$BODY_FILE" "$META_FILE"
 }
 trap cleanup EXIT INT TERM
 
-# busybox wget supports --post-data and --header but not --method,
-# so we branch. For PUT/DELETE we fall back to GET-style fetching;
-# the speaker's API doesn't currently use those verbs in 0.2/0.3,
-# but we still let them attempt so future endpoints aren't blocked.
+# We use curl (present on the firmware: /usr/bin/curl) rather than
+# busybox wget. wget on the device is the busybox build, which doesn't
+# support `-S` (header capture) or PUT/DELETE methods, so curl is the
+# only way to forward arbitrary methods + extract the upstream status
+# and Content-Type cleanly.
+META_FILE="$TMPDIR_FALLBACK/speaker-proxy.$$.meta"
+
 case "$METHOD" in
     GET)
-        wget -q -S -O "$BODY_FILE" "$URL" 2>"$HDR_FILE" || true
+        curl -s -o "$BODY_FILE" -w '%{http_code}\n%{content_type}\n' \
+             "$URL" >"$META_FILE" 2>/dev/null || : >"$META_FILE"
         ;;
-    POST)
-        # Read the request body from stdin (CGI contract). busybox
-        # wget --post-file reads from a file, so stage it.
+    POST|PUT|DELETE)
+        # Read the request body from stdin (CGI contract).
         REQ_FILE="$TMPDIR_FALLBACK/speaker-proxy.$$.req"
-        # CONTENT_LENGTH may be unset; default to 0 to keep dd happy.
         CL="${CONTENT_LENGTH:-0}"
         if [ "$CL" -gt 0 ] 2>/dev/null; then
             dd bs=1 count="$CL" of="$REQ_FILE" 2>/dev/null
         else
             : >"$REQ_FILE"
         fi
-        CT_HDR=""
+        CT_HDR_ARGS=""
         if [ -n "${CONTENT_TYPE:-}" ]; then
-            CT_HDR="--header=Content-Type: ${CONTENT_TYPE}"
+            CT_HDR_ARGS="-H Content-Type: ${CONTENT_TYPE}"
         fi
         # shellcheck disable=SC2086
-        wget -q -S -O "$BODY_FILE" $CT_HDR \
-            --post-file="$REQ_FILE" "$URL" 2>"$HDR_FILE" || true
+        curl -s -X "$METHOD" -o "$BODY_FILE" \
+             -w '%{http_code}\n%{content_type}\n' \
+             $CT_HDR_ARGS --data-binary "@$REQ_FILE" \
+             "$URL" >"$META_FILE" 2>/dev/null || : >"$META_FILE"
         rm -f "$REQ_FILE"
         ;;
     *)
-        # PUT/DELETE/etc — busybox wget can't do these; emit 501.
         emit_error 501 METHOD_NOT_SUPPORTED \
-            "proxy supports GET and POST only"
+            "proxy supports GET, POST, PUT, DELETE only"
         exit 0
         ;;
 esac
 
-# Pull the upstream status code out of wget's -S output. Format:
-#   HTTP/1.1 200 OK
-# We take the LAST status line (in case of redirects).
-UPSTREAM_STATUS=$(grep -E '^[[:space:]]*HTTP/' "$HDR_FILE" \
-    | tail -n 1 \
-    | awk '{print $2}')
-if [ -z "$UPSTREAM_STATUS" ]; then
+# Read the two metadata lines curl wrote: status, then content-type.
+UPSTREAM_STATUS=$(sed -n '1p' "$META_FILE")
+UPSTREAM_CT=$(sed -n '2p' "$META_FILE")
+
+# `000` is curl's idiom for "no response received". Treat that as a
+# connection failure, distinct from a real upstream HTTP error.
+if [ -z "$UPSTREAM_STATUS" ] || [ "$UPSTREAM_STATUS" = "000" ]; then
     emit_error 502 UPSTREAM_UNREACHABLE \
         "speaker API at localhost:8090 did not respond"
     exit 0
 fi
 
-# Pull upstream Content-Type if present; default to XML (the speaker's
-# /now_playing, /presets, /info, /volume etc. all return XML).
-UPSTREAM_CT=$(grep -iE '^[[:space:]]*Content-Type:' "$HDR_FILE" \
-    | tail -n 1 \
-    | sed -e 's/^[[:space:]]*[Cc]ontent-[Tt]ype:[[:space:]]*//' \
-          -e 's/[[:space:]]*$//')
+# Default to XML when the upstream omits the header (rare; the
+# speaker's /now_playing, /presets, /info, /volume etc. all return XML).
 if [ -z "$UPSTREAM_CT" ]; then
     UPSTREAM_CT="application/xml; charset=utf-8"
 fi

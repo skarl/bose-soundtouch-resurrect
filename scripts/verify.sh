@@ -75,54 +75,37 @@ printf '\n=== Admin SPA (skipped if not deployed) ===\n'
 # served, but if it IS served, assert the meta tag. Also assert the
 # resolver's services endpoint still serves — admin install must not
 # break the resolver tree.
-admin_status=$($SSH root@"$SPEAKER" \
-    'wget -q -S -O /dev/null http://127.0.0.1:8181/ 2>&1 | grep -E "HTTP/" | tail -1' \
-    2>/dev/null || true)
-
-case "$admin_status" in
-    *" 200"*)
-        check "admin index has admin-version meta tag" \
-            $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/ | grep -q "admin-version"'
-        ;;
-    *)
-        printf '  [SKIP] admin shell not deployed\n'
-        ;;
-esac
+#
+# busybox wget exits 0 on 2xx and nonzero on 4xx/5xx/network error,
+# so existence-probing is just the exit status. (Don't use `-S` —
+# busybox wget doesn't support it.)
+if $SSH root@"$SPEAKER" 'wget -q -O /dev/null http://127.0.0.1:8181/' 2>/dev/null; then
+    check "admin index has admin-version meta tag" \
+        $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/ | grep -q "admin-version"'
+else
+    printf '  [SKIP] admin shell not deployed\n'
+fi
 
 check "resolver services endpoint still serves" \
     $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/bmx/registry/v1/services | grep -q "{"'
 
 printf '\n=== Admin CGIs (skipped if not deployed) ===\n'
-# Each probe HEADs first to see if the CGI exists; only then asserts
-# the response shape. Skip cleanly when a CGI isn't installed.
+# Each probe checks the CGI exists (wget exit status) before asserting
+# response shape. Skips cleanly when a CGI isn't installed.
 
-presets_status=$($SSH root@"$SPEAKER" \
-    'wget -q -S -O /dev/null http://127.0.0.1:8181/cgi-bin/api/v1/presets 2>&1 | grep -E "HTTP/" | tail -1' \
-    2>/dev/null || true)
+if $SSH root@"$SPEAKER" 'wget -q -O /dev/null http://127.0.0.1:8181/cgi-bin/api/v1/presets' 2>/dev/null; then
+    check "presets CGI returns ok-envelope" \
+        $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/cgi-bin/api/v1/presets | grep -q "\"ok\":true"'
+else
+    printf '  [SKIP] presets CGI not deployed\n'
+fi
 
-case "$presets_status" in
-    *" 200"*)
-        check "presets CGI returns ok-envelope" \
-            $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/cgi-bin/api/v1/presets | grep -q "\"ok\":true"'
-        ;;
-    *)
-        printf '  [SKIP] presets CGI not deployed\n'
-        ;;
-esac
-
-tunein_status=$($SSH root@"$SPEAKER" \
-    'wget -q -S -O /dev/null http://127.0.0.1:8181/cgi-bin/api/v1/tunein/browse 2>&1 | grep -E "HTTP/" | tail -1' \
-    2>/dev/null || true)
-
-case "$tunein_status" in
-    *" 200"*)
-        check "tunein CGI returns JSON or array" \
-            $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/cgi-bin/api/v1/tunein/browse | head -c 1 | grep -qE "[\\[{]"'
-        ;;
-    *)
-        printf '  [SKIP] tunein CGI not deployed\n'
-        ;;
-esac
+if $SSH root@"$SPEAKER" 'wget -q -O /dev/null http://127.0.0.1:8181/cgi-bin/api/v1/tunein/browse' 2>/dev/null; then
+    check "tunein CGI returns JSON or array" \
+        $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/cgi-bin/api/v1/tunein/browse | head -c 1 | grep -qE "[\\[{]"'
+else
+    printf '  [SKIP] tunein CGI not deployed\n'
+fi
 
 printf '\n=== Summary: %d ok, %d failed ===\n' "$ok" "$fail"
 
