@@ -162,38 +162,92 @@ fetch_and_emit_presets() {
         return 1
     fi
 
-    # Flatten newlines so per-preset extraction stays single-line. We
-    # use a function-uncommon variable name; POSIX sh has no `local`
-    # and `emit_slot_json` walks the same memory.
-    all_xml=$(tr '\n' ' ' <"$fp_body")
-    rm -f "$fp_body"
-
-    printf '{"ok":true,"data":['
-    sep=''
-    n=1
-    while [ "$n" -le 6 ]; do
-        # Pull this slot's <preset id="N" ...>...</preset> block. busybox
-        # sed has no PCRE — use awk for the lazy match. If awk can't find
-        # the block (slot empty in the XML), block stays empty and
-        # emit_slot_json falls through to {empty:true}.
-        block=$(printf '%s' "$all_xml" | awk -v n="$n" '
-            {
-                # Find <preset id="n" ...> and the matching </preset>.
-                pat = "<preset id=\"" n "\""
-                start = index($0, pat)
-                if (start == 0) { exit }
-                rest = substr($0, start)
-                end = index(rest, "</preset>")
-                if (end == 0) { exit }
-                print substr(rest, 1, end + length("</preset>") - 1)
+    # Flatten newlines and pipe straight into a single awk that emits
+    # the full envelope. One fork instead of ~80 (the previous
+    # implementation forked sed/awk per-attribute per-slot, which on
+    # the speaker's CPU added up to several seconds per request).
+    tr '\n' ' ' <"$fp_body" | awk '
+        BEGIN {
+            # XML entity decoder pairs.
+            ek[1]="&lt;";   ev[1]="<"
+            ek[2]="&gt;";   ev[2]=">"
+            ek[3]="&quot;"; ev[3]="\""
+            ek[4]="&apos;"; ev[4]="\x27"
+            ek[5]="&amp;";  ev[5]="&"
+        }
+        function decode(s,    i) {
+            for (i = 1; i <= 5; i++) gsub(ek[i], ev[i], s)
+            return s
+        }
+        # Pull attribute `name` off the first <tag ...> in s.
+        function attr(s, tag, name,    re, rest, end) {
+            re = "<" tag "[^>]* " name "=\""
+            if (match(s, re) == 0) return ""
+            rest = substr(s, RSTART + RLENGTH)
+            end = index(rest, "\"")
+            if (end == 0) return ""
+            return substr(rest, 1, end - 1)
+        }
+        # Pull the text content of the first <tag>...</tag> in s.
+        # Returns the entity-decoded text.
+        function text(s, tag,    re, rest, end) {
+            re = "<" tag "[^>]*>"
+            if (match(s, re) == 0) return ""
+            rest = substr(s, RSTART + RLENGTH)
+            end = index(rest, "</" tag ">")
+            if (end == 0) return ""
+            return decode(substr(rest, 1, end - 1))
+        }
+        # JSON-escape: handle the must-escape characters one at a time
+        # rather than gsub-ing — gsub replacement-string semantics for
+        # backslashes are awkward across awk implementations, so we walk
+        # the string instead. Inputs are short (preset names + URLs).
+        function jesc(s,    i, n, c, out) {
+            out = ""; n = length(s)
+            for (i = 1; i <= n; i++) {
+                c = substr(s, i, 1)
+                if (c == "\\")      out = out "\\\\"
+                else if (c == "\"") out = out "\\\""
+                else if (c == "\n") out = out "\\n"
+                else if (c == "\r") out = out "\\r"
+                else if (c == "\t") out = out "\\t"
+                else                out = out c
             }
-        ')
-        printf '%s' "$sep"
-        emit_slot_json "$n" "$block"
-        sep=','
-        n=$((n + 1))
-    done
-    printf ']}\n'
+            return out
+        }
+        function emit_empty(slot,    sep) {
+            sep = (slot == 1 ? "" : ",")
+            printf "%s{\"slot\":%d,\"empty\":true}", sep, slot
+        }
+        {
+            body = $0
+            printf "{\"ok\":true,\"data\":["
+            for (n = 1; n <= 6; n++) {
+                pat = "<preset id=\"" n "\""
+                start = index(body, pat)
+                if (start == 0) { emit_empty(n); continue }
+                rest = substr(body, start)
+                end = index(rest, "</preset>")
+                if (end == 0)   { emit_empty(n); continue }
+                block = substr(rest, 1, end + length("</preset>") - 1)
+
+                src  = attr(block, "ContentItem", "source")
+                typ  = attr(block, "ContentItem", "type")
+                loc  = attr(block, "ContentItem", "location")
+                name = text(block, "itemName")
+                art  = text(block, "containerArt")
+
+                if (src == "" && loc == "" && name == "") {
+                    emit_empty(n); continue
+                }
+                sep = (n == 1 ? "" : ",")
+                printf "%s{\"slot\":%d,\"source\":\"%s\",\"type\":\"%s\",\"location\":\"%s\",\"itemName\":\"%s\",\"art\":\"%s\"}", \
+                    sep, n, jesc(src), jesc(typ), jesc(loc), jesc(name), jesc(art)
+            }
+            printf "]}\n"
+        }
+    '
+    rm -f "$fp_body"
     return 0
 }
 
