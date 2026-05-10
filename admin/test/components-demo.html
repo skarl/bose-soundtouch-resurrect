@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en" data-theme="graphite">
+<head>
+<meta charset="utf-8">
+<title>icons demo</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+  body { margin: 2rem; font-family: system-ui, sans-serif; }
+  h2 { margin: 2rem 0 0.5rem; font-size: 1rem; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1rem; }
+  .cell { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem; border: 1px solid currentColor; border-radius: 6px; opacity: 0.95; }
+  .cell .stack { display: inline-flex; align-items: center; gap: 0.4rem; }
+  .cell .label { font-family: ui-monospace, monospace; font-size: 0.85rem; opacity: 0.7; }
+  .toolbar { display: flex; gap: 0.5rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+  .toolbar button { padding: 0.4rem 0.75rem; border: 1px solid currentColor; background: transparent; color: inherit; border-radius: 4px; cursor: pointer; font: inherit; }
+  .eq-row { display: flex; gap: 2rem; align-items: center; font-size: 1.5rem; }
+  .eq-row .group { display: inline-flex; align-items: center; gap: 0.5rem; }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button data-theme-set="graphite">graphite</button>
+    <button data-theme-set="cream">cream</button>
+    <button data-theme-set="terminal">terminal</button>
+  </div>
+
+  <h2>14 px</h2>
+  <div id="g14" class="grid"></div>
+
+  <h2>16 px (default)</h2>
+  <div id="g16" class="grid"></div>
+
+  <h2>24 px</h2>
+  <div id="g24" class="grid"></div>
+
+  <h2>equalizer</h2>
+  <div class="eq-row">
+    <div class="group"><span>idle:</span><span id="eq-idle"></span></div>
+    <div class="group" data-state="playing"><span>playing:</span><span id="eq-play"></span></div>
+  </div>
+
+<script type="module">
+  import { icon, ICON_NAMES } from '../app/icons.js';
+
+  const STATIC = ICON_NAMES.filter((n) => n !== 'equalizer');
+
+  for (const [id, size] of [['g14', 14], ['g16', 16], ['g24', 24]]) {
+    const root = document.getElementById(id);
+    for (const name of STATIC) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      const stack = document.createElement('span');
+      stack.className = 'stack';
+      stack.appendChild(icon(name, size));
+      cell.appendChild(stack);
+      const label = document.createElement('span');
+      label.className = 'label';
+      label.textContent = name;
+      cell.appendChild(label);
+      root.appendChild(cell);
+    }
+  }
+
+  document.getElementById('eq-idle').appendChild(icon('equalizer'));
+  document.getElementById('eq-play').appendChild(icon('equalizer'));
+
+  for (const btn of document.querySelectorAll('[data-theme-set]')) {
+    btn.addEventListener('click', () => {
+      document.documentElement.setAttribute('data-theme', btn.dataset.themeSet);
+    });
+  }
+</script>
+</body>
+</html>
