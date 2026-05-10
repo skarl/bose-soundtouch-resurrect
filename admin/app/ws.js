@@ -2,7 +2,7 @@
 // Owns the WebSocket lifecycle; internals are not exported.
 // See admin/PLAN.md § Live updates and § State management.
 
-import { getSpeakerInfo, getNowPlaying, presetsList, parseNowPlayingEl } from './api.js';
+import { getSpeakerInfo, getNowPlaying, presetsList, parseNowPlayingEl, getSources, parseSourcesEl } from './api.js';
 import { setNowPlaying, setPresets } from './state.js';
 
 let socket = null;
@@ -33,10 +33,11 @@ async function pollTick() {
   if (!storeRef) return;
   if (typeof document !== 'undefined' && document.hidden) return;
   try {
-    const [info, np, env] = await Promise.allSettled([
+    const [info, np, env, sources] = await Promise.allSettled([
       getSpeakerInfo(),
       getNowPlaying(),
       presetsList(),
+      getSources(),
     ]);
     if (info.status === 'fulfilled' && info.value) {
       storeRef.state.speaker.info = info.value;
@@ -47,6 +48,10 @@ async function pollTick() {
     }
     if (env.status === 'fulfilled' && env.value && env.value.ok && Array.isArray(env.value.data)) {
       setPresets(env.value.data);
+    }
+    if (sources.status === 'fulfilled' && sources.value) {
+      storeRef.state.speaker.sources = sources.value;
+      storeRef.touch('speaker');
     }
   } catch (_err) {
     // Network errors are non-fatal; next tick will retry.
@@ -69,10 +74,11 @@ function stopPolling() {
 async function refetchAll() {
   if (!storeRef) return;
   try {
-    const [info, np, env] = await Promise.allSettled([
+    const [info, np, env, sources] = await Promise.allSettled([
       getSpeakerInfo(),
       getNowPlaying(),
       presetsList(),
+      getSources(),
     ]);
     if (info.status === 'fulfilled' && info.value) {
       storeRef.state.speaker.info = info.value;
@@ -83,6 +89,10 @@ async function refetchAll() {
     }
     if (env.status === 'fulfilled' && env.value && env.value.ok && Array.isArray(env.value.data)) {
       setPresets(env.value.data);
+    }
+    if (sources.status === 'fulfilled' && sources.value) {
+      storeRef.state.speaker.sources = sources.value;
+      storeRef.touch('speaker');
     }
   } catch (_err) {
     // Non-fatal; state was already live via WS events.
@@ -110,8 +120,25 @@ const ENVELOPE_HANDLERS = {
   nowSelectionUpdated(el, store) {       // TODO slice 6
     void el; void store;
   },
-  sourcesUpdated(el, store) {            // TODO slice 5
-    void el; void store;
+  sourcesUpdated(el, store) {
+    // The firmware sends <sourcesUpdated deviceID="…"/> as a hint-only
+    // event — no inline sources list. Refetch /sources for the new state.
+    // Some firmware variants may embed a <sources> child; try that first
+    // so we avoid a round-trip when the data is already there.
+    const sourcesList = el.getElementsByTagName('sources');
+    if (sourcesList && sourcesList[0]) {
+      const parsed = parseSourcesEl(sourcesList[0]);
+      if (parsed) {
+        store.state.speaker.sources = parsed;
+        store.touch('speaker');
+        return;
+      }
+    }
+    getSources().then((sources) => {
+      if (!sources) return;
+      store.state.speaker.sources = sources;
+      store.touch('speaker');
+    }).catch(() => {});
   },
   presetsUpdated(el, store) {            // TODO slice 6
     void el; void store;

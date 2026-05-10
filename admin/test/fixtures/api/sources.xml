@@ -1,0 +1,6 @@
+<sources deviceID="000C8AABCDEF">
+  <sourceItem source="TUNEIN" sourceAccount="" status="READY" isLocal="false">TuneIn</sourceItem>
+  <sourceItem source="AUX" sourceAccount="AUX" status="READY" isLocal="true">AUX</sourceItem>
+  <sourceItem source="BLUETOOTH" sourceAccount="" status="UNAVAILABLE" isLocal="true">Bluetooth</sourceItem>
+  <sourceItem source="SPOTIFY" sourceAccount="account-1" status="READY" isLocal="false">Spotify</sourceItem>
+</sources>

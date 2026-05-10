@@ -7,6 +7,11 @@
 //   getNowPlaying()      — alias of speakerNowPlaying() (canonical 0.3+ name)
 //   parseNowPlayingXml() — shared parser used by REST and WS paths
 //   parseNowPlayingEl()  — same parser for an already-parsed DOM element
+//   getSources()         — GET /speaker/sources → array of source objects
+//   postSelect()         — POST /speaker/select with a ContentItem (streaming sources)
+//   postSelectLocalSource() — POST /speaker/selectLocalSource (AUX, BLUETOOTH)
+//   parseSourcesXml()    — parse <sources> XML into source array
+//   parseSourcesEl()     — same for an already-parsed <sources> DOM element
 //   presetsList(), presetsAssign() — presets CGI envelope client
 
 export const apiBase = '/cgi-bin/api/v1';
@@ -259,6 +264,91 @@ export function parseInfoXml(xmlText) {
     type:            text('type'),
     firmwareVersion,
   };
+}
+
+// --- sources --------------------------------------------------------
+
+// GET /cgi-bin/api/v1/speaker/sources → array of source objects.
+// Shape per element: { source, sourceAccount, status, isLocal, displayName }
+export async function getSources() {
+  const res = await fetch(`${apiBase}/speaker/sources`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getSources: HTTP ${res.status}`);
+  const text = await res.text();
+  return parseSourcesXml(text);
+}
+
+// POST /cgi-bin/api/v1/speaker/select — switch to a streaming source.
+// contentItem: { source, sourceAccount, type?, location? }
+// Sends a minimal <ContentItem> that lets the speaker resume its last
+// known position for that source. Full resume UX (specific station or
+// playlist) is 0.4 territory.
+export async function postSelect(contentItem) {
+  const { source, sourceAccount = '', type = '', location = '' } = contentItem;
+  const xml = `<ContentItem source="${source}" sourceAccount="${sourceAccount}" type="${type}" location="${location}"/>`;
+  const res = await fetch(`${apiBase}/speaker/select`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: xml,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postSelect: HTTP ${res.status}`);
+}
+
+// POST /cgi-bin/api/v1/speaker/selectLocalSource — switch to a local
+// source (AUX, BLUETOOTH). Names follow Bose convention: 'AUX', 'BLUETOOTH'.
+export async function postSelectLocalSource(name) {
+  const xml = `<selectLocalSource>${name}</selectLocalSource>`;
+  const res = await fetch(`${apiBase}/speaker/selectLocalSource`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: xml,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postSelectLocalSource: HTTP ${res.status}`);
+}
+
+// Parse the speaker's <sources> XML into an array.
+// Returns [] on no sources, null on empty/invalid input.
+//
+// Reference shape (from the 8090 /sources endpoint):
+//   <sources deviceID="000C8AABCDEF">
+//     <sourceItem source="TUNEIN" sourceAccount="" status="READY" isLocal="false">TuneIn</sourceItem>
+//     <sourceItem source="AUX" sourceAccount="AUX" status="READY" isLocal="true">AUX</sourceItem>
+//   </sources>
+export function parseSourcesXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+
+  const sourcesEls = doc.getElementsByTagName('sources');
+  if (!sourcesEls || !sourcesEls[0]) return null;
+
+  return parseSourcesEl(sourcesEls[0]);
+}
+
+// Parse an already-resolved <sources> DOM element — used by the WS
+// dispatch path. Uses getElementsByTagName for @xmldom/xmldom compat.
+export function parseSourcesEl(el) {
+  if (!el) return null;
+
+  const items = el.getElementsByTagName('sourceItem');
+  const result = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    result.push({
+      source:        item.getAttribute('source') || '',
+      sourceAccount: item.getAttribute('sourceAccount') || '',
+      status:        item.getAttribute('status') || '',
+      isLocal:       item.getAttribute('isLocal') === 'true',
+      displayName:   item.textContent || '',
+    });
+  }
+  return result;
 }
 
 // POST /presets/:slot with {id, slot, name, kind, json}.
