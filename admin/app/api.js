@@ -56,6 +56,19 @@ export function tuneinProbe(sid) {
 // --- speaker proxy --------------------------------------------------
 
 // GET /cgi-bin/api/v1/speaker/now_playing → parsed nowPlaying object.
+// getNowPlaying is the canonical name used by ws.js polling; speakerNowPlaying
+// is kept for now-playing.js (0.2 name) which slice 4 will consolidate.
+export async function getNowPlaying() {
+  const res = await fetch(`${apiBase}/speaker/now_playing`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getNowPlaying: HTTP ${res.status}`);
+  const text = await res.text();
+  return parseNowPlayingXml(text);
+}
+
 export async function speakerNowPlaying() {
   const res = await fetch(`${apiBase}/speaker/now_playing`, {
     method: 'GET',
