@@ -69,6 +69,20 @@ cp "$ADMIN/style.css" "$STAGE/style.css"
 cp -R "$ADMIN/app" "$STAGE/app"
 [ -f "$ADMIN/ws-test.html" ] && cp "$ADMIN/ws-test.html" "$STAGE/ws-test.html"
 
+# Append ?v=$VERSION to every static `from '...js'` / `import('...js')`
+# in the staged app/. index.html only cache-busts main.js + style.css,
+# so without this every transitive ES module is URL-stable across
+# deploys and the browser happily serves stale code from disk cache.
+# After this rewrite, bumping VERSION invalidates every module at once.
+find "$STAGE/app" -type f -name '*.js' | while IFS= read -r f; do
+  sed -E \
+    -e "s#(from[[:space:]]+)'([^']+\\.js)'#\\1'\\2?v=$VERSION'#g" \
+    -e "s#(from[[:space:]]+)\"([^\"]+\\.js)\"#\\1\"\\2?v=$VERSION\"#g" \
+    -e "s#(import\\([[:space:]]*)'([^']+\\.js)'#\\1'\\2?v=$VERSION'#g" \
+    -e "s#(import\\([[:space:]]*)\"([^\"]+\\.js)\"#\\1\"\\2?v=$VERSION\"#g" \
+    "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+done
+
 say "Pushing admin shell to /mnt/nv/resolver/"
 $SCP "$STAGE/index.html" root@"$SPEAKER":/mnt/nv/resolver/index.html
 $SCP "$STAGE/style.css"  root@"$SPEAKER":/mnt/nv/resolver/style.css
