@@ -243,8 +243,22 @@ async function onPresetClick(evt) {
   const btn = evt.currentTarget;
   const slot = btn.dataset.slot;
   if (!slot || btn.disabled) return;
+  // Bo's firmware silently ignores `/key PRESET_N` press+release and
+  // returns 400 on `/selectPreset`. The reliable recall path is
+  // `/select` with the preset's stored ContentItem (verified on
+  // firmware trunk r46330; same path the Test-play button uses in
+  // views/station.js).
+  const idx = Number(slot) - 1;
+  const p = store.state.speaker.presets && store.state.speaker.presets[idx];
+  if (!p || p.empty) return;
+  recordOutgoing('preset', Number(slot));
   try {
-    await postKey(`PRESET_${slot}`);
+    await postSelect({
+      source:        p.source,
+      sourceAccount: p.sourceAccount || '',
+      type:          p.type || '',
+      location:      p.location || '',
+    });
   } catch (_err) {
     // Non-fatal — the next nowPlayingUpdated / nowSelectionUpdated will
     // confirm or deny the switch.
