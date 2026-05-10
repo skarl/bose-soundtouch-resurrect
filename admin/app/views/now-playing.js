@@ -8,7 +8,7 @@
 //   affected nodes when state.speaker changes. No re-render.
 
 import { html, mount } from '../dom.js';
-import { store, setPresets } from '../state.js';
+import { store, setPresets, setNowPlaying } from '../state.js';
 import { speakerNowPlaying, presetsList } from '../api.js';
 import { setArt } from '../art.js';
 
@@ -43,7 +43,7 @@ async function pollOnce() {
     // Only mutate if we're still the active view (the DOM refs would
     // otherwise point at detached nodes). The store update is harmless
     // either way — the next view's subscriber will overwrite.
-    store.set('speaker', { ...store.state.speaker, nowPlaying: np });
+    setNowPlaying(np);
   } catch (_err) {
     // Network blip / proxy error / parse error — leave previous state
     // visible. Persistent errors surface via the toast layer.
@@ -98,21 +98,41 @@ function renderName(np) {
   return (np.item && np.item.name) || np.track || '';
 }
 
+// Build the "now playing" line under the station name. TuneIn returns
+// inconsistent fields per station: some put the song in <artist>
+// ("Wheatus - Teenage Dirtbag"), others in <track>, others in both,
+// and some just stuff the station tagline in both. We dedupe against
+// the station name (case-insensitive) and against each other, then
+// join with a thin em-dash. Returns '' when nothing useful remains.
+function pickTrackLine(np, stationName) {
+  if (!np) return '';
+  const norm = (s) => (typeof s === 'string' ? s.trim() : '');
+  const station = (stationName || '').toLowerCase();
+  const track  = norm(np.track);
+  const artist = norm(np.artist);
+  const useArtist = artist && artist.toLowerCase() !== station;
+  const useTrack  = track  && track.toLowerCase()  !== station
+                          && track.toLowerCase()  !== artist.toLowerCase();
+  const parts = [];
+  if (useArtist) parts.push(artist);
+  if (useTrack)  parts.push(track);
+  return parts.join(' — ');
+}
+
 function applyNowPlaying(np) {
   if (!nameEl) return;
   const name = renderName(np);
   nameEl.textContent = name;
 
-  // Track for the currently-selected station only (one line).
-  // For stations whose track equals the station name (TuneIn often
-  // does this — sometimes with different casing), suppress the
-  // duplicate. A future ticker/marquee will surface long titles +
-  // artist when we run out of space.
+  // "Now playing" line under the station name. TuneIn streams put the
+  // current song in <artist> and the station tagline in <track>, the
+  // opposite way around from what the field names suggest. Render
+  // whatever distinct info we can build from both, station-name
+  // duplicates filtered (case-insensitive). A future marquee will
+  // surface long combinations when we run out of space.
   if (trackEl) {
-    const track = (np && typeof np.track === 'string') ? np.track.trim() : '';
-    const showTrack = !!track && track.toLowerCase() !== (name || '').toLowerCase();
-    trackEl.textContent = showTrack ? track : '';
-    trackEl.toggleAttribute('hidden', !showTrack);
+    trackEl.textContent = pickTrackLine(np, name);
+    trackEl.toggleAttribute('hidden', !trackEl.textContent);
   }
 
   const artUrl = np && typeof np.art === 'string' && np.art.startsWith('http')
