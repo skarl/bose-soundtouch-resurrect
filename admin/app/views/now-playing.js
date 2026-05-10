@@ -8,8 +8,8 @@
 //   affected nodes when state.speaker changes. No re-render.
 
 import { html, mount } from '../dom.js';
-import { store } from '../state.js';
-import { speakerNowPlaying } from '../api.js';
+import { store, setPresets } from '../state.js';
+import { speakerNowPlaying, presetsList } from '../api.js';
 
 const POLL_MS = 2000;
 const PRESET_SLOTS = 6;
@@ -50,6 +50,21 @@ async function pollOnce() {
     if (!document.hidden && pollTimer != null) {
       pollTimer = setTimeout(pollOnce, POLL_MS);
     }
+  }
+}
+
+// One-shot presets fetch. Presets change rarely (only when a user
+// assigns one), so we don't poll them — slice 5's POST reconciles the
+// list via its own response, and 0.3's WebSocket will replace this
+// boot fetch with <presetsUpdated> events.
+async function fetchPresetsOnce() {
+  try {
+    const env = await presetsList();
+    if (env && env.ok && Array.isArray(env.data)) {
+      setPresets(env.data);
+    }
+  } catch (_err) {
+    // Same posture as pollOnce: keep the last known state on error.
   }
 }
 
@@ -181,6 +196,10 @@ export default {
 
     bindVisibilityOnce();
     if (!document.hidden) startPolling();
+    // Fire-and-forget: populate state.speaker.presets on first mount.
+    // Skipped if the store already has them (e.g. user came back from
+    // station detail after a successful assign).
+    if (!store.state.speaker.presets) fetchPresetsOnce();
   },
 
   update(state, changedKey) {
