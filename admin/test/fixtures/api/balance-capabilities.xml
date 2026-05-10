@@ -1,0 +1,5 @@
+<balanceCapabilities>
+  <balanceMin>-7</balanceMin>
+  <balanceMax>7</balanceMax>
+  <balanceDefault>0</balanceDefault>
+</balanceCapabilities>

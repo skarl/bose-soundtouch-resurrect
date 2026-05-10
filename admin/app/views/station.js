@@ -18,12 +18,15 @@
 //
 // See admin/PLAN.md § View specs / station detail.
 
-import { html, mount } from '../dom.js';
-import { tuneinStation, presetsList, previewStream } from '../api.js';
+import { html, mount, defineView } from '../dom.js';
+import { tuneinStation, presetsList } from '../api.js';
 import { store, addRecentlyViewed } from '../state.js';
 import { showToast } from '../toast.js';
 import { setArt } from '../art.js';
+import { stationGradient } from '../tint.js';
+import { pill } from '../components.js';
 import { probe, assignToPreset, buildBosePayload } from '../probe.js';
+import { previewStream } from '../actions/index.js';
 
 const ASSIGN_SLOTS = 6;
 
@@ -71,146 +74,83 @@ function fmtCodec(stream) {
   return typeof codec === 'string' ? codec.toUpperCase() : '';
 }
 
-// --- stream chooser + audition --------------------------------------
-//
-// Audition plays on the speaker, not in the browser. Clicking ▶ on a
-// row writes that stream's URL into the resolver entry for the station
-// (atomically) and POSTs /select to the speaker, so Bo plays the
-// user's chosen stream right now. Bo stays tuned until the user picks
-// something else (another row, another preset, or a hardware action)
-// — no auto-stop on toggle-click or on navigation away from the view.
-
-let chosenStreamUrl = '';
-let auditionRow     = null;
-let auditionCtx     = null;   // {sid, getName, getProbe} captured at row render
-
-function markRowPlaying(rowEl) {
-  if (auditionRow && auditionRow !== rowEl) {
-    auditionRow.classList.remove('is-playing');
-  }
-  auditionRow = rowEl;
-  if (auditionRow) auditionRow.classList.add('is-playing');
-}
-
-async function auditionStream(url, rowEl, ctx) {
-  if (!ctx || !ctx.getProbe || !ctx.getName) return;
-  // Read the live name at click time — Describe.ashx may still be
-  // racing the probe when the stream list mounts.
-  const liveName = ctx.getName();
-  const bose = buildBosePayload(ctx.getProbe(), liveName, url);
-  if (!bose) {
-    showToast('No playable streams to audition');
-    return;
-  }
-  markRowPlaying(rowEl);
-  try {
-    const env = await previewStream({ id: ctx.sid, name: liveName, json: bose });
-    if (!env || env.ok !== true) {
-      const code = env && env.error && env.error.code;
-      showToast(`Audition failed${code ? ': ' + code : ''}`);
-      markRowPlaying(null);
-      return;
-    }
-    showToast(`Playing on Bo: ${liveName}`);
-  } catch (err) {
-    showToast(`Audition failed: ${err.message || 'transport error'}`);
-    markRowPlaying(null);
-  }
-}
-
-function selectStream(url, listEl) {
-  chosenStreamUrl = url;
-  if (!listEl) return;
-  for (const row of listEl.querySelectorAll('.station-stream')) {
-    const isMe = row.dataset.url === url;
-    row.classList.toggle('is-selected', isMe);
-    const radio = row.querySelector('input[type="radio"]');
-    if (radio) radio.checked = isMe;
-  }
-}
-
 function fmtReliability(stream) {
   const r = Number(stream && stream.reliability);
   return Number.isFinite(r) && r > 0 ? `${r}%` : '';
 }
 
-function renderStreamList(streams, ctx) {
-  const list = document.createElement('div');
-  list.className = 'station-streams';
-  list.setAttribute('aria-label', 'Stream chooser');
-
-  auditionCtx = ctx || null;
-  const initial = bestStream(streams) || streams[0];
-  chosenStreamUrl = initial ? initial.streamUrl || initial.url : '';
-
-  for (const s of streams) {
-    const url = s.streamUrl || s.url;
-    if (!url) continue;
-
-    const row = document.createElement('div');
-    row.className = 'station-stream';
-    row.dataset.url = url;
-
-    const radio = document.createElement('input');
-    radio.type = 'radio';
-    radio.name = 'stream-choice';
-    radio.checked = url === chosenStreamUrl;
-    if (radio.checked) row.classList.add('is-selected');
-
-    const audition = document.createElement('button');
-    audition.type = 'button';
-    audition.className = 'station-stream-audition';
-    audition.setAttribute('aria-label', 'Audition this stream');
-    audition.textContent = '▶'; // ▶ — toggles to ⏸ via .is-playing CSS
-
-    const meta = document.createElement('span');
-    meta.className = 'station-stream-meta';
-    const bits = Number(s.bitrate) > 0 ? `${s.bitrate} kbps` : '';
-    const parts = [bits, fmtCodec(s), fmtReliability(s)].filter(Boolean);
-    meta.textContent = parts.join(' . ') || url;
-
-    row.appendChild(radio);
-    row.appendChild(audition);
-    row.appendChild(meta);
-
-    // Clicking anywhere on the row selects it. Audition button also
-    // selects, so the auditioned stream is what gets assigned.
-    row.addEventListener('click', (ev) => {
-      if (ev.target === audition) return;     // handled below
-      selectStream(url, list);
-    });
-    audition.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      selectStream(url, list);
-      auditionStream(url, row, auditionCtx);
-    });
-
-    list.appendChild(row);
-  }
-  return list;
-}
-
-function buildAssignRow() {
+function buildAssignGrid() {
   const wrap = document.createElement('div');
-  wrap.className = 'station-assign-row';
+  wrap.className = 'station-presets-grid';
   for (let n = 1; n <= ASSIGN_SLOTS; n++) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'station-assign-btn';
+    btn.className = 'station-preset-cell station-assign-btn';
     btn.dataset.slot = String(n);
-    btn.textContent = String(n);
-    // Initial state: disabled. Enabled by enableAssignButtons() once a
-    // playable probe result is in hand.
     btn.disabled = true;
+
+    const slotLabel = document.createElement('span');
+    slotLabel.className = 'station-preset-cell__slot';
+    slotLabel.textContent = String(n);
+
+    const occupant = document.createElement('span');
+    occupant.className = 'station-preset-cell__occupant';
+    occupant.textContent = 'Empty';
+
+    const tag = document.createElement('span');
+    tag.className = 'station-preset-cell__tag';
+
+    btn.appendChild(slotLabel);
+    btn.appendChild(occupant);
+    btn.appendChild(tag);
     wrap.appendChild(btn);
   }
   return wrap;
 }
 
+// Update one cell from a preset slot. Falls back to "Empty" + no tag
+// for unset slots; long names truncate via CSS ellipsis. The active
+// inset accent (slot already holds this station) is keyed off
+// .is-current — applied here when the slot's location matches sid.
+function paintPresetCell(btn, slotIndex, preset, sid) {
+  const occupant = btn.querySelector('.station-preset-cell__occupant');
+  const tagWrap  = btn.querySelector('.station-preset-cell__tag');
+  if (!occupant || !tagWrap) return;
+
+  const empty = !preset || preset.empty === true;
+  const name  = empty ? '' : (preset.itemName || `Preset ${slotIndex + 1}`);
+  const genre = empty ? '' : presetGenreLabel(preset);
+  const isCurrent = !empty && typeof preset.location === 'string'
+    && preset.location === sid;
+
+  occupant.textContent = empty ? 'Empty' : name;
+  btn.classList.toggle('station-preset-cell--empty', empty);
+  btn.classList.toggle('is-current', isCurrent);
+  btn.setAttribute('aria-label', empty
+    ? `Assign to preset ${slotIndex + 1}, currently empty`
+    : `Assign to preset ${slotIndex + 1}, currently ${name}`);
+
+  tagWrap.replaceChildren();
+  if (genre) tagWrap.appendChild(pill({ tone: 'ok', text: genre }));
+}
+
+// Pick a short tag for the preset cell. Probed Bose JSON doesn't carry
+// genre on /presets, so we surface the source/account or location code
+// — anything short and stable that helps disambiguate identically-named
+// stations across slots.
+function presetGenreLabel(preset) {
+  if (!preset || typeof preset !== 'object') return '';
+  const src = typeof preset.source === 'string' ? preset.source : '';
+  if (src && src !== 'INTERNET_RADIO') return src.toLowerCase();
+  if (typeof preset.location === 'string' && preset.location) {
+    return preset.location.length > 8
+      ? preset.location.slice(0, 8) + '…'
+      : preset.location;
+  }
+  return src ? src.toLowerCase() : '';
+}
+
 function renderSkeleton(root, sid) {
-  // Refs collected for later mutation. The mount helper from dom.js
-  // text-interpolates only, so we attach class names + IDs we can
-  // re-query from `root` after mount.
   const verdictBox = document.createElement('div');
   verdictBox.className = 'station-verdict';
   verdictBox.textContent = 'Probing stream...';
@@ -221,7 +161,7 @@ function renderSkeleton(root, sid) {
   heading.className = 'station-assign__label';
   heading.textContent = 'Set as preset:';
   assignBox.appendChild(heading);
-  assignBox.appendChild(buildAssignRow());
+  assignBox.appendChild(buildAssignGrid());
 
   mount(root, html`
     <section class="station-detail" data-view="station" data-sid="${sid}">
@@ -238,6 +178,31 @@ function renderSkeleton(root, sid) {
       ${assignBox}
     </section>
   `);
+}
+
+// Full-width gradient CTA shown above the assign grid on playable
+// stations. Click streams the chosen stream to the speaker without
+// touching the persistent preset slots. Subtitle is muted secondary
+// text; the gradient is keyed off the station name so the same station
+// always renders the same hue across reloads.
+function buildTestPlayButton(name) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'station-test-play';
+  btn.dataset.testPlay = '1';
+  btn.style.backgroundImage = stationGradient(name);
+
+  const label = document.createElement('span');
+  label.className = 'station-test-play__label';
+  label.textContent = 'Test play';
+
+  const sub = document.createElement('span');
+  sub.className = 'station-test-play__sub';
+  sub.textContent = 'Stream a test sample without saving';
+
+  btn.appendChild(label);
+  btn.appendChild(sub);
+  return btn;
 }
 
 function applyMetadata(root, stationBody, fallbackName) {
@@ -278,129 +243,6 @@ function applyMetadataError(root, err) {
   if (metaEl) metaEl.textContent = `Couldn't load metadata: ${err.message}`;
 }
 
-// Replace the verdict box and assign block based on classify() output.
-// On playable, enable assign buttons + attach the slot handler. On
-// gated/dark, swap the assign block for a "More like this" link.
-function applyVerdict(root, sid, verdict, ctx) {
-  const verdictEl = root.querySelector('.station-verdict');
-  const assignEl  = root.querySelector('.station-assign');
-  if (!verdictEl || !assignEl) return;
-
-  if (verdict.kind === 'playable') {
-    const streams = verdict.streams || [];
-    const best = bestStream(streams);
-    const bitrate = best && Number(best.bitrate) > 0 ? `${best.bitrate} kbps` : '';
-    const codec = fmtCodec(best);
-    const detail = [
-      `${streams.length} stream${streams.length === 1 ? '' : 's'}`,
-      [bitrate, codec].filter(Boolean).join(' '),
-    ].filter(Boolean).join(' . ');
-    verdictEl.classList.remove('is-gated', 'is-dark');
-    verdictEl.classList.add('is-playable');
-    verdictEl.textContent = detail || 'Playable';
-
-    const existing = root.querySelector('.station-streams');
-    if (existing) existing.remove();
-    if (streams.length > 0) {
-      verdictEl.insertAdjacentElement('afterend', renderStreamList(streams, {
-        sid,
-        getName: () => (ctx && ctx.getName ? ctx.getName() : sid),
-        getProbe: () => (ctx && ctx.probe ? ctx.probe : null),
-      }));
-    }
-
-    enableAssignButtons(root, sid, ctx);
-    return;
-  }
-
-  // Non-playable verdicts: drop any prior stream list. We deliberately
-  // don't tell the speaker to stop — Bo keeps playing whatever it's
-  // playing until the user picks something else.
-  const oldList = root.querySelector('.station-streams');
-  if (oldList) oldList.remove();
-  markRowPlaying(null);
-
-  // gated or dark — replace assign block with friendly message + link.
-  const message = verdict.kind === 'gated'
-    ? "This station isn't available from this client right now."
-    : 'This station is currently off-air.';
-  verdictEl.classList.remove('is-playable');
-  verdictEl.classList.add(verdict.kind === 'gated' ? 'is-gated' : 'is-dark');
-  verdictEl.textContent = message;
-
-  // Hide the assign buttons; offer "More like this" instead. We don't
-  // have a related-id yet (Tune.ashx doesn't return one); link to the
-  // browse root so the user can pick something else.
-  const more = document.createElement('a');
-  more.className = 'station-more-like-this';
-  more.href = '#/browse';
-  more.textContent = 'More like this →';
-  assignEl.replaceChildren(more);
-}
-
-// Enable each assign button and wire its click handler. ctx carries
-// {probe, getName} — getName() is read at click time so the
-// metadata-fetch latency doesn't matter as long as it lands before the
-// user clicks.
-function enableAssignButtons(root, sid, ctx) {
-  if (!ctx || !ctx.probe) return;
-  const btns = root.querySelectorAll('.station-assign-btn');
-  for (const btn of btns) {
-    btn.disabled = false;
-    btn.addEventListener('click', () => {
-      const slot = Number(btn.dataset.slot);
-      if (!Number.isInteger(slot) || slot < 1 || slot > 6) return;
-      handleAssignClick(root, sid, slot, ctx);
-    });
-  }
-}
-
-// Optimistic POST + reconcile. assignToPreset owns the reshape + override
-// + setPresets path; this handler owns the busy-button UI bookkeeping.
-async function handleAssignClick(root, sid, slot, ctx) {
-  const btn = root.querySelector(`.station-assign-btn[data-slot="${slot}"]`);
-  if (!btn || btn.dataset.busy === '1') return;
-
-  const name = ctx.getName ? ctx.getName() : sid;
-  const art  = ctx.getArt  ? ctx.getArt()  : '';
-
-  btn.dataset.busy = '1';
-  btn.disabled = true;
-  const originalLabel = btn.textContent;
-  btn.textContent = '...';
-
-  let envelope;
-  try {
-    envelope = await assignToPreset(ctx.probe, slot, { name, art, chosenStreamUrl });
-  } catch (err) {
-    showToast(`Save failed: ${err.message || 'transport error'}`);
-    btn.textContent = originalLabel;
-    btn.disabled = false;
-    btn.dataset.busy = '';
-    presetsList().then((env) => {
-      if (env && env.ok && Array.isArray(env.data)) store.update('speaker', (s) => { s.speaker.presets = env.data; });
-    }).catch(() => { /* surfaced via the original toast already */ });
-    return;
-  }
-
-  btn.textContent = originalLabel;
-  btn.disabled = false;
-  btn.dataset.busy = '';
-
-  if (envelope && envelope.ok) {
-    // assignToPreset already reconciled state.speaker.presets on success.
-    showToast(`Saved to preset ${slot}`);
-    return;
-  }
-
-  const errObj = (envelope && envelope.error) || { code: 'UNKNOWN' };
-  const detail = errObj.message ? `${errObj.code}: ${errObj.message}` : errObj.code;
-  showToast(`Save failed (${detail})`);
-  presetsList().then((env) => {
-    if (env && env.ok && Array.isArray(env.data)) store.update('speaker', (s) => { s.speaker.presets = env.data; });
-  }).catch(() => { /* keep the toast as the user-facing signal */ });
-}
-
 function applyProbeError(root, err) {
   const verdictEl = root.querySelector('.station-verdict');
   if (verdictEl) {
@@ -409,8 +251,8 @@ function applyProbeError(root, err) {
   }
 }
 
-export default {
-  init(root, _store, ctx) {
+export default defineView({
+  mount(root, _store, ctx, env) {
     const sid = (ctx && ctx.params && ctx.params.id) || '';
     if (!sid) {
       mount(root, html`
@@ -419,54 +261,280 @@ export default {
           <p>Missing station id in route.</p>
         </section>
       `);
-      return;
+      return {};
     }
 
     renderSkeleton(root, sid);
+    repaintPresetCells();
 
-    // The assign-button handler reads the live name + art at click
-    // time, so the Describe fetch races the probe but doesn't block
-    // it. We stash both in closure-local vars and pass getters in
-    // ctx.
+    // Audition + assign closure state. Test play streams to the speaker,
+    // not in the browser. Bo stays tuned until the user picks
+    // something else — no auto-stop on toggle-click or navigation.
+    let chosenStreamUrl = '';
+    let testPlayCtx     = null;
+    let testPlayBusy    = false;
+
     let stationName = sid;
     let stationArt = '';
     const getName = () => stationName;
     const getArt  = () => stationArt;
 
-    // Describe.ashx → metadata. Errors fall back to showing just the
-    // sid; the probe still runs, so the user gets a useful page.
-    tuneinStation(sid)
+    async function auditionStream(url, actx) {
+      if (!actx || !actx.getProbe || !actx.getName) return;
+      // Read the live name at click time — Describe.ashx may still be
+      // racing the probe when the stream list mounts.
+      const liveName = actx.getName();
+      const bose = buildBosePayload(actx.getProbe(), liveName, url);
+      if (!bose) {
+        showToast('No playable streams to audition');
+        return;
+      }
+      try {
+        const envelope = await previewStream({ id: actx.sid, name: liveName, json: bose });
+        if (!envelope || envelope.ok !== true) {
+          const code = envelope && envelope.error && envelope.error.code;
+          showToast(`Audition failed${code ? ': ' + code : ''}`);
+          return;
+        }
+        showToast(`Playing on Bo: ${liveName}`);
+      } catch (err) {
+        showToast(`Audition failed: ${err.message || 'transport error'}`);
+      }
+    }
+
+    function selectStream(url, listEl) {
+      chosenStreamUrl = url;
+      if (!listEl) return;
+      for (const row of listEl.querySelectorAll('.station-stream')) {
+        const isMe = row.dataset.url === url;
+        row.classList.toggle('is-selected', isMe);
+        const radio = row.querySelector('input[type="radio"]');
+        if (radio) radio.checked = isMe;
+      }
+    }
+
+    function renderStreamList(streams, actx) {
+      const list = document.createElement('div');
+      list.className = 'station-streams';
+      list.setAttribute('aria-label', 'Stream chooser');
+
+      testPlayCtx = actx || null;
+      const initial = bestStream(streams) || streams[0];
+      chosenStreamUrl = initial ? initial.streamUrl || initial.url : '';
+
+      for (const s of streams) {
+        const url = s.streamUrl || s.url;
+        if (!url) continue;
+
+        const row = document.createElement('div');
+        row.className = 'station-stream';
+        row.dataset.url = url;
+
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = 'stream-choice';
+        radio.checked = url === chosenStreamUrl;
+        if (radio.checked) row.classList.add('is-selected');
+
+        const meta = document.createElement('span');
+        meta.className = 'station-stream-meta';
+        const bits = Number(s.bitrate) > 0 ? `${s.bitrate} kbps` : '';
+        const parts = [bits, fmtCodec(s), fmtReliability(s)].filter(Boolean);
+        meta.textContent = parts.join(' . ') || url;
+
+        row.appendChild(radio);
+        row.appendChild(meta);
+
+        row.addEventListener('click', () => selectStream(url, list));
+
+        list.appendChild(row);
+      }
+      return list;
+    }
+
+    function applyVerdict(verdict, actx) {
+      const verdictEl = root.querySelector('.station-verdict');
+      const assignEl  = root.querySelector('.station-assign');
+      if (!verdictEl || !assignEl) return;
+
+      if (verdict.kind === 'playable') {
+        const streams = verdict.streams || [];
+        const best = bestStream(streams);
+        const bitrate = best && Number(best.bitrate) > 0 ? `${best.bitrate} kbps` : '';
+        const codec = fmtCodec(best);
+        const detail = [
+          `${streams.length} stream${streams.length === 1 ? '' : 's'}`,
+          [bitrate, codec].filter(Boolean).join(' '),
+        ].filter(Boolean).join(' . ');
+        verdictEl.classList.remove('is-gated', 'is-dark');
+        verdictEl.classList.add('is-playable');
+        verdictEl.textContent = detail || 'Playable';
+
+        const oldList = root.querySelector('.station-streams');
+        if (oldList) oldList.remove();
+        const oldCta = root.querySelector('.station-test-play');
+        if (oldCta) oldCta.remove();
+
+        let anchor = verdictEl;
+        if (streams.length > 0) {
+          const list = renderStreamList(streams, {
+            sid,
+            getName: () => (actx && actx.getName ? actx.getName() : sid),
+            getProbe: () => (actx && actx.probe ? actx.probe : null),
+          });
+          anchor.insertAdjacentElement('afterend', list);
+          anchor = list;
+        }
+
+        // Test play CTA goes between the stream chooser and the assign
+        // grid. Reuses chosenStreamUrl from the chooser; preserves the
+        // existing previewStream callsite (auditionStream → previewStream).
+        const cta = buildTestPlayButton(actx && actx.getName ? actx.getName() : sid);
+        cta.addEventListener('click', () => onTestPlayClick(cta));
+        anchor.insertAdjacentElement('afterend', cta);
+
+        enableAssignButtons(actx);
+        repaintPresetCells();
+        return;
+      }
+
+      // Non-playable verdicts: drop any prior stream list + CTA. We
+      // deliberately don't tell the speaker to stop — Bo keeps playing
+      // whatever it's playing until the user picks something else.
+      const oldList = root.querySelector('.station-streams');
+      if (oldList) oldList.remove();
+      const oldCta = root.querySelector('.station-test-play');
+      if (oldCta) oldCta.remove();
+
+      const message = verdict.kind === 'gated'
+        ? "This station isn't available from this client right now."
+        : 'This station is currently off-air.';
+      verdictEl.classList.remove('is-playable');
+      verdictEl.classList.add(verdict.kind === 'gated' ? 'is-gated' : 'is-dark');
+      verdictEl.textContent = message;
+
+      const more = document.createElement('a');
+      more.className = 'station-more-like-this';
+      more.href = '#/browse';
+      more.textContent = 'More like this →';
+      assignEl.replaceChildren(more);
+    }
+
+    async function onTestPlayClick(cta) {
+      if (testPlayBusy) return;
+      if (!testPlayCtx || !chosenStreamUrl) {
+        showToast('No playable streams to test');
+        return;
+      }
+      testPlayBusy = true;
+      cta.classList.add('is-busy');
+      cta.disabled = true;
+      try {
+        await auditionStream(chosenStreamUrl, testPlayCtx);
+      } finally {
+        testPlayBusy = false;
+        cta.classList.remove('is-busy');
+        cta.disabled = false;
+      }
+    }
+
+    function repaintPresetCells() {
+      const presets = (store.state.speaker && store.state.speaker.presets) || [];
+      const cells = root.querySelectorAll('.station-preset-cell');
+      cells.forEach((cell, idx) => {
+        paintPresetCell(cell, idx, presets[idx] || null, sid);
+      });
+    }
+
+    function enableAssignButtons(actx) {
+      if (!actx || !actx.probe) return;
+      const btns = root.querySelectorAll('.station-assign-btn');
+      for (const btn of btns) {
+        btn.disabled = false;
+        btn.addEventListener('click', () => {
+          const slot = Number(btn.dataset.slot);
+          if (!Number.isInteger(slot) || slot < 1 || slot > 6) return;
+          handleAssignClick(slot, actx);
+        });
+      }
+    }
+
+    async function handleAssignClick(slot, actx) {
+      const btn = root.querySelector(`.station-assign-btn[data-slot="${slot}"]`);
+      if (!btn || btn.dataset.busy === '1') return;
+
+      const name = actx.getName ? actx.getName() : sid;
+      const art  = actx.getArt  ? actx.getArt()  : '';
+
+      btn.dataset.busy = '1';
+      btn.disabled = true;
+      btn.classList.add('is-busy');
+
+      let envelope;
+      try {
+        envelope = await assignToPreset(actx.probe, slot, { name, art, chosenStreamUrl });
+      } catch (err) {
+        showToast(`Save failed: ${err.message || 'transport error'}`);
+        btn.disabled = false;
+        btn.dataset.busy = '';
+        btn.classList.remove('is-busy');
+        presetsList().then((envv) => {
+          if (envv && envv.ok && Array.isArray(envv.data)) store.update('speaker', (s) => { s.speaker.presets = envv.data; });
+        }).catch(() => { /* surfaced via the original toast already */ });
+        return;
+      }
+
+      btn.disabled = false;
+      btn.dataset.busy = '';
+      btn.classList.remove('is-busy');
+
+      if (envelope && envelope.ok) {
+        showToast(`Saved to preset ${slot}`);
+        return;
+      }
+
+      const errObj = (envelope && envelope.error) || { code: 'UNKNOWN' };
+      const detail = errObj.message ? `${errObj.code}: ${errObj.message}` : errObj.code;
+      showToast(`Save failed (${detail})`);
+      presetsList().then((envv) => {
+        if (envv && envv.ok && Array.isArray(envv.data)) store.update('speaker', (s) => { s.speaker.presets = envv.data; });
+      }).catch(() => { /* keep the toast as the user-facing signal */ });
+    }
+
+    // The assign-button handler reads the live name + art at click
+    // time, so the Describe fetch races the probe but doesn't block
+    // it. Both fetches honour env.signal so leaving the view aborts
+    // any in-flight network work.
+    tuneinStation(sid, { signal: env.signal })
       .then((res) => {
+        if (env.signal.aborted) return;
         const body = (res && Array.isArray(res.body) && res.body[0]) || null;
         applyMetadata(root, body, sid);
-        // Add to recently-viewed AFTER Describe so we have a real name
-        // (and an art URL when available). The search empty state
-        // reads this list.
         const name = (body && body.name) || sid;
         stationName = name;
         stationArt  = pickArt(body);
         addRecentlyViewed({ sid, name, art: stationArt });
       })
       .catch((err) => {
+        if (env.signal.aborted) return;
         applyMetadataError(root, err);
-        // Still record the visit, even without a friendly name. Search
-        // can render the sid as a fallback label via stationCard().
         addRecentlyViewed({ sid, name: sid });
       });
 
     // probe() is cache-aware — re-entry within the 10-minute TTL skips
     // the network fetch.
-    probe(sid)
+    probe(sid, { signal: env.signal })
       .then((p) => {
-        applyVerdict(root, sid, p.verdict, { probe: p, getName, getArt });
+        if (env.signal.aborted) return;
+        applyVerdict(p.verdict, { probe: p, getName, getArt });
       })
       .catch((err) => {
+        if (env.signal.aborted) return;
         applyProbeError(root, err);
       });
-  },
 
-  update(/* state, changedKey */) {
-    // Static view — no store subscription declared in main.js, so this
-    // is a no-op. Each visit triggers a fresh init() via the router.
+    return {
+      speaker() { repaintPresetCells(); },
+    };
   },
-};
+});

@@ -7,6 +7,8 @@
 // The fallback is an inline data: URI; no extra request, scales to
 // any size, rerenderable per-name.
 
+import { applyTint, hashHue } from './tint.js';
+
 export function setArt(imgEl, url, name) {
   if (!imgEl) return;
   imgEl.alt = name || '';
@@ -17,8 +19,10 @@ export function setArt(imgEl, url, name) {
     // can't loop.
     imgEl.onerror = null;
     imgEl.src = fallbackDataUri(name);
+    applyTint(imgEl);
   };
   imgEl.src = url || fallbackDataUri(name);
+  applyTint(imgEl);
 }
 
 // Single-color placeholder. Hue is derived from the name so the same
@@ -35,12 +39,3 @@ function fallbackDataUri(name) {
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
-// djb2-ish hash → hue in [0,360). Cheap, plenty of spread for our
-// inputs (a few dozen station names).
-function hashHue(s) {
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h) % 360;
-}

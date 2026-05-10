@@ -13,25 +13,27 @@ import {
   getSpeakerInfo,
   getNowPlaying,
   presetsList,
-  parseNowPlayingEl,
   getVolume,
-  parseVolumeEl,
   getSources,
-  parseSourcesEl,
+  getNetworkInfo,
+  getSystemTimeout,
+  getBluetoothInfo,
+  getBass,
+  getBalance,
+  getDSPMonoStereo,
+  getRecents,
+  getZone,
 } from './api.js';
-
-// Registered confirmFn for volume — injected by now-playing.js after it
-// creates its volume sender. Called by volume's afterApply.
-let volumeConfirmFn = null;
-export function setVolumeConfirmFn(fn) { volumeConfirmFn = fn; }
-
-// Registered "is the user currently committing a volume change?" probe.
-// volume.js wires its hasPending() in here. Used by volume's apply to
-// avoid overwriting the user's eager targetVolume with a stale WS one
-// during fast drags (the speaker reports the previous target until our
-// queued POST resolves).
-let volumePendingFn = null;
-export function setVolumePendingFn(fn) { volumePendingFn = fn; }
+import {
+  parseNowPlayingEl,
+  parseVolumeEl,
+  parseSourcesEl,
+  parseBassEl,
+  parseBalanceEl,
+  parseRecentsEl,
+  parseZoneEl,
+} from './speaker-xml.js';
+import { controllerFor as sliderControllerFor } from './sliders.js';
 
 // Field entry shape:
 //   name        — key in state.speaker
@@ -39,7 +41,8 @@ export function setVolumePendingFn(fn) { volumePendingFn = fn; }
 //   eventTag?   — child tag inside <updates> that carries this field's event
 //   parseInline — (el) => value | null. Null means hint-only: fall back to fetcher().
 //   apply?      — (state, value) => void. Default: state.speaker[name] = value
-//   afterApply? — (value) => void. Optional side-effect (volume WS confirm).
+//                 Slider fields (volume/bass/balance) delegate to the slider
+//                 controller, which owns the apply-merge + confirm in one place.
 export const FIELDS = [
   {
     name: 'info',
@@ -76,25 +79,7 @@ export const FIELDS = [
       const vols = el.getElementsByTagName('volume');
       return vols && vols[0] ? parseVolumeEl(vols[0]) : null;
     },
-    apply(state, value) {
-      if (!value) return;
-      const prev = state.speaker.volume;
-      // While the user has a queued/in-flight volume command, the WS
-      // event's targetVolume may still reflect the previous level —
-      // overwriting would yank the slider thumb back. Keep our eager
-      // targetVolume; only update what the speaker uniquely owns.
-      if (prev && volumePendingFn && volumePendingFn()) {
-        state.speaker.volume = {
-          ...value,
-          targetVolume: prev.targetVolume,
-        };
-      } else {
-        state.speaker.volume = value;
-      }
-    },
-    afterApply(value) {
-      if (volumeConfirmFn && value) volumeConfirmFn(value.actualVolume);
-    },
+    apply(state, value) { sliderControllerFor('volume').applyIncoming(state, value); },
   },
   {
     name: 'sources',
@@ -106,6 +91,52 @@ export const FIELDS = [
       return lists && lists[0] ? parseSourcesEl(lists[0]) : null;
     },
   },
+  // Settings-section fields wired by their respective sub-views.
+  {
+    name: 'bass',
+    fetcher: getBass,
+    eventTag: 'bassUpdated',
+    parseInline(el) {
+      const els = el.getElementsByTagName('bass');
+      return els && els[0] ? parseBassEl(els[0]) : null;
+    },
+    apply(state, value) { sliderControllerFor('bass').applyIncoming(state, value); },
+  },
+  {
+    name: 'balance',
+    fetcher: getBalance,
+    eventTag: 'balanceUpdated',
+    parseInline(el) {
+      const els = el.getElementsByTagName('balance');
+      return els && els[0] ? parseBalanceEl(els[0]) : null;
+    },
+    apply(state, value) { sliderControllerFor('balance').applyIncoming(state, value); },
+  },
+  { name: 'dspMonoStereo', fetcher: getDSPMonoStereo },
+  {
+    name: 'zone',
+    fetcher: getZone,
+    eventTag: 'zoneUpdated',
+    parseInline(el) {
+      const zones = el.getElementsByTagName('zone');
+      return zones && zones[0] ? parseZoneEl(zones[0]) : null;
+    },
+  },
+  { name: 'bluetooth',     fetcher: getBluetoothInfo },
+  // No reliable WS event for /networkInfo — connectionStateUpdated
+  // covers the Wi-Fi flap separately (state.ws). Refetched on settings
+  // view-entry; user-driven via the section's Refresh button.
+  { name: 'network',       fetcher: getNetworkInfo },
+  {
+    name: 'recents',
+    fetcher: getRecents,
+    eventTag: 'recentsUpdated',
+    parseInline(el) {
+      const lists = el.getElementsByTagName('recents');
+      return lists && lists[0] ? parseRecentsEl(lists[0]) : null;
+    },
+  },
+  { name: 'systemTimeout',   fetcher: getSystemTimeout },
 ];
 
 // Build a lookup map from eventTag → entry for dispatch().
@@ -143,7 +174,6 @@ export async function dispatch(envelopeChild, store) {
   if (inline != null) {
     applyEntry(entry, store.state, inline);
     store.touch('speaker');
-    if (entry.afterApply) entry.afterApply(inline);
   } else {
     // Hint-only: no inline data — fall back to fetcher().
     let value;
@@ -155,6 +185,5 @@ export async function dispatch(envelopeChild, store) {
     if (value == null) return;
     applyEntry(entry, store.state, value);
     store.touch('speaker');
-    if (entry.afterApply) entry.afterApply(value);
   }
 }

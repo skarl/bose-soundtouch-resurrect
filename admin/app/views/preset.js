@@ -8,101 +8,35 @@
 //
 // See admin/PLAN.md § Routing (#/preset/N).
 
+import { defineView, mountChild } from '../dom.js';
 import { store } from '../state.js';
 import { showToast } from '../toast.js';
 import { probe, assignToPreset } from '../probe.js';
 import searchView from './search.js';
 import browseView from './browse.js';
 
-// Which pane is showing inside the modal body.
-let activePane = 'search';  // 'search' | 'browse'
-
-// The slot number this modal is operating on (1-6).
-let activeSlot = 0;
-
-// The sub-root elements for each pane.
-let searchRoot = null;
-let browseRoot = null;
-let paneSearch = null;
-let paneBrowse = null;
-let switchBrowseBtn = null;
-let switchSearchBtn = null;
-
-// Station-card click intercept — we hijack navigation before it fires
-// so we can do the assign instead of routing to #/station/sNNN.
-let cardClickHandler = null;
-
-function teardown() {
-  if (cardClickHandler && searchRoot) {
-    searchRoot.removeEventListener('click', cardClickHandler, true);
-  }
-  if (cardClickHandler && browseRoot) {
-    browseRoot.removeEventListener('click', cardClickHandler, true);
-  }
-  cardClickHandler = null;
-  searchRoot = null;
-  browseRoot = null;
-  paneSearch = null;
-  paneBrowse = null;
-  switchBrowseBtn = null;
-  switchSearchBtn = null;
-  activeSlot = 0;
-  activePane = 'search';
-}
-
-function showPane(which) {
-  activePane = which;
-  paneSearch.hidden = which !== 'search';
-  paneBrowse.hidden = which !== 'browse';
-  if (switchSearchBtn) switchSearchBtn.dataset.active = which === 'search' ? 'true' : 'false';
-  if (switchBrowseBtn) switchBrowseBtn.dataset.active = which === 'browse' ? 'true' : 'false';
-  if (which === 'search' && searchRoot) {
-    const input = searchRoot.querySelector('input[type="search"]');
-    if (input) input.focus();
-  }
-}
-
-// Intercept clicks on station-cards inside the modal body. Station cards
-// are <a href="#/station/sNNN"> elements. We prevent navigation and
-// instead attempt to assign the station to the active slot.
-function buildCardClickHandler(slot) {
-  return function interceptCardClick(evt) {
-    const card = evt.target.closest('.station-card[data-sid]');
-    if (!card) return;
-    evt.preventDefault();
-    evt.stopPropagation();
-    const sid = card.dataset.sid;
-    if (!sid) return;
-    doAssign(slot, sid, card.querySelector('.station-card__name')?.textContent || sid);
-  };
-}
-
 async function doAssign(slot, sid, name) {
   let p;
   try { p = await probe(sid); }
   catch (err) { showToast(`Assign failed: ${err.message || 'probe error'}`); return; }
-  let env;
-  try { env = await assignToPreset(p, slot, { name, art: '' }); }
+  let envelope;
+  try { envelope = await assignToPreset(p, slot, { name, art: '' }); }
   catch (err) { showToast(`Assign failed: ${err.message || 'transport error'}`); return; }
-  if (env.ok) { showToast(`Saved to preset ${slot}`); location.hash = '#/'; }
-  else        { showToast(`Assign failed (${env.error?.code || 'unknown'})`); }
+  if (envelope.ok) { showToast(`Saved to preset ${slot}`); location.hash = '#/'; }
+  else        { showToast(`Assign failed (${envelope.error?.code || 'unknown'})`); }
 }
 
-export default {
-  init(root, _store, ctx) {
-    teardown();
-
+export default defineView({
+  mount(root, _store, ctx, env) {
     const slotParam = ctx && ctx.params && ctx.params.slot;
     const slot = Number(slotParam);
     if (!Number.isInteger(slot) || slot < 1 || slot > 6) {
       location.replace('#/');
-      return;
+      return {};
     }
 
-    activeSlot = slot;
     store.state.ui.presetModal = { slot, returnTo: '#/' };
 
-    // Build backdrop + dialog shell.
     const backdrop = document.createElement('div');
     backdrop.className = 'preset-modal-backdrop';
 
@@ -129,36 +63,32 @@ export default {
     header.appendChild(title);
     header.appendChild(closeBtn);
 
-    // Pane switcher tabs.
     const tabs = document.createElement('div');
     tabs.className = 'preset-modal-tabs';
 
-    switchSearchBtn = document.createElement('button');
+    const switchSearchBtn = document.createElement('button');
     switchSearchBtn.type = 'button';
     switchSearchBtn.className = 'preset-modal-tab';
     switchSearchBtn.textContent = 'Search';
     switchSearchBtn.dataset.active = 'true';
-    switchSearchBtn.addEventListener('click', () => showPane('search'));
 
-    switchBrowseBtn = document.createElement('button');
+    const switchBrowseBtn = document.createElement('button');
     switchBrowseBtn.type = 'button';
     switchBrowseBtn.className = 'preset-modal-tab';
     switchBrowseBtn.textContent = 'Browse';
     switchBrowseBtn.dataset.active = 'false';
-    switchBrowseBtn.addEventListener('click', () => showPane('browse'));
 
     tabs.appendChild(switchSearchBtn);
     tabs.appendChild(switchBrowseBtn);
 
-    // Body holds two sub-containers — only one visible at a time.
     const body = document.createElement('div');
     body.className = 'preset-modal-body';
 
-    paneSearch = document.createElement('div');
+    const paneSearch = document.createElement('div');
     paneSearch.className = 'preset-modal-pane';
     paneSearch.hidden = false;
 
-    paneBrowse = document.createElement('div');
+    const paneBrowse = document.createElement('div');
     paneBrowse.className = 'preset-modal-pane';
     paneBrowse.hidden = true;
 
@@ -172,44 +102,54 @@ export default {
 
     root.replaceChildren(backdrop);
 
-    // Mount search and browse sub-views into their panes.
-    searchRoot = paneSearch;
-    browseRoot = paneBrowse;
-    searchView.init(searchRoot, _store, {});
-    browseView.init(browseRoot, _store, {});
+    function showPane(which) {
+      paneSearch.hidden = which !== 'search';
+      paneBrowse.hidden = which !== 'browse';
+      switchSearchBtn.dataset.active = which === 'search' ? 'true' : 'false';
+      switchBrowseBtn.dataset.active = which === 'browse' ? 'true' : 'false';
+      if (which === 'search') {
+        const input = paneSearch.querySelector('input[type="search"]');
+        if (input) input.focus();
+      }
+    }
+    switchSearchBtn.addEventListener('click', () => showPane('search'));
+    switchBrowseBtn.addEventListener('click', () => showPane('browse'));
 
-    // Install the card-click interceptor on both panes (capture phase so
-    // it fires before the anchor's default navigation).
-    cardClickHandler = buildCardClickHandler(slot);
-    searchRoot.addEventListener('click', cardClickHandler, true);
-    browseRoot.addEventListener('click', cardClickHandler, true);
+    mountChild(paneSearch, searchView, _store, {}, env);
+    mountChild(paneBrowse, browseView, _store, {}, env);
 
-    // Focus the search input.
-    const searchInput = searchRoot.querySelector('input[type="search"]');
+    // Intercept clicks on station-cards inside the modal body. Cards are
+    // <a href="#/station/sNNN"> elements; we prevent navigation and
+    // assign the station to the active slot instead.
+    function interceptCardClick(evt) {
+      const card = evt.target.closest('.station-card[data-sid]');
+      if (!card) return;
+      evt.preventDefault();
+      evt.stopPropagation();
+      const sid = card.dataset.sid;
+      if (!sid) return;
+      doAssign(slot, sid, card.querySelector('.station-card__name')?.textContent || sid);
+    }
+    paneSearch.addEventListener('click', interceptCardClick, true);
+    paneBrowse.addEventListener('click', interceptCardClick, true);
+    env.onCleanup(() => {
+      paneSearch.removeEventListener('click', interceptCardClick, true);
+      paneBrowse.removeEventListener('click', interceptCardClick, true);
+    });
+
+    const searchInput = paneSearch.querySelector('input[type="search"]');
     if (searchInput) searchInput.focus();
 
-    // Dismiss on backdrop click (click outside the dialog).
     backdrop.addEventListener('click', (evt) => {
       if (evt.target === backdrop) location.hash = '#/';
     });
 
-    // Dismiss on Escape.
     const onKeydown = (evt) => {
-      if (evt.key === 'Escape') {
-        document.removeEventListener('keydown', onKeydown);
-        location.hash = '#/';
-      }
+      if (evt.key === 'Escape') location.hash = '#/';
     };
     document.addEventListener('keydown', onKeydown);
-  },
+    env.onCleanup(() => document.removeEventListener('keydown', onKeydown));
 
-  update() {
-    // The modal itself has no store subscription — assign success
-    // closes the route via location.hash, and the now-playing view
-    // picks up presets from its existing 'speaker' subscription.
+    return {};
   },
-
-  _teardown() {
-    teardown();
-  },
-};
+});

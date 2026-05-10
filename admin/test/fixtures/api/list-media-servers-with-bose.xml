@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<ListMediaServersResponse>
+  <media_server id="fa095ecc-e13e-40e7-8e6c-5c497974e498" mac="" ip="192.168.178.1" manufacturer="AVM Berlin" model_name="FRITZ!Box 7490" friendly_name="AVM FRITZ!Mediaserver" model_description="FRITZ!Box 7490" location="http://192.168.178.1:49000/MediaServerDevDesc.xml" />
+  <media_server id="bose-687-654-321" mac="689E19D55555" ip="192.168.178.40" manufacturer="Bose Corporation" model_name="SoundTouch 20" friendly_name="Kitchen" model_description="SoundTouch 20 wireless music system" location="http://192.168.178.40:8091/BO5EBC2E19F837.xml" />
+</ListMediaServersResponse>

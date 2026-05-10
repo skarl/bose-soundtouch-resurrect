@@ -5,7 +5,7 @@
 
 import { reconcile, dispatch as speakerDispatch } from './speaker-state.js';
 import { showToast } from './toast.js';
-import { wasRecentOutgoing } from './io-ledger.js';
+import { wasRecent } from './actions/index.js';
 
 let socket = null;
 let userInitiatedClose = false;
@@ -56,7 +56,7 @@ function watchSpeakerButtons(store) {
     const ps = np && np.playStatus;
     if (ps !== prevPlayStatus) {
       if (prevPlayStatus !== null && (ps === 'PLAY_STATE' || ps === 'PAUSE_STATE')) {
-        if (!wasRecentOutgoing('transport')) {
+        if (!wasRecent('transport')) {
           showToast('Play/Pause pressed on speaker');
         }
       }
@@ -69,7 +69,7 @@ function watchSpeakerButtons(store) {
       ? `${np.source}:${(np.item && np.item.location) || ''}`
       : null;
     if (sourceKey !== null && sourceKey !== prevSource) {
-      if (prevSource !== null && !wasRecentOutgoing('source') && !wasRecentOutgoing('preset')) {
+      if (prevSource !== null && !wasRecent('source') && !wasRecent('preset')) {
         showToast('Source switched on speaker');
       }
       prevSource = sourceKey;
@@ -80,7 +80,7 @@ function watchSpeakerButtons(store) {
     // --- volume change ---
     const av = vol && vol.actualVolume;
     if (typeof av === 'number' && av !== prevVolume) {
-      if (prevVolume !== null && !wasRecentOutgoing('volume')) {
+      if (prevVolume !== null && !wasRecent('volume')) {
         const delta = Math.abs(av - prevVolume);
         if (delta > 1) {
           const now = Date.now();
@@ -110,10 +110,40 @@ function stopPolling() {
 
 // --- XML dispatch ---------------------------------------------------
 
+// Cap of the state.ws.recentEvents ring buffer. The settings/system WS
+// log surfaces these; anything older falls off the back.
+export const WS_LOG_CAP = 50;
+
+// Append an event to the ring buffer and trim to WS_LOG_CAP. Most-recent
+// first. Called from dispatch() once per inbound frame (pre-route) so we
+// log even malformed payloads — they're the ones an operator wants to see.
+export function pushRecentEvent(store, entry) {
+  if (!store || !store.state || !store.state.ws) return;
+  const buf = store.state.ws.recentEvents;
+  if (!Array.isArray(buf)) {
+    store.state.ws.recentEvents = [entry];
+  } else {
+    buf.unshift(entry);
+    if (buf.length > WS_LOG_CAP) buf.length = WS_LOG_CAP;
+  }
+  if (typeof store.touch === 'function') store.touch('ws');
+}
+
 // Dispatch a single parsed frame against the store state.
 // Exported so test_ws_dispatch.js can drive it without a live socket.
 export function dispatch(xmlText, store) {
   const doc = parseXml(xmlText);
+  // Log every inbound frame (pre-route) so the System WS log shows even
+  // malformed envelopes; only frames we never receive (network drops)
+  // are absent.
+  if (store && store.state && store.state.ws) {
+    const root0 = doc && doc.documentElement;
+    pushRecentEvent(store, {
+      ts: Date.now(),
+      tag: root0 ? root0.tagName : '(unparsed)',
+      raw: typeof xmlText === 'string' ? xmlText : '',
+    });
+  }
   if (!doc) return;
 
   const root = doc.documentElement;

@@ -6,25 +6,9 @@ const TOP_LEVEL_KEYS = ['speaker', 'caches', 'ws', 'ui'];
 
 // Recently-viewed station list. station.js prepends on view-entry;
 // search.js renders it as the empty-state landing. Shape:
-// Array<{ sid, name, art? }>, most-recent first, capped at RECENT_MAX,
-// persisted in localStorage.
-const RECENT_KEY = 'admin.recentlyViewed';
-const RECENT_MAX = 20;
-
-function loadRecentlyViewed() {
-  try {
-    if (typeof localStorage === 'undefined') return [];
-    const raw = localStorage.getItem(RECENT_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    // Defensive: drop anything missing the required {sid, name} pair so
-    // search.js can render via stationCard() without null checks.
-    return parsed.filter((e) => e && typeof e.sid === 'string' && typeof e.name === 'string');
-  } catch (_err) {
-    return [];
-  }
-}
+// Array<{ sid, name, art? }>, most-recent first, capped at RECENT_MAX.
+// In-memory only — the list is short-lived UX scaffolding, not a record.
+const RECENT_MAX = 10;
 
 function observable(initial) {
   const subs = new Map(TOP_LEVEL_KEYS.map((k) => [k, new Set()]));
@@ -58,24 +42,34 @@ function observable(initial) {
 
 export const store = observable({
   speaker: {
-    info:       null,   // {deviceID, name, type, firmwareVersion, ...}
-    nowPlaying: null,   // {source, item, track, artist, art, playStatus}
-    presets:    null,   // [{slot, source, type, location, itemName, art}, ...]
-    volume:     null,   // {targetVolume, actualVolume, muteEnabled}
-    sources:    null,   // [{source, sourceAccount, displayName, status, isLocal}, ...]
+    info:           null,   // {deviceID, name, type, firmwareVersion, ...}
+    nowPlaying:     null,   // {source, item, track, artist, art, playStatus}
+    presets:        null,   // [{slot, source, type, location, itemName, art}, ...]
+    volume:         null,   // {targetVolume, actualVolume, muteEnabled}
+    sources:        null,   // [{source, sourceAccount, displayName, status, isLocal}, ...]
+    bass:           null,   // {targetBass, actualBass}
+    balance:        null,   // {targetBalance, actualBalance}
+    dspMonoStereo:  null,   // {mode: 'mono' | 'stereo'}
+    zone:           null,   // {master, members: [{ipAddress, deviceID}, ...]}
+    bluetooth:      null,   // {paired: [{name, mac}, ...], pairing}
+    network:        null,   // {ssid, ipAddress, macAddress, signalDbm}
+    recents:        null,   // [{utcTime, source, sourceAccount, type, location, itemName, containerArt}, ...]
+    capabilities:   null,   // {deviceID, dspMonoStereo, lrStereoCapable, ..., capabilities:[{name,url}]}
+    systemTimeout:    null, // {enabled, minutes}
   },
   caches: {
     probe:          new Map(),               // sid → Probe = {sid, verdict, tuneinJson, expires} — TTL 10 min
-    recentlyViewed: loadRecentlyViewed(),    // [{sid, name, art?}], persisted in localStorage
+    recentlyViewed: [],                      // [{sid, name, art?}], in-memory only
   },
-  ws: { connected: false, mode: 'offline', lastEvent: null },
-  ui: { toast: null, testPlaying: null },
+  // recentEvents is a 50-entry FIFO ring of inbound WS frames (raw text +
+  // root tag), surfaced by the System settings section as a debug log.
+  ws: { connected: false, mode: 'offline', lastEvent: null, recentEvents: [] },
+  ui: { toast: null, testPlaying: null, activeTab: 'now' },
 });
 
 // Prepend an entry to state.caches.recentlyViewed, dedupe by sid, cap
-// at RECENT_MAX, persist to localStorage, and notify 'caches'
-// subscribers. Station view calls this on entry; search empty state
-// reads the array.
+// at RECENT_MAX, and notify 'caches' subscribers. Station view calls
+// this on entry; search empty state reads the array.
 export function addRecentlyViewed({ sid, name, art }) {
   if (typeof sid !== 'string' || !sid) return;
   if (typeof name !== 'string' || !name) return;
@@ -87,12 +81,5 @@ export function addRecentlyViewed({ sid, name, art }) {
   const next = [entry, ...deduped].slice(0, RECENT_MAX);
 
   store.state.caches.recentlyViewed = next;
-  try {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-    }
-  } catch (_err) {
-    // Storage quota / private mode — non-fatal; in-memory list still works.
-  }
   store.touch('caches');
 }

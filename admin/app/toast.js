@@ -15,6 +15,8 @@ function ensureContainer() {
   if (el) return el;
   el = document.createElement('div');
   el.id = CONTAINER_ID;
+  el.setAttribute('aria-live', 'polite');
+  el.setAttribute('aria-atomic', 'false');
   document.body.appendChild(el);
   return el;
 }

@@ -1,83 +1,167 @@
 /* SoundTouch admin — vanilla, mobile-first. */
 
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/Geist-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./fonts/Geist-500.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./fonts/Geist-600.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./fonts/Geist-700.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/Geist-Mono-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./fonts/Geist-Mono-500.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./fonts/Geist-Mono-600.woff2") format("woff2");
+}
+
 /* --- colour tokens ------------------------------------------------ */
 /* Applied via [data-theme] on <html>; init() in theme.js sets the
    attribute synchronously before any paint, so there is no FOWT.     */
 
-[data-theme="light"] {
-  --bg:         #fff;
-  --fg:         #111;
-  --fg-muted:   #666;
-  --accent:     #0a66c2;
-  --border:     #e3e3e3;
-  --surface:    #fafafa;
-  --surface-hi: #f5f5f5;
-  --stream-sel: #e7f3ff;
-  --warn-bg:    #fff8c5;
-  --warn-border:#d4c95a;
-  --error-bg:   #fde4e4;
-  --error-border:#d49a9a;
-  --error-fg:   #7a1f1f;
-  --search-err: #b00020;
-  --pill-amber: #b07000;
-  --pill-green: #1a7f37;
-  --pill-red:   #b00020;
-  --toast-bg:   #222;
-  --toast-fg:   #fff;
+[data-theme="graphite"] {
+  --bg:         #f4f6f8;
+  --fg:         #1b2026;
+  --fg-muted:   #5a6672;
+  --accent:     #2f6fde;
+  --accent-fg:  #ffffff;
+  --border:     #d6dde3;
+  --surface:    #eaeef2;
+  --surface-hi: #dfe5eb;
+  --stream-sel: #dde9fb;
+  --warn-bg:    #fff3c4;
+  --warn-border:#cdb24a;
+  --error-bg:   #fbe1e1;
+  --error-border:#c98a8a;
+  --error-fg:   #6f1c1c;
+  --search-err: #a30018;
+  --pill-amber: #9c6300;
+  --pill-green: #166f30;
+  --pill-red:   #a30018;
+  --toast-bg:   #1b2026;
+  --toast-fg:   #f4f6f8;
 }
 
-[data-theme="dark"] {
-  --bg:         #15171a;
-  --fg:         #e8eaed;
-  --fg-muted:   #8b949e;
-  --accent:     #4d9cf8;
-  --border:     #30363d;
-  --surface:    #1c1f23;
-  --surface-hi: #21262d;
-  --stream-sel: #1b3554;
-  --warn-bg:    #2d2300;
-  --warn-border:#6b5a00;
-  --error-bg:   #2d0f0f;
-  --error-border:#6b2a2a;
-  --error-fg:   #f08080;
-  --search-err: #f08080;
-  --pill-amber: #d4a000;
-  --pill-green: #3fb950;
-  --pill-red:   #f85149;
-  --toast-bg:   #e8eaed;
-  --toast-fg:   #1c1f23;
+[data-theme="cream"] {
+  --bg:         #f6efe1;
+  --fg:         #3a2a14;
+  --fg-muted:   #806a4a;
+  --accent:     #a8651f;
+  --accent-fg:  #f6efe1;
+  --border:     #e3d6bd;
+  --surface:    #efe5d0;
+  --surface-hi: #e7dabd;
+  --stream-sel: #f1dfb4;
+  --warn-bg:    #fbeac1;
+  --warn-border:#c8a85a;
+  --error-bg:   #f3d6cf;
+  --error-border:#bc8a7a;
+  --error-fg:   #6a2210;
+  --search-err: #8a2a14;
+  --pill-amber: #a4720d;
+  --pill-green: #4a7a30;
+  --pill-red:   #8a2a14;
+  --toast-bg:   #3a2a14;
+  --toast-fg:   #f6efe1;
 }
 
-/* Fallback: honour legacy :root custom properties for any env that
-   renders before theme.js runs (e.g. prerender, print). Light values. */
+[data-theme="terminal"] {
+  --bg:         #07080a;
+  --fg:         #c5f5c0;
+  --fg-muted:   #6a8a68;
+  --accent:     #3fdc62;
+  --accent-fg:  #07080a;
+  --border:     #1c2a1d;
+  --surface:    #0c1110;
+  --surface-hi: #131c14;
+  --stream-sel: #133b1a;
+  --warn-bg:    #2a2200;
+  --warn-border:#6e5a00;
+  --error-bg:   #2a0a0a;
+  --error-border:#6e2424;
+  --error-fg:   #ff7a7a;
+  --search-err: #ff7a7a;
+  --pill-amber: #e0b020;
+  --pill-green: #3fdc62;
+  --pill-red:   #ff5a5a;
+  --toast-bg:   #c5f5c0;
+  --toast-fg:   #07080a;
+}
+
+/* Density tokens + base font live on :root. Colour tokens are NOT
+   declared here — they belong to the [data-theme="…"] blocks above
+   so the theme switcher actually wins the cascade. theme.js applies
+   data-theme synchronously on import, so there's no FOWT path that
+   needs a colour fallback at :root level. --muted and --text-dim
+   are aliases derived from each theme's --fg-muted (declared below). */
 :root {
-  --bg:         #fff;
-  --fg:         #111;
-  --fg-muted:   #666;
-  --muted:      #666;     /* keep --muted as alias used widely in markup */
-  --accent:     #0a66c2;
-  --border:     #e3e3e3;
-  --surface:    #fafafa;
-  --surface-hi: #f5f5f5;
-  --stream-sel: #e7f3ff;
-  --warn-bg:    #fff8c5;
-  --warn-border:#d4c95a;
-  --error-bg:   #fde4e4;
-  --error-border:#d49a9a;
-  --error-fg:   #7a1f1f;
-  --search-err: #b00020;
-  --pill-amber: #b07000;
-  --pill-green: #1a7f37;
-  --pill-red:   #b00020;
-  --toast-bg:   #222;
-  --toast-fg:   #fff;
+  --st-rowH:    56px;
+  --st-gap:     14px;
+  --st-pad:     16px;
+  --st-fz:      14.5px;
+  --st-fzSm:    12.5px;
+
+  font-family: "Geist", system-ui, sans-serif;
   font-size: 16px;
 }
 
-/* Keep --muted in sync with --fg-muted inside each theme block so
-   existing rules that reference var(--muted) still resolve correctly. */
-[data-theme="light"] { --muted: var(--fg-muted); }
-[data-theme="dark"]  { --muted: var(--fg-muted); }
+/* Per-theme aliases. --muted and --text-dim depend on the active
+   palette's --fg-muted, so they must be declared inside the same
+   [data-theme] scope (custom-prop var() resolution happens at use,
+   but the alias must be defined once :root no longer carries colours). */
+[data-theme="graphite"] {
+  --muted: var(--fg-muted);
+  --text-dim: color-mix(in oklab, var(--fg-muted) 70%, transparent);
+}
+[data-theme="cream"]    {
+  --muted: var(--fg-muted);
+  --text-dim: color-mix(in oklab, var(--fg-muted) 70%, transparent);
+}
+[data-theme="terminal"] {
+  --muted: var(--fg-muted);
+  --text-dim: color-mix(in oklab, var(--fg-muted) 70%, transparent);
+}
 
 * { box-sizing: border-box; }
 
@@ -86,12 +170,21 @@
    via JS stays visible if its class also styles display. */
 [hidden] { display: none !important; }
 
+/* Global focus-visible default. Mouse clicks don't trigger; Tab/arrow
+   keys do. Individual elements override via :focus-visible when they
+   need a different shape (sliders, modal close, etc.). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 html, body {
   margin: 0;
   padding: 0;
   background: var(--bg);
   color: var(--fg);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Geist", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   line-height: 1.4;
 }
 
@@ -121,31 +214,10 @@ main {
   color: var(--muted);
 }
 
-/* --- app header (speaker name + connection pill + theme toggle) --- */
-
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.5rem 0;
-  margin-bottom: 0.5rem;
-  border-bottom: 1px solid var(--border);
-  min-height: 2rem;
-}
-
-.app-speaker-name {
-  font-weight: 600;
-  font-size: 0.95rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1 1 auto;
-}
-
-/* Connection-state pill. A small coloured dot + label.
-   Colour is driven by [data-state] so later states (reconnecting,
-   polling) only need a CSS rule, not a JS change. */
+/* --- connection-state pill --------------------------------------- */
+/* A small coloured dot + label. Colour is driven by [data-state] so
+   later states (reconnecting, polling) only need a CSS rule, not a
+   JS change. The shell header overrides the chrome lower down. */
 .conn-pill {
   display: inline-flex;
   align-items: center;
@@ -170,99 +242,59 @@ main {
 .conn-pill[data-state="reconnecting"] { color: var(--pill-amber); }
 .conn-pill[data-state="polling"]      { color: var(--fg-muted);   }
 
-/* Theme-toggle button. Icon-only, no visible border at rest. */
-.theme-btn {
-  background: none;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  padding: 0.1rem 0.35rem;
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-  color: var(--muted);
-  flex-shrink: 0;
-}
-
-.theme-btn:hover {
-  border-color: var(--border);
-  color: var(--fg);
-}
-
-nav.routes {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
-  font-size: 0.9rem;
-}
-
-nav.routes a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-nav.routes a:hover {
-  text-decoration: underline;
-}
-
 /* --- browse view ------------------------------------------------- */
 
+/* Segmented 3-tab control. Sunken track + active pill matches
+   admin/design-mockup/app/views-browse-search.jsx BrowseView. */
 .browse-tabs {
   display: flex;
-  gap: 0.5rem;
-  margin: 0.75rem 0;
-  border-bottom: 1px solid var(--border);
+  gap: 4px;
+  padding: 3px;
+  margin: 0.75rem 0 0.5rem;
+  background: var(--surface-hi);
+  border-radius: 8px;
 }
 
 .browse-tab {
-  background: none;
+  flex: 1 1 0;
+  background: transparent;
   border: 0;
-  border-bottom: 2px solid transparent;
-  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  padding: 6px 10px;
   font: inherit;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--muted);
   cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 
 .browse-tab.is-active {
+  background: var(--bg);
   color: var(--fg);
-  border-bottom-color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.browse-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browse-tab { transition: none; }
 }
 
 .browse-body {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 12px;
 }
 
 .browse-section {
-  margin: 0.5rem 0;
-}
-
-.browse-section h2 {
-  font-size: 0.95rem;
-  margin: 0 0 0.5rem;
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.browse-list {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-}
-
-.browse-link {
-  display: block;
-  padding: 0.5rem 0.25rem;
-  color: var(--accent);
-  text-decoration: none;
-  border-bottom: 1px solid var(--border);
-}
-
-.browse-link.is-disabled {
-  color: var(--muted);
-  cursor: not-allowed;
+  gap: 6px;
 }
 
 .browse-loading,
@@ -335,53 +367,59 @@ nav.routes a:hover {
   font-size: 0.85rem;
 }
 
-/* --- now-playing view (0.3 full card) ----------------------------- */
+/* --- now-playing view (compact card + 3-col preset grid) --------- */
 
 .np-view {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 0.875rem;
 }
 
-/* Art + text block — stacks vertically on mobile, side-by-side ≥640 px.
-   position:relative anchors the .vu-dot to the card's top-right corner. */
+/* Single composite card: tinted top region (art + metadata + transport)
+   sitting above a thin volume row separated by a border. The hero tint
+   blends an album-art-derived hue (tint.js sets --np-tint on .np-view)
+   into --surface; falls back to --accent when tint is unset. */
 .np-card {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 1rem;
   background: var(--surface);
-  position: relative;
+  overflow: hidden;
 }
 
-@media (min-width: 640px) {
-  .np-card {
-    flex-direction: row;
-    align-items: flex-start;
-  }
+.np-card__top {
+  display: flex;
+  gap: 14px;
+  padding: 14px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--np-tint, var(--accent)) 7%, var(--surface)),
+    var(--surface));
+  transition: background 600ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .np-card__top { transition: none; }
 }
 
 .np-art-wrap {
   flex: 0 0 auto;
-  align-self: center;
+  align-self: flex-start;
 }
 
 .np-art {
-  width: 5rem;
-  height: 5rem;
+  width: 88px;
+  height: 88px;
   object-fit: cover;
   border-radius: 6px;
   background: var(--border);
   display: block;
 }
 
-@media (min-width: 640px) {
-  .np-art {
-    width: 7rem;
-    height: 7rem;
-  }
+.np-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .np-text {
@@ -389,14 +427,40 @@ nav.routes a:hover {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  justify-content: center;
+  gap: 4px;
+}
+
+.np-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 14px;
+}
+
+.np-eq-slot {
+  display: inline-flex;
+  align-items: center;
+  color: var(--np-tint, var(--accent));
+  font-size: 12px;
+}
+
+.np-meta {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .np-name {
-  font-size: 1.15rem;
+  font-size: 17px;
   margin: 0;
   font-weight: 600;
+  letter-spacing: -0.01em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -404,61 +468,28 @@ nav.routes a:hover {
 
 .np-track {
   margin: 0;
-  font-size: 0.9rem;
-  color: var(--muted);
+  font-size: 14px;
+  color: var(--fg-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.np-meta {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Live VU dot. Positioned at the top-right corner of .np-card.
-   Pulses while data-playing="true"; invisible otherwise. */
-@keyframes vu-pulse {
-  0%   { opacity: 0.9; transform: scale(1); }
-  50%  { opacity: 0.4; transform: scale(0.7); }
-  100% { opacity: 0.9; transform: scale(1); }
-}
-
-.vu-dot {
-  position: absolute;
-  top: 0.6rem;
-  right: 0.6rem;
-  width: 0.55rem;
-  height: 0.55rem;
-  border-radius: 50%;
-  background: var(--pill-green);
-  opacity: 0;
-  transition: opacity 200ms;
-  pointer-events: none;
-}
-
-.vu-dot[data-playing="true"] {
-  opacity: 0.9;
-  animation: vu-pulse 1.2s ease-in-out infinite;
-}
-
-/* Transport row — prev / play-pause / next */
+/* Transport row — prev / play-pause / next, anchored to the bottom of
+   the body column so the row aligns with the foot of the album art. */
 .np-transport {
   display: flex;
-  justify-content: center;
-  gap: 1rem;
+  justify-content: flex-start;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 8px;
 }
 
 .np-btn {
   font: inherit;
-  font-size: 1.4rem;
   line-height: 1;
-  width: 3rem;
-  height: 3rem;
+  width: 30px;
+  height: 30px;
   border: 1px solid var(--border);
   border-radius: 50%;
   background: var(--surface);
@@ -467,7 +498,9 @@ nav.routes a:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 120ms, background 120ms;
+  padding: 0;
+  flex-shrink: 0;
+  transition: border-color 120ms, background 120ms, color 120ms;
 }
 
 .np-btn:hover {
@@ -480,82 +513,139 @@ nav.routes a:hover {
 }
 
 .np-btn--play {
-  font-size: 1.2rem;
-  width: 3.5rem;
-  height: 3.5rem;
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-fg, #ffffff);
 }
 
 .np-btn--play:hover {
   background: var(--accent);
-  color: var(--bg);
+  border-color: var(--accent);
+  color: var(--accent-fg, #ffffff);
+  filter: brightness(1.05);
 }
 
-/* Source picker pills */
+@media (prefers-reduced-motion: reduce) {
+  .np-btn { transition: none; }
+}
+
+/* Section header — used by both the source card and the presets block.
+   Title on the left, optional meta/hint on the right (small + dim). */
+.np-section-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+
+.np-section-h__meta {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-dim, var(--fg-muted));
+}
+
+.np-section-h__hint {
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-dim, var(--fg-muted));
+}
+
+/* Source switcher: header + 3-up button grid, all inside a card. */
+.np-source-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Source picker — 3-up grid of buttons. Only READY sources render. */
 .np-sources {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 0.75rem 0;
+  gap: 6px;
 }
 
 .np-source-pill {
   font: inherit;
-  font-size: 0.85rem;
-  padding: 0.3rem 0.75rem;
+  font-size: 12.5px;
+  padding: 6px 10px;
+  flex: 1 1 calc(33% - 4px);
+  min-width: 0;
+  text-align: center;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
+  border-radius: 6px;
+  background: var(--bg);
   color: var(--fg);
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: background 120ms, color 120ms, border-color 120ms;
 }
 
-.np-source-pill:not(:disabled):hover {
+.np-source-pill:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
 
 .np-source-pill[data-active="true"] {
   background: var(--accent);
-  color: var(--bg);
+  color: var(--accent-fg, #ffffff);
   border-color: var(--accent);
 }
 
-.np-source-pill[data-status="UNAVAILABLE"],
-.np-source-pill:disabled {
-  color: var(--muted);
-  background: var(--surface);
-  border-color: var(--border);
-  cursor: not-allowed;
-  opacity: 0.5;
+@media (prefers-reduced-motion: reduce) {
+  .np-source-pill { transition: none; }
 }
 
-/* Preset card row (slice 6) */
+/* Presets block — header above a 3-column grid of art cards. Not a card
+   container itself: the cards carry their own gradient. */
 .np-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Preset grid — 3-column art-style cards. Each card renders the slot
+   number top-left, an equalizer top-right when currently playing, and
+   the station name bottom-left over a deterministic per-station gradient
+   (--np-preset-hue is set inline by JS via hashHue). Empty slots still
+   get a hue (keyed on the slot id) but are desaturated and label-less. */
+.np-presets-grid {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 0.5rem;
-  margin: 0.5rem 0;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
 }
 
 .np-preset {
   font: inherit;
-  font-size: 0.78rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.2rem;
-  padding: 0.4rem 0.25rem 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--surface);
-  color: var(--fg);
+  text-align: left;
+  display: block;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #ffffff;
   cursor: pointer;
   position: relative;
-  min-height: 4.5rem;
-  transition: border-color 120ms, background 120ms;
+  min-height: 92px;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg,
+      hsl(var(--np-preset-hue, 220), 60%, 55%),
+      color-mix(in srgb, hsl(var(--np-preset-hue, 220), 60%, 30%) 60%, #000));
+  transition: border-color 120ms, transform 120ms;
 }
 
 .np-preset:not(:disabled):hover {
@@ -563,42 +653,64 @@ nav.routes a:hover {
 }
 
 .np-preset:not(:disabled):active {
-  background: var(--accent);
-  color: var(--bg);
+  transform: scale(0.985);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .np-preset { transition: none; }
+  .np-preset:not(:disabled):active { transform: none; }
+}
+
+.np-preset[data-active="true"] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .np-preset--empty,
 .np-preset:disabled {
-  color: var(--muted);
-  cursor: not-allowed;
-  opacity: 0.6;
+  cursor: default;
+  filter: saturate(0.25) brightness(0.85);
+  opacity: 0.55;
 }
 
 .np-preset-num {
   position: absolute;
-  top: 0.2rem;
-  left: 0.3rem;
-  font-size: 0.68rem;
+  top: 6px;
+  left: 8px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--muted);
+  color: #ffffff;
+  opacity: 0.85;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
-.np-preset-art {
-  width: 1.75rem;
-  height: 1.75rem;
-  object-fit: cover;
-  border-radius: 3px;
-  margin-top: 0.6rem;
+.np-preset-eq {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: none;
+  color: #ffffff;
+  font-size: 12px;
+}
+
+.np-preset[data-active="true"] .np-preset-eq {
+  display: inline-flex;
 }
 
 .np-preset-name {
-  display: block;
-  width: 100%;
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  right: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  text-align: center;
-  padding: 0 0.1rem;
 }
 
 /* STANDBY / asleep state */
@@ -620,55 +732,30 @@ nav.routes a:hover {
 .np-asleep-hint {
   font-size: 0.9rem !important;
   font-weight: normal !important;
-  color: var(--muted);
+  color: var(--fg-muted);
 }
 
-/* --- volume row (slice 3) ---------------------------------------- */
-
+/* --- volume row -------------------------------------------------- */
+/* Lives inside .np-card, separated from the tinted top by a single
+   hairline border. Mute glyph (28×28 ghost circle) → slider (flex) →
+   value display (Geist Mono, right-aligned). */
 .np-volume {
+  border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--surface);
 }
 
-.np-vol-icon {
-  font-size: 1.1rem;
-  flex: 0 0 auto;
-  color: var(--muted);
+.np-slider-slot {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
 }
 
 .np-slider {
   flex: 1 1 auto;
-  -webkit-appearance: none;
-  appearance: none;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--border);
-  outline: none;
-  cursor: pointer;
-}
-
-.np-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--accent);
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-}
-
-.np-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--accent);
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
 .np-slider:focus-visible {
@@ -676,14 +763,22 @@ nav.routes a:hover {
   outline-offset: 2px;
 }
 
+.np-vol-value {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--fg-muted);
+  min-width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
 .np-mute {
   flex: 0 0 auto;
-  background: none;
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 50%;
-  width: 2rem;
-  height: 2rem;
-  font-size: 1rem;
+  width: 28px;
+  height: 28px;
   line-height: 1;
   cursor: pointer;
   color: var(--fg);
@@ -691,6 +786,7 @@ nav.routes a:hover {
   align-items: center;
   justify-content: center;
   padding: 0;
+  transition: border-color 120ms, color 120ms;
 }
 
 .np-mute:hover {
@@ -701,7 +797,11 @@ nav.routes a:hover {
 .np-mute[aria-pressed="true"] {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--bg);
+  color: var(--accent-fg, #ffffff);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .np-mute { transition: none; }
 }
 
 .preset-row {
@@ -763,46 +863,84 @@ nav.routes a:hover {
   background: var(--bg);
   padding: 0.5rem 0;
   margin: 0 0 0.75rem;
-  border-bottom: 1px solid var(--border);
 }
 
-.search-input {
-  width: 100%;
-  font: inherit;
-  padding: 0.6rem 0.75rem;
+/* Pill-shaped input with leading search glyph + trailing clear button.
+   The wrapper is the visible border, the <input> is borderless inside. */
+.search-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.search-input-wrap:focus-within {
+  border-color: var(--accent);
   background: var(--bg);
   color: var(--fg);
 }
 
-.search-input:focus {
+@media (prefers-reduced-motion: reduce) {
+  .search-input-wrap { transition: none; }
+}
+
+.search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 13.5px;
+  border: 0;
   outline: none;
-  border-color: var(--accent);
+  background: transparent;
+  color: var(--fg);
+  padding: 0;
+}
+
+.search-input::placeholder { color: var(--muted); }
+
+.search-input-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.search-clear:hover { color: var(--fg); background: var(--surface-hi); }
+
+.search-pending {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.6;
+  flex-shrink: 0;
 }
 
 .search-results,
 .search-empty {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-}
-
-.search-empty-section {
-  margin: 0.5rem 0 1rem;
-}
-
-.search-empty-section h2 {
-  font-size: 0.95rem;
-  margin: 0 0 0.5rem;
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.search-empty-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  gap: 12px;
 }
 
 .search-empty-note,
@@ -963,38 +1101,6 @@ nav.routes a:hover {
 .station-stream.is-selected {
   background: var(--stream-sel);
   outline: 1px solid var(--accent);
-}
-
-.station-stream-audition {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 50%;
-  width: 1.75rem;
-  height: 1.75rem;
-  font-size: 0.85rem;
-  line-height: 1;
-  cursor: pointer;
-  flex: 0 0 auto;
-}
-
-.station-stream-audition:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.station-stream.is-playing .station-stream-audition {
-  background: var(--accent);
-  color: var(--bg);
-  border-color: var(--accent);
-}
-.station-stream.is-playing .station-stream-audition::before {
-  content: '\23F8'; /* ⏸ U+23F8 PAUSE SYMBOL */
-}
-.station-stream.is-playing .station-stream-audition {
-  font-size: 0;          /* hide the original ▶ glyph */
-}
-.station-stream.is-playing .station-stream-audition::before {
-  font-size: 0.85rem;
 }
 
 .station-stream-meta {
@@ -1182,3 +1288,1563 @@ nav.routes a:hover {
 .preset-modal-pane {
   /* Each pane is a full-width host for the search or browse sub-view. */
 }
+
+/* --- settings view (#/settings) ---------------------------------- */
+
+.settings-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 640px;
+}
+
+.settings-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+/* Card-with-chevron collapsibles. The header is a real <button>, so
+   focus-visible + Enter/Space + aria-expanded all work for free; the
+   body is hidden via [hidden] (also strips it from the a11y tree). */
+.settings-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settings-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated, var(--bg));
+  overflow: hidden;
+}
+
+.settings-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.settings-card__header:hover {
+  background: var(--surface, var(--bg));
+}
+
+.settings-card__header:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: -2px;
+}
+
+.settings-card__icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.settings-card__label {
+  flex: 1;
+}
+
+.settings-card__chevron {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.settings-card[data-open="true"] > .settings-card__header > .settings-card__chevron {
+  transform: rotate(90deg);
+}
+
+.settings-card__body {
+  border-top: 1px solid var(--border);
+}
+
+/* Clean row pattern for sub-views. Border-bottom between rows but not
+   on the last row so the body's bottom edge doesn't double-line with
+   the card border. */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.settings-row + .settings-row,
+.settings-actions + .settings-row,
+.settings-row + .settings-actions {
+  border-top: 1px solid var(--border);
+}
+
+.settings-row--wrap {
+  align-items: flex-start;
+}
+
+.settings-row__label {
+  font-size: 0.85rem;
+  color: var(--fg);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.settings-row__control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  text-align: right;
+  min-width: 0;
+}
+
+.settings-row--wrap .settings-row__control {
+  text-align: left;
+  flex-wrap: wrap;
+  word-break: break-word;
+}
+
+.settings-row__value {
+  min-width: 28px;
+  text-align: right;
+  font-size: 0.8rem;
+}
+
+/* Shared input chrome for the rare row that takes user text input. */
+.settings-input {
+  font: inherit;
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface, var(--bg));
+  color: var(--fg);
+  text-align: right;
+  width: 140px;
+  box-sizing: border-box;
+}
+
+.settings-input:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
+}
+
+input.settings-input,
+select.settings-input {
+  /* iOS resets */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+select.settings-input {
+  padding-right: 22px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+                    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 13px) 12px, calc(100% - 8px) 12px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  text-align: left;
+}
+
+/* Action row (a horizontal cluster of buttons at the foot of a card). */
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.settings-btn {
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface, var(--bg));
+  color: var(--fg);
+  cursor: pointer;
+  line-height: 1.3;
+}
+
+.settings-btn:hover {
+  background: var(--bg-elevated, var(--bg));
+}
+
+.settings-btn:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
+}
+
+.settings-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Two-button toggle (e.g. Stereo / Mono). The active opt picks up the
+   accent so the choice is unambiguous at a glance. */
+.settings-toggle {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.settings-toggle__opt[data-active="true"] {
+  background: var(--fg);
+  color: var(--bg);
+  border-color: var(--fg);
+}
+
+/* Slider rows lay the range + numeric output side by side. The slider
+   itself stretches; the output stays a fixed mono width. */
+.settings-row--slider .settings-row__control {
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.settings-row--slider .settings-slider {
+  flex: 1;
+  max-width: 220px;
+  min-width: 100px;
+}
+
+.settings-muted {
+  color: var(--muted);
+}
+
+/* Inline mono fragments inside a row. */
+.settings-row__control.mono,
+.settings-row__control .mono {
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+}
+
+.settings-system__refresh-spinner {
+  display: inline-block;
+  width: 0.85rem;
+  height: 0.85rem;
+  border: 2px solid var(--muted, #888);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.settings-system__refresh-result {
+  font-size: 0.9rem;
+}
+
+.settings-system__refresh-rows {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 0.75rem;
+  margin: 0.4rem 0 0;
+}
+
+.settings-system__refresh-rows dt {
+  color: var(--muted, #888);
+}
+
+.settings-system__refresh-rows dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.settings-system__refresh-error {
+  color: var(--danger, #c33);
+}
+
+/* --- mobile-remote: container-query layout ----------------------- */
+/* Container queries (not @media) so the admin shapes itself to its
+   own frame width — important when embedded in a wider dashboard
+   iframe where the viewport would otherwise lie about available
+   space. Older browsers without container-query support fall through
+   the @supports guard and keep the unconditional desktop layout. */
+
+@supports (container-type: inline-size) {
+  .np-view,
+  [data-view="browse"],
+  [data-view="search"],
+  .station-detail,
+  .preset-modal {
+    container-type: inline-size;
+  }
+
+  @container (max-inline-size: 480px) {
+    /* Compact card stays horizontal on narrow viewports; bump tap
+       targets up so transport / volume / mute reach ≥44px while the
+       per-card visual rhythm from the mockup is preserved. */
+    .np-art {
+      width: 80px;
+      height: 80px;
+    }
+
+    /* Transport buttons: ≥44px tap target. */
+    .np-btn {
+      width: 44px;
+      height: 44px;
+    }
+
+    /* Volume row: bump the mute and slider thumb for tap targets. */
+    .np-mute {
+      width: 44px;
+      height: 44px;
+    }
+
+    .np-slider {
+      height: 8px;
+    }
+
+    .np-slider::-webkit-slider-thumb {
+      width: 28px;
+      height: 28px;
+    }
+
+    .np-slider::-moz-range-thumb {
+      width: 28px;
+      height: 28px;
+    }
+
+    /* Source pills: roomier hit area. */
+    .np-source-pill {
+      min-height: 44px;
+      padding: 8px 12px;
+    }
+
+    /* Preset assign / row layouts also shift to 3-up on narrow views. */
+    .preset-row,
+    .station-assign-row {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .station-test-play {
+      min-height: 3.5rem;
+    }
+
+    .np-preset {
+      min-height: 92px;
+    }
+
+    .preset-slot {
+      min-height: 5.5rem;
+    }
+
+    /* Station detail: stack header art above text. */
+    .station-header {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .station-assign-btn,
+    .station-preset-cell {
+      min-height: 4rem;
+    }
+  }
+}
+
+/* --- confirm dialog ----------------------------------------------- */
+
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.confirm-dialog {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  max-width: 360px;
+  width: 100%;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.confirm-message {
+  margin: 0 0 0.85rem;
+  font-size: 0.95rem;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.confirm-btn {
+  font: inherit;
+  padding: 0.4rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.confirm-btn--cancel:hover {
+  background: var(--bg-elevated, var(--bg));
+}
+
+.confirm-btn--ok {
+  border-color: var(--accent, #4a90e2);
+}
+
+.confirm-btn--danger {
+  background: #c0392b;
+  border-color: #c0392b;
+  color: #fff;
+}
+
+.confirm-btn--danger:hover {
+  background: #a93226;
+  border-color: #a93226;
+}
+
+/* --- prefers-reduced-motion -------------------------------------- */
+/* Strip non-essential motion. Transitions become instant; the VU dot
+   stops pulsing; toasts fade in place rather than sliding. */
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    transform: none;
+    transition: opacity 200ms ease;
+  }
+  .toast.is-shown { transform: none; }
+  .np-card,
+  .np-btn,
+  .np-source-pill,
+  .np-preset {
+    transition: none;
+  }
+  .settings-card__chevron { transition: none; }
+  .settings-system__refresh-spinner { animation: none; }
+}
+
+/* --- equalizer (animated icon) ----------------------------------- */
+.eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 1em; }
+.eq i { display: block; width: 3px; background: currentColor; height: 30%; border-radius: 1px; }
+[data-state="playing"] .eq i { animation: eq-bounce 0.9s ease-in-out infinite; }
+[data-state="playing"] .eq i:nth-child(2) { animation-delay: 0.15s; }
+[data-state="playing"] .eq i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes eq-bounce { 0%, 100% { height: 30%; } 50% { height: 100%; } }
+@media (prefers-reduced-motion: reduce) {
+  [data-state="playing"] .eq i { animation: none; height: 60%; }
+}
+
+/* --- pill (generic status badge) --------------------------------- */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+.pill__dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+  opacity: 0;
+}
+.pill__dot--on { opacity: 1; }
+.pill--live   { color: var(--pill-green); border-color: var(--pill-green); }
+.pill--ok     { color: var(--fg-muted); }
+.pill--warn   { color: var(--pill-amber); border-color: var(--pill-amber); }
+.pill--danger { color: var(--pill-red); border-color: var(--pill-red); }
+.pill--live .pill__dot--on { animation: pill-pulse 1.4s ease-in-out infinite; }
+@keyframes pill-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .pill--live .pill__dot--on { animation: none; }
+}
+
+/* conn-pill keeps its existing chrome (no border, just colour + ::before
+   dot); the inner pill__dot/pill__text from pill() are passive. */
+.conn-pill { padding: 0; border: none; background: transparent; }
+.conn-pill .pill__dot { display: none; }
+
+/* --- switch (binary toggle) -------------------------------------- */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: inherit;
+}
+.switch__track {
+  display: inline-block;
+  position: relative;
+  width: 2.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background 150ms ease;
+}
+.switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: calc(1.25rem - 4px);
+  height: calc(1.25rem - 4px);
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 150ms ease;
+}
+.switch[aria-checked="true"] .switch__track { background: var(--accent); }
+.switch[aria-checked="true"] .switch__thumb { transform: translateX(1rem); }
+.switch:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) {
+  .switch__track, .switch__thumb { transition: none; }
+}
+
+/* --- slider (range input) ---------------------------------------- */
+.slider {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+/* --- equalizer wrapper ------------------------------------------- */
+.equalizer { display: inline-flex; align-items: center; }
+
+/* --- station-art (uniform art slot) ------------------------------ */
+.station-art {
+  display: inline-block;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.station-art__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* --- shell -------------------------------------------------------- */
+
+.shell {
+  container-type: inline-size;
+  container-name: shell;
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  grid-template-areas:
+    "header"
+    "body"
+    "mini"
+    "tabs";
+  /* height (not min-height): pin the grid to the viewport so the 1fr
+     body row absorbs overflow inside .shell-body's own scroll container.
+     min-height let the body grow past the viewport, pushing mini + tabs
+     below the fold on mobile. */
+  height: 100vh;
+  height: 100dvh;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.shell-header { grid-area: header; }
+.shell-body   { grid-area: body; min-height: 0; }
+.shell-mini   { grid-area: mini; }
+.shell-tabs   { grid-area: tabs; }
+/* The rail is desktop-only — collapse it to zero rows in mobile mode
+   instead of hiding via display:none, which would interfere with the
+   container-query-driven swap below. */
+.shell-rail   { display: none; }
+
+.shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+  min-height: 2.5rem;
+  background: var(--bg);
+}
+
+.shell-header__name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+.shell-header__pill {
+  flex-shrink: 0;
+}
+
+.shell-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0.75rem 1rem 1rem;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.shell-mini {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.75rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  animation: shell-mini-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-mini { animation: none; }
+}
+
+@keyframes shell-mini-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
+.shell-mini__body {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1 1 auto;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.shell-mini__art {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface-hi);
+}
+
+.shell-mini__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.shell-mini__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.shell-mini__title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-mini__subtitle {
+  font-size: 0.8rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-mini__play {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--fg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.shell-mini__play:hover {
+  background: var(--surface-hi);
+}
+
+.shell-tabs {
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.shell-tab {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 0.45rem 0.25rem 0.55rem;
+  text-decoration: none;
+  color: var(--muted);
+  font-size: 0.7rem;
+  min-height: 3.25rem;
+}
+
+.shell-tab__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shell-tab.is-active {
+  color: var(--accent);
+}
+
+.shell-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 3px;
+}
+
+/* --- shell side rail (desktop) ----------------------------------- */
+/* Mobile keeps the four-zone stack (header/body/mini/tabs); on desktop
+   the four mobile zones collapse and the rail takes their place to the
+   left of the body. The rail card / nav / foot mirror the mockup
+   composition (admin/design-mockup/app/shell.css). */
+.shell-rail__card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem;
+  margin-bottom: 0.75rem;
+  background: var(--surface-hi);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.shell-rail__name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-rail__sub {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--text-dim, var(--fg-muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shell-rail__pill {
+  align-self: center;
+}
+
+.shell-rail__status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.15rem;
+}
+
+.shell-rail__power,
+.shell-header__power {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--fg-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.shell-rail__power:hover,
+.shell-header__power:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.shell-rail__power[data-standby="true"],
+.shell-header__power[data-standby="true"] {
+  color: var(--pill-amber);
+  border-color: var(--pill-amber);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-rail__power,
+  .shell-header__power { transition: none; }
+}
+
+.shell-rail__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.shell-rail__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--fg-muted);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 120ms, color 120ms;
+}
+
+.shell-rail__item:hover {
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.shell-rail__item.is-active {
+  background: var(--accent);
+  color: var(--accent-fg, #ffffff);
+}
+
+.shell-rail__item.is-active:hover {
+  background: var(--accent);
+  color: var(--accent-fg, #ffffff);
+}
+
+.shell-rail__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.shell-rail__foot {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--text-dim, var(--fg-muted));
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-rail__item { transition: none; }
+}
+
+/* --- desktop (≥960px container) — side rail layout --------------- */
+
+/* Desktop layout swap. Uses @media, not @container, because .shell is
+   itself the container and a container query cannot match the element
+   that defines the container. */
+@media (min-width: 960px) {
+  .shell {
+    grid-template-columns: 240px 1fr;
+    grid-template-rows: 1fr;
+    grid-template-areas: "rail body";
+  }
+  .shell-rail {
+    grid-area: rail;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    padding: 14px 12px;
+    overflow-y: auto;
+  }
+  .shell-body {
+    grid-area: body;
+    max-width: 880px;
+    overflow-y: auto;
+  }
+  .shell-header,
+  .shell-tabs,
+  .shell-mini {
+    display: none !important;
+  }
+}
+
+/* --- station detail v2 -------------------------------------------- */
+/* Three-up preset grid replaces the inline 6-button assign row; each
+   cell shows slot number, current occupant, and a small genre tag.
+   Long names truncate. The full-width gradient Test play CTA sits
+   between the stream chooser and the assign grid. */
+
+.station-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, auto);
+  gap: 0.5rem;
+}
+
+.station-preset-cell {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  gap: 0.25rem 0.5rem;
+  align-items: center;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  min-height: 4rem;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.station-preset-cell__slot {
+  grid-row: 1 / span 2;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--muted);
+  width: 1.25rem;
+  text-align: center;
+}
+
+.station-preset-cell__occupant {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 0.95rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.station-preset-cell__tag {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  min-height: 1.1rem;
+}
+
+.station-preset-cell:not(:disabled):hover {
+  border-color: var(--accent);
+}
+
+.station-preset-cell--empty .station-preset-cell__occupant {
+  color: var(--muted);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.station-preset-cell.is-current {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.station-preset-cell:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.station-preset-cell.is-busy {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+/* Full-width gradient Test play CTA. Background gradient is set per
+   station via inline style (stationGradient(name) → linear-gradient).
+   White text + soft shadow read on every theme; subtitle is a softer
+   line beneath the main label. */
+.station-test-play {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  padding: 0.85rem 1rem;
+  border: 0;
+  border-radius: 10px;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+
+.station-test-play__label {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.station-test-play__sub {
+  font-size: 0.8rem;
+  font-weight: 400;
+  opacity: 0.85;
+}
+
+.station-test-play:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+}
+
+.station-test-play:not(:disabled):active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.station-test-play:disabled,
+.station-test-play.is-busy {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .station-preset-cell,
+  .station-test-play {
+    transition: none;
+  }
+  .station-test-play:not(:disabled):hover,
+  .station-test-play:not(:disabled):active {
+    transform: none;
+  }
+}
+
+/* --- shared section header (browse / search) --------------------- */
+/* Mirrors .np-section-h but tuned for browse + search panels: small
+   uppercase title + right-aligned mono meta. Optional inline glyph
+   sits inside the title span. */
+
+.section-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.section-h__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.section-h__meta {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--text-dim, var(--fg-muted));
+  white-space: nowrap;
+}
+
+.section-h--inline {
+  margin: 0 0 0.5rem;
+}
+
+/* --- station row (browse drill + search results, shared) -------- */
+/* One bordered card holds a column of rows separated by a thin border;
+   .is-last drops the divider on the bottom row. */
+
+.station-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  text-decoration: none;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.station-row.is-last { border-bottom: 0; }
+
+.station-row:hover,
+.station-row:focus-visible {
+  background: var(--surface-hi);
+}
+
+.station-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .station-row { transition: none; }
+}
+
+.station-row .station-art {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.station-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.station-row__name {
+  font-weight: 500;
+  font-size: 13.5px;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.station-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.station-row__loc {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.station-row__sep {
+  color: var(--text-dim, var(--fg-muted));
+  flex-shrink: 0;
+}
+
+.station-row__fmt {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  flex-shrink: 0;
+}
+
+.station-row__chev {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-dim, var(--fg-muted));
+  flex-shrink: 0;
+}
+
+/* --- browse card + browse row (non-audio rows) ------------------ */
+
+.browse-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.browse-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: inherit;
+  text-decoration: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.browse-row.is-last { border-bottom: 0; }
+
+.browse-row:hover,
+.browse-row:focus-visible {
+  background: var(--surface-hi);
+}
+
+.browse-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.browse-row.is-disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browse-row { transition: none; }
+}
+
+.browse-row__id {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--text-dim, var(--fg-muted));
+  width: 56px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.browse-row__label {
+  flex: 1 1 auto;
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.browse-row__count {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.browse-row__chev {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-dim, var(--fg-muted));
+  flex-shrink: 0;
+}
+
+/* Drill-mode breadcrumb header bits. */
+.browse-crumb {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.browse-crumb__id {
+  color: var(--text-dim, var(--fg-muted));
+}
+
+.browse-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.browse-back:hover { text-decoration: underline; }
+
+/* Search empty state — single stacked column. The earlier two-column
+   grid was the polish that didn't match the mockup. */
+.search-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.search-empty-section {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.search-empty-list {
+  gap: 0;
+}
+
+/* --- Settings v2 additions ---------------------------------------- */
+
+/* Appearance — 4-way segmented control. The track is one box; each opt
+   sits flush so the active opt visually slides under the cursor. */
+.settings-appearance {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+
+.settings-segment {
+  display: flex;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px;
+  background: var(--bg-elevated, var(--bg));
+}
+
+.settings-segment__opt {
+  flex: 1 1 0;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.settings-segment__opt[data-active="true"] {
+  background: var(--surface, var(--bg));
+  color: var(--fg);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.settings-segment__opt:hover {
+  color: var(--fg);
+}
+
+.settings-segment__opt:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
+}
+
+.settings-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+/* Multi-room stub — single line of explanatory copy, padded to match
+   the .settings-row scale so the body height doesn't collapse. */
+.settings-multiroom {
+  padding: 14px;
+}
+.settings-multiroom__stub {
+  margin: 0;
+  color: var(--muted);
+  font-style: italic;
+  font-size: 0.85rem;
+}
+
+/* Bluetooth — pairing hint sits between the action row and the rows;
+   a tight padded strip keeps it off the row separators. */
+.bt-pairing-hint {
+  margin: 0;
+  padding: 8px 14px;
+  color: var(--accent, currentColor);
+  font-size: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Network — 4-bar signal indicator. data-fill on the wrapper drives
+   the per-bar visibility via [data-on="true"]. Heights ramp so the
+   widget reads as "more bars = stronger signal" at a glance. */
+.settings-network__signal {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.signal-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.signal-bars__bar {
+  display: inline-block;
+  width: 3px;
+  background: var(--muted);
+  opacity: 0.35;
+  border-radius: 1px;
+}
+
+.signal-bars__bar:nth-child(1) { height: 30%; }
+.signal-bars__bar:nth-child(2) { height: 50%; }
+.signal-bars__bar:nth-child(3) { height: 75%; }
+.signal-bars__bar:nth-child(4) { height: 100%; }
+
+.signal-bars__bar[data-on="true"] {
+  background: var(--accent, currentColor);
+  opacity: 1;
+}
+
+/* System — recents list packed inside a single row's control cell. */
+.settings-system__recents-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.8rem;
+}
+
+.settings-system__resolver {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* WS activity log — fixed-height mono panel inside the System section.
+   Lives at the bottom of the body so the row separators above stay
+   crisp; the panel adds its own border-top against the last row. */
+.ws-log {
+  margin: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated, var(--bg));
+}
+
+.ws-log__summary {
+  cursor: pointer;
+  padding: 10px 14px;
+  font-weight: 500;
+  font-size: 0.82rem;
+  list-style: none;
+  user-select: none;
+}
+
+.ws-log__summary::-webkit-details-marker {
+  display: none;
+}
+
+.ws-log__summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 1rem;
+  margin-right: 0.25rem;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.ws-log[open] > .ws-log__summary::before {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-card__chevron,
+  .settings-segment__opt,
+  .ws-log__summary::before {
+    transition: none;
+  }
+}
+
+.ws-log__list {
+  margin: 0;
+  padding: 0.4rem 0.65rem;
+  list-style: none;
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  max-height: 240px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.ws-log__item {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.1rem 0;
+}
+
+.ws-log__ts {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.ws-log__tag {
+  color: var(--fg);
+  word-break: break-all;
+}
+
+.ws-log__empty {
+  margin: 0;
+  padding: 0.4rem 0.65rem;
+  color: var(--muted);
+  font-style: italic;
+  border-top: 1px solid var(--border);
+}
+

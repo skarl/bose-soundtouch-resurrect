@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<updates deviceID="3415139ABD77">
+  <zoneUpdated>
+    <zone master="3415139ABD77">
+      <member ipaddress="192.168.178.40" role="LEFT">689E19D55555</member>
+    </zone>
+  </zoneUpdated>
+</updates>
