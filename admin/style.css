@@ -2232,7 +2232,10 @@ main {
 
 /* --- desktop (≥960px container) — side rail layout --------------- */
 
-@container shell (min-width: 960px) {
+/* Desktop layout swap. Uses @media, not @container, because .shell is
+   itself the container and a container query cannot match the element
+   that defines the container. */
+@media (min-width: 960px) {
   .shell {
     grid-template-columns: 240px 1fr;
     grid-template-rows: 1fr;
