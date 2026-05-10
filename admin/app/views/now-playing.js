@@ -284,19 +284,8 @@ export default defineView({
         return;
       }
       if (!slot || btn.disabled) return;
-      // Bo's firmware silently ignores `/key PRESET_N` press+release and
-      // returns 400 on `/selectPreset`. The reliable recall path is
-      // `/select` with the preset's stored ContentItem.
-      const idx = Number(slot) - 1;
-      const p = store.state.speaker.presets && store.state.speaker.presets[idx];
-      if (!p || p.empty) return;
       try {
-        await actions.selectPreset(Number(slot), {
-          source:        p.source,
-          sourceAccount: p.sourceAccount || '',
-          type:          p.type || '',
-          location:      p.location || '',
-        });
+        await actions.playPreset(Number(slot));
       } catch (_err) {
         // Non-fatal — the next nowPlayingUpdated / nowSelectionUpdated
         // will confirm or deny the switch.
@@ -431,13 +420,16 @@ export default defineView({
       const btn = evt.currentTarget;
       const source = btn.dataset.source;
       const sourceAccount = btn.dataset.account || '';
-      const isLocal = btn.dataset.local === 'true';
+      // Look up the live source object from state — keeps the wire
+      // shape (isLocal, etc.) inside actions.selectSource. Falls back
+      // to a synthesised object reconstructed from dataset if the
+      // sources list has gone stale between render and click.
+      const sources = store.state.speaker.sources || [];
+      const src = sources.find((s) =>
+        s && s.source === source && (s.sourceAccount || '') === sourceAccount,
+      ) || { source, sourceAccount, isLocal: btn.dataset.local === 'true' };
       try {
-        if (isLocal) {
-          await actions.selectLocalSource(source);
-        } else {
-          await actions.selectSource({ source, sourceAccount });
-        }
+        await actions.selectSource(src);
       } catch (_err) {
         // Switch errors are non-fatal — the source pill state will
         // self-correct when the next nowPlaying update arrives.

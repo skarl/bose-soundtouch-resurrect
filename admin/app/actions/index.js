@@ -14,6 +14,7 @@ import {
   postAddZoneSlave,
   postRemoveZoneSlave,
 } from '../api.js';
+import { store } from '../state.js';
 import { recordOutgoing, wasRecent } from './ledger.js';
 import { controllerFor, volumeCtl, bassCtl, balanceCtl } from '../sliders.js';
 
@@ -40,19 +41,42 @@ export async function pressKey(name) {
   await speakerKey(name, 'release');
 }
 
-export async function selectSource(contentItem) {
+// Switch to a source from `state.speaker.sources`. Branches on the
+// source's `isLocal` flag — local sources (AUX, BLUETOOTH) take a name
+// via `/selectLocalSource`; streaming sources take a ContentItem via
+// `/select`. Accepts the whole source object so callers don't need to
+// know the wire shape.
+export async function selectSource(src) {
+  if (!src || !src.source) return;
   recordOutgoing('source');
-  await postSelect(contentItem);
+  if (src.isLocal) {
+    await postSelectLocalSource(src.source);
+  } else {
+    await postSelect({
+      source: src.source,
+      sourceAccount: src.sourceAccount || '',
+    });
+  }
 }
 
-export async function selectLocalSource(name) {
-  recordOutgoing('source');
-  await postSelectLocalSource(name);
-}
-
-export async function selectPreset(slot, contentItem) {
+// Recall a stored preset by its 1-based user-facing slot number (1..6).
+// Reads the parsed preset from state and POSTs `/select` with the
+// preset's stored ContentItem — Bo's firmware silently ignores
+// `/key PRESET_N` and 400s on `/selectPreset`. Returns silently when
+// the slot is empty or missing so callers don't need to pre-check.
+export async function playPreset(slot) {
+  const idx = Number(slot) - 1;
+  if (!Number.isInteger(idx) || idx < 0) return;
+  const presets = store.state.speaker.presets;
+  const p = presets && presets[idx];
+  if (!p || p.empty) return;
   recordOutgoing('preset', slot);
-  await postSelect(contentItem);
+  await postSelect({
+    source:        p.source,
+    sourceAccount: p.sourceAccount || '',
+    type:          p.type || '',
+    location:      p.location || '',
+  });
 }
 
 export async function storePreset(slot, payload) {

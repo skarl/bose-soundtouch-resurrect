@@ -428,6 +428,7 @@ function ev(type, init = {}) {
 // --- imports under test ---------------------------------------------
 
 const { store } = await import('../app/state.js');
+const actions = await import('../app/actions/index.js');
 const nowPlayingView = (await import('../app/views/now-playing.js')).default;
 
 // Reset relevant store keys before each test.
@@ -649,6 +650,30 @@ test('preset cards: every cell carries a deterministic gradient hue', () => {
   } finally {
     destroy();
   }
+});
+
+test('actions.playPreset: returns silently when the slot is empty', async () => {
+  setSpeakerState({
+    presets: [
+      { slot: 1, empty: true },
+      { slot: 2, empty: true },
+      { slot: 3, empty: true },
+      { slot: 4, empty: true },
+      { slot: 5, empty: true },
+      { slot: 6, empty: true },
+    ],
+  });
+
+  // fetch is stubbed to never resolve — if playPreset reaches the wire,
+  // the await below will hang indefinitely. Resolving here proves it
+  // short-circuited on the empty slot.
+  const result = await actions.playPreset(1);
+  assert.equal(result, undefined, 'empty slot resolves to undefined');
+
+  // Out-of-range slot (no preset entry) likewise returns silently.
+  setSpeakerState({ presets: null });
+  const noPresets = await actions.playPreset(1);
+  assert.equal(noPresets, undefined, 'missing presets list resolves to undefined');
 });
 
 test('volume slider: WS-driven re-render mutates in place (focus survives)', () => {
