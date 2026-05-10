@@ -261,6 +261,71 @@ export function parseInfoXml(xmlText) {
   };
 }
 
+// --- volume ---------------------------------------------------------
+
+// Parse the speaker's <volume> XML into:
+//   { targetVolume, actualVolume, muteEnabled }
+//
+// Reference shape:
+//   <volume>
+//     <targetvolume>32</targetvolume>
+//     <actualvolume>32</actualvolume>
+//     <muteenabled>false</muteenabled>
+//   </volume>
+//
+// Uses getElementsByTagName so it works in both browser and @xmldom/xmldom.
+export function parseVolumeXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+  const vols = doc.getElementsByTagName('volume');
+  if (!vols || !vols[0]) return null;
+  return parseVolumeEl(vols[0]);
+}
+
+// Parse an already-resolved <volume> DOM element — used by the WS
+// dispatch path (volumeUpdated handler).
+export function parseVolumeEl(el) {
+  if (!el) return null;
+  const g = (tag) => {
+    const col = el.getElementsByTagName(tag);
+    return col && col[0] ? col[0].textContent : '';
+  };
+  const target = parseInt(g('targetvolume'), 10);
+  const actual = parseInt(g('actualvolume'), 10);
+  const mute   = g('muteenabled');
+  if (isNaN(target) && isNaN(actual)) return null;
+  return {
+    targetVolume: isNaN(target) ? 0 : target,
+    actualVolume: isNaN(actual) ? 0 : actual,
+    muteEnabled:  mute === 'true',
+  };
+}
+
+// GET /cgi-bin/api/v1/speaker/volume
+export async function getVolume() {
+  const res = await fetch(`${apiBase}/speaker/volume`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getVolume: HTTP ${res.status}`);
+  const text = await res.text();
+  return parseVolumeXml(text);
+}
+
+// POST /cgi-bin/api/v1/speaker/volume with body <volume>NN</volume>.
+// Throws on non-2xx.
+export async function postVolume(level) {
+  const res = await fetch(`${apiBase}/speaker/volume`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: `<volume>${Math.round(level)}</volume>`,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postVolume: HTTP ${res.status}`);
+}
+
 // POST /presets/:slot with {id, slot, name, kind, json}.
 // Slot is 1..6; payload must include matching `slot` and `kind:"playable"`
 // (the CGI rejects anything else with a structured error).

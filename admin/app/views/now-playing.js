@@ -8,9 +8,10 @@
 
 import { html, mount } from '../dom.js';
 import { store, setPresets, setNowPlaying } from '../state.js';
-import { speakerNowPlaying, presetsList } from '../api.js';
+import { speakerNowPlaying, presetsList, postVolume } from '../api.js';
 import { setArt } from '../art.js';
-import { postKey } from '../transport.js';
+import { postKey, makeVolumeSender } from '../transport.js';
+import { setVolumeConfirmFn } from '../ws.js';
 
 const POLL_MS = 2000;
 
@@ -25,6 +26,12 @@ let transportEl = null;
 let btnPrev    = null;
 let btnPlay    = null;
 let btnNext    = null;
+let sliderEl   = null;
+let muteEl     = null;
+let volumeRowEl = null;
+
+// Volume sender — created once in init(); survives WS events.
+let volumeSender = null;
 
 // Polling state
 let pollTimer       = null;
@@ -133,6 +140,25 @@ function syncPlayBtn(np) {
   btnPlay.dataset.playing = playing ? '1' : '';
 }
 
+// --- volume mutator -------------------------------------------------
+
+function applyVolume(vol) {
+  if (!sliderEl) return;
+  const muted = vol && vol.muteEnabled;
+  const level = vol ? vol.actualVolume : 0;
+  // Only update slider if the value differs — avoid stomping on an
+  // active drag (the user's thumb should stay under their finger).
+  if (sliderEl.value !== String(level)) {
+    sliderEl.value = String(level);
+  }
+  if (muteEl) {
+    muteEl.textContent = muted ? '🔊̸' : '🔇';
+    muteEl.title = muted ? 'Unmute' : 'Mute';
+    muteEl.setAttribute('aria-pressed', muted ? 'true' : 'false');
+  }
+  if (volumeRowEl) volumeRowEl.hidden = !vol;
+}
+
 // --- mutator --------------------------------------------------------
 
 function applyNowPlaying(np) {
@@ -202,6 +228,11 @@ export default {
           <button class="np-btn np-btn--play" type="button" title="Play" aria-label="Play">&#x25B6;</button>
           <button class="np-btn" type="button" title="Next" aria-label="Next track">&#x23ED;</button>
         </div>
+        <div class="np-volume" hidden>
+          <span class="np-vol-icon" aria-hidden="true">&#x1F50A;</span>
+          <input class="np-slider" type="range" min="0" max="100" step="1" aria-label="Volume">
+          <button class="np-mute" type="button" title="Mute" aria-pressed="false">&#x1F507;</button>
+        </div>
         <div class="np-asleep" hidden>
           <p>Speaker is asleep</p>
           <p class="np-asleep-hint">Press Play to wake it up.</p>
@@ -216,6 +247,9 @@ export default {
     metaEl     = root.querySelector('.np-meta');
     transportEl = root.querySelector('.np-transport');
     asleepEl   = root.querySelector('.np-asleep');
+    volumeRowEl = root.querySelector('.np-volume');
+    sliderEl   = root.querySelector('.np-slider');
+    muteEl     = root.querySelector('.np-mute');
 
     const btns = root.querySelectorAll('.np-btn');
     btnPrev = btns[0];
@@ -226,7 +260,24 @@ export default {
     btnPlay.addEventListener('click', onPlayPause);
     btnNext.addEventListener('click', onNext);
 
+    // Build the volume sender and wire its confirm callback into ws.js so
+    // volumeUpdated events suppress redundant outbound POSTs.
+    volumeSender = makeVolumeSender(postVolume);
+    setVolumeConfirmFn(volumeSender.confirm);
+
+    sliderEl.addEventListener('input', () => {
+      const level = Number(sliderEl.value);
+      // Eager local feedback: update targetVolume so the thumb stays live.
+      if (store.state.speaker.volume) {
+        store.state.speaker.volume.targetVolume = level;
+      }
+      volumeSender.setVolume(level);
+    });
+
+    muteEl.addEventListener('click', () => { postKey('MUTE'); });
+
     applyNowPlaying(store.state.speaker.nowPlaying);
+    applyVolume(store.state.speaker.volume);
 
     bindVisibilityOnce();
     if (!document.hidden) startPolling();
@@ -236,11 +287,15 @@ export default {
   update(state, changedKey) {
     if (changedKey !== 'speaker') return;
     applyNowPlaying(state.speaker.nowPlaying);
+    applyVolume(state.speaker.volume);
   },
 
   _teardown() {
     clearPoll();
     cardEl = artEl = nameEl = trackEl = metaEl = null;
     transportEl = asleepEl = btnPrev = btnPlay = btnNext = null;
+    sliderEl = muteEl = volumeRowEl = null;
+    volumeSender = null;
+    setVolumeConfirmFn(null);
   },
 };

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<updates deviceID="689E19D55555">
+  <volumeUpdated>
+    <volume>
+      <targetvolume>32</targetvolume>
+      <actualvolume>32</actualvolume>
+      <muteenabled>false</muteenabled>
+    </volume>
+  </volumeUpdated>
+</updates>
