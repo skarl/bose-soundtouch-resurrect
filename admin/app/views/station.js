@@ -229,6 +229,7 @@ async function handleAssignClick(root, sid, slot, ctx) {
   if (!btn || btn.dataset.busy === '1') return;
 
   const name = ctx.getName ? ctx.getName() : sid;
+  const art  = ctx.getArt  ? ctx.getArt()  : '';
   const bose = reshape(ctx.tuneinJson, sid, name);
   if (!bose) {
     showToast(`Cannot save: no playable streams for ${sid}`);
@@ -246,6 +247,7 @@ async function handleAssignClick(root, sid, slot, ctx) {
       id: sid,
       slot,
       name,
+      art,
       kind: 'playable',
       json: bose,
     });
@@ -332,11 +334,14 @@ export default {
 
     renderSkeleton(root, sid);
 
-    // The assign-button handler reads the live name at click time, so
-    // the metadata fetch races the probe but doesn't block it. We
-    // stash the latest known name in this closure-local var.
+    // The assign-button handler reads the live name + art at click
+    // time, so the Describe fetch races the probe but doesn't block
+    // it. We stash both in closure-local vars and pass getters in
+    // ctx.
     let stationName = sid;
+    let stationArt = '';
     const getName = () => stationName;
+    const getArt  = () => stationArt;
 
     // Describe.ashx → metadata. Errors fall back to showing just the
     // sid; the probe still runs, so the user gets a useful page.
@@ -349,7 +354,8 @@ export default {
         // reads this list.
         const name = (body && body.name) || sid;
         stationName = name;
-        addRecentlyViewed({ sid, name, art: pickArt(body) });
+        stationArt  = pickArt(body);
+        addRecentlyViewed({ sid, name, art: stationArt });
       })
       .catch((err) => {
         applyMetadataError(root, err);
@@ -364,6 +370,7 @@ export default {
       applyVerdict(root, sid, cached, {
         tuneinJson: cached.tuneinJson || null,
         getName,
+        getArt,
       });
       return;
     }
@@ -371,7 +378,7 @@ export default {
       .then((res) => {
         const verdict = classify(res);
         writeCachedProbe(store, sid, verdict, res);
-        applyVerdict(root, sid, verdict, { tuneinJson: res, getName });
+        applyVerdict(root, sid, verdict, { tuneinJson: res, getName, getArt });
       })
       .catch((err) => {
         applyProbeError(root, err);

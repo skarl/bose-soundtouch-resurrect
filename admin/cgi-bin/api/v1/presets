@@ -381,6 +381,7 @@ handle_post() {
     body_slot=$(json_number_field slot <"$body_file")
     body_kind=$(json_string_field kind <"$body_file")
     body_name=$(json_string_field name <"$body_file")
+    body_art=$(json_string_field art <"$body_file")
     body_json=$(json_object_field <"$body_file")
 
     if [ -z "$body_id" ] || ! is_valid_id "$body_id"; then
@@ -436,7 +437,18 @@ handle_post() {
     # the JSON from when the preset is pressed.
     name_xml=$(xml_escape "$body_name")
     location="/v1/playback/station/${body_id}"
-    sp_body="<preset id=\"${body_slot}\"><ContentItem source=\"TUNEIN\" type=\"stationurl\" location=\"${location}\" sourceAccount=\"\" isPresetable=\"true\"><itemName>${name_xml}</itemName></ContentItem></preset>"
+    # containerArt is optional. We only include it when the SPA passed
+    # an http(s) URL — otherwise the speaker would store the literal
+    # placeholder text and the SoundTouch app would render a broken
+    # image. Omitting the element keeps the speaker's existing art (or
+    # nothing) instead of clobbering it.
+    art_xml=""
+    case "$body_art" in
+        http://*|https://*)
+            art_xml="<containerArt>$(xml_escape "$body_art")</containerArt>"
+            ;;
+    esac
+    sp_body="<preset id=\"${body_slot}\"><ContentItem source=\"TUNEIN\" type=\"stationurl\" location=\"${location}\" sourceAccount=\"\" isPresetable=\"true\"><itemName>${name_xml}</itemName>${art_xml}</ContentItem></preset>"
 
     sp_url="${SPEAKER_BASE}/storePreset?id=${body_slot}"
     sp_body_file="$TMPDIR_FALLBACK/presets-sp.$$.body"
