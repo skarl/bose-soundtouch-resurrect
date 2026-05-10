@@ -20,7 +20,7 @@
 // See admin/PLAN.md § View specs / station detail.
 
 import { html, mount } from '../dom.js';
-import { tuneinStation, tuneinProbe, presetsAssign, presetsList, previewStream, speakerKey } from '../api.js';
+import { tuneinStation, tuneinProbe, presetsAssign, presetsList, previewStream } from '../api.js';
 import { addRecentlyViewed, setPresets } from '../state.js';
 import { classify, reshape } from '../reshape.js';
 import { showToast } from '../toast.js';
@@ -78,22 +78,13 @@ function fmtCodec(stream) {
 // Audition plays on the speaker, not in the browser. Clicking ▶ on a
 // row writes that stream's URL into the resolver entry for the station
 // (atomically) and POSTs /select to the speaker, so Bo plays the
-// user's chosen stream right now. Clicking the same row's ▶ again
-// sends POWER (standby) to stop. Navigating away from the station
-// view also stops automatically.
+// user's chosen stream right now. Bo stays tuned until the user picks
+// something else (another row, another preset, or a hardware action)
+// — no auto-stop on toggle-click or on navigation away from the view.
 
 let chosenStreamUrl = '';
 let auditionRow     = null;
-let auditionCtx     = null;   // {sid, name, getBose} captured at row render
-let hashListenerInstalled = false;
-
-function installHashStopOnce() {
-  if (hashListenerInstalled) return;
-  hashListenerInstalled = true;
-  window.addEventListener('hashchange', () => {
-    if (!location.hash.startsWith('#/station/')) stopAudition();
-  });
-}
+let auditionCtx     = null;   // {sid, getName, getBose} captured at row render
 
 function markRowPlaying(rowEl) {
   if (auditionRow && auditionRow !== rowEl) {
@@ -103,25 +94,7 @@ function markRowPlaying(rowEl) {
   if (auditionRow) auditionRow.classList.add('is-playing');
 }
 
-async function stopAudition() {
-  const wasPlaying = auditionRow != null;
-  markRowPlaying(null);
-  if (wasPlaying) {
-    // Tell the speaker to stop. POWER toggles between play and
-    // standby; on this firmware sending press+release is reliable.
-    try {
-      await speakerKey('POWER', 'press');
-      await speakerKey('POWER', 'release');
-    } catch (_e) { /* best-effort */ }
-  }
-}
-
 async function auditionStream(url, rowEl, ctx) {
-  // Toggle off if the user clicks the currently-playing row.
-  if (auditionRow === rowEl) {
-    stopAudition();
-    return;
-  }
   if (!ctx || !ctx.getBose || !ctx.getName) return;
   // Read the live name at click time. Describe.ashx races Tune.ashx,
   // and the chooser renders on Tune's response, so capturing the name
@@ -361,16 +334,17 @@ function applyVerdict(root, sid, verdict, ctx) {
         getBose: auditionGetBose,
       }));
     }
-    installHashStopOnce();
 
     enableAssignButtons(root, sid, ctx);
     return;
   }
 
-  // Non-playable verdicts: drop any prior stream list.
+  // Non-playable verdicts: drop any prior stream list. We deliberately
+  // don't tell the speaker to stop — Bo keeps playing whatever it's
+  // playing until the user picks something else.
   const oldList = root.querySelector('.station-streams');
   if (oldList) oldList.remove();
-  stopAudition();
+  markRowPlaying(null);
 
   // gated or dark — replace assign block with friendly message + link.
   const message = verdict.kind === 'gated'
