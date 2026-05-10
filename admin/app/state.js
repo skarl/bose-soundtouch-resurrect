@@ -70,6 +70,8 @@ export const store = observable({
     bluetooth:      null,   // {paired: [{name, mac}, ...], pairing}
     network:        null,   // {ssid, ipAddress, macAddress, signalDbm}
     recents:        null,   // [{deviceID, source, contentItem}, ...]
+    systemTimeout:    null, // {enabled, minutes}
+    lowPowerStandby:  null, // {enabled}
   },
   caches: {
     probe:          new Map(),               // sid → Probe = {sid, verdict, tuneinJson, expires} — TTL 10 min

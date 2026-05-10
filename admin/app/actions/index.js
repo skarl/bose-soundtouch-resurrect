@@ -2,6 +2,11 @@ import {
   speakerKey,
   postSelect,
   postSelectLocalSource,
+  postName,
+  postSystemTimeout,
+  postLowPowerStandby,
+  postStandby,
+  postSetPower,
   presetsAssign,
   previewStream as apiPreviewStream,
 } from '../api.js';
@@ -44,6 +49,31 @@ export async function storePreset(slot, payload) {
 
 export async function previewStream(payload) {
   return apiPreviewStream(payload);
+}
+
+export async function setName(name) {
+  recordOutgoing('settings');
+  await postName(name);
+}
+
+export async function setSystemTimeout(seconds) {
+  recordOutgoing('settings');
+  await postSystemTimeout(seconds);
+}
+
+export async function setLowPowerStandby(enabled) {
+  recordOutgoing('settings');
+  await postLowPowerStandby(enabled);
+}
+
+export async function standby() {
+  recordOutgoing('transport');
+  await postStandby();
+}
+
+export async function setPower(state) {
+  recordOutgoing('transport');
+  await postSetPower(state);
 }
 
 export { wasRecent };

@@ -500,6 +500,174 @@ export function parseNetworkInfoEl(el) {
   };
 }
 
+// --- speaker name / sleep timer / low-power / power -----------------
+
+// Bose firmware accepts only the literal characters [<>&'"] as XML
+// metacharacters in element bodies. Speaker names round-trip through
+// /info, so escape on POST and let the speaker echo back unescaped.
+function xmlEscape(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+export function parseNameEl(el) {
+  if (!el || el.textContent == null) return null;
+  return { name: el.textContent.trim() };
+}
+
+export function parseNameXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+  const els = doc.getElementsByTagName('name');
+  if (!els || !els[0]) return null;
+  return parseNameEl(els[0]);
+}
+
+export async function getName() {
+  const res = await fetch(`${apiBase}/speaker/name`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getName: HTTP ${res.status}`);
+  return parseNameXml(await res.text());
+}
+
+export async function postName(name) {
+  const res = await fetch(`${apiBase}/speaker/name`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: `<name>${xmlEscape(name)}</name>`,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postName: HTTP ${res.status}`);
+}
+
+// Reference shape (from /systemtimeout):
+//   <systemtimeout>
+//     <enabled>true</enabled>
+//     <minutes>20</minutes>
+//   </systemtimeout>
+// `minutes=0` (with enabled=false) means "never".
+export function parseSystemTimeoutEl(el) {
+  if (!el) return null;
+  const g = (tag) => {
+    const col = el.getElementsByTagName(tag);
+    return col && col[0] ? col[0].textContent : '';
+  };
+  const minutes = parseInt(g('minutes'), 10);
+  const enabled = g('enabled');
+  return {
+    enabled: enabled === 'true',
+    minutes: isNaN(minutes) ? 0 : minutes,
+  };
+}
+
+export function parseSystemTimeoutXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+  const els = doc.getElementsByTagName('systemtimeout');
+  if (!els || !els[0]) return null;
+  return parseSystemTimeoutEl(els[0]);
+}
+
+export async function getSystemTimeout() {
+  const res = await fetch(`${apiBase}/speaker/systemtimeout`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getSystemTimeout: HTTP ${res.status}`);
+  return parseSystemTimeoutXml(await res.text());
+}
+
+// `minutes=0` is the firmware's "never" sentinel; we send enabled=false
+// with minutes=0 so /systemtimeout reflects the off-state on read-back.
+export async function postSystemTimeout(minutes) {
+  const m = Math.max(0, Math.round(Number(minutes) || 0));
+  const enabled = m > 0;
+  const xml = `<systemtimeout><enabled>${enabled}</enabled><minutes>${m}</minutes></systemtimeout>`;
+  const res = await fetch(`${apiBase}/speaker/systemtimeout`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: xml,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postSystemTimeout: HTTP ${res.status}`);
+}
+
+// Reference shape:
+//   <lowPowerStandby>
+//     <enabled>true</enabled>
+//   </lowPowerStandby>
+export function parseLowPowerStandbyEl(el) {
+  if (!el) return null;
+  const col = el.getElementsByTagName('enabled');
+  const enabled = col && col[0] ? col[0].textContent : '';
+  return { enabled: enabled === 'true' };
+}
+
+export function parseLowPowerStandbyXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+  const els = doc.getElementsByTagName('lowPowerStandby');
+  if (!els || !els[0]) return null;
+  return parseLowPowerStandbyEl(els[0]);
+}
+
+export async function getLowPowerStandby() {
+  const res = await fetch(`${apiBase}/speaker/lowPowerStandby`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getLowPowerStandby: HTTP ${res.status}`);
+  return parseLowPowerStandbyXml(await res.text());
+}
+
+export async function postLowPowerStandby(enabled) {
+  const xml = `<lowPowerStandby><enabled>${enabled ? 'true' : 'false'}</enabled></lowPowerStandby>`;
+  const res = await fetch(`${apiBase}/speaker/lowPowerStandby`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: xml,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postLowPowerStandby: HTTP ${res.status}`);
+}
+
+export async function postStandby() {
+  const res = await fetch(`${apiBase}/speaker/standby`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: '<standby/>',
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postStandby: HTTP ${res.status}`);
+}
+
+// /setPower wakes from standby. `state` is a string the firmware
+// accepts ('ON' / 'OFF'); leaving the wrapper generic so callers can
+// experiment without an action-layer rewrite.
+export async function postSetPower(state) {
+  const xml = `<setPower>${xmlEscape(state)}</setPower>`;
+  const res = await fetch(`${apiBase}/speaker/setPower`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: xml,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postSetPower: HTTP ${res.status}`);
+}
+
+
 // POST /presets/:slot with {id, slot, name, kind, json}.
 // Slot is 1..6; payload must include matching `slot` and `kind:"playable"`
 // (the CGI rejects anything else with a structured error).

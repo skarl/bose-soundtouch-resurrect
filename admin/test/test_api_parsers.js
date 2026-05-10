@@ -19,6 +19,8 @@ import {
   parseVolumeXml, parseVolumeEl,
   parseSourcesXml, parseSourcesEl,
   parseNetworkInfoXml, parseNetworkInfoEl,
+  parseSystemTimeoutXml, parseSystemTimeoutEl,
+  parseLowPowerStandbyXml, parseLowPowerStandbyEl,
 } from '../app/api.js';
 import { dispatch } from '../app/ws.js';
 
@@ -299,4 +301,81 @@ test('parseNetworkInfoEl: parses a DOM element directly', async () => {
 
 test('parseNetworkInfoEl: null input returns null', () => {
   assert.equal(parseNetworkInfoEl(null), null);
+});
+
+// --- parseSystemTimeoutXml ------------------------------------------
+
+test('parseSystemTimeoutXml: enabled=true with minutes', async () => {
+  const xml = await fixture('systemtimeout.xml');
+  const t = parseSystemTimeoutXml(xml);
+  assert.ok(t, 'returns a non-null object');
+  assert.equal(t.enabled, true);
+  assert.equal(t.minutes, 20);
+});
+
+test('parseSystemTimeoutXml: enabled=false / minutes=0 (Never)', async () => {
+  const xml = await fixture('systemtimeout-off.xml');
+  const t = parseSystemTimeoutXml(xml);
+  assert.ok(t, 'returns a non-null object');
+  assert.equal(t.enabled, false);
+  assert.equal(t.minutes, 0);
+});
+
+test('parseSystemTimeoutXml: empty string returns null', () => {
+  assert.equal(parseSystemTimeoutXml(''), null);
+});
+
+test('parseSystemTimeoutXml: non-systemtimeout XML returns null', () => {
+  assert.equal(parseSystemTimeoutXml('<volume>0</volume>'), null);
+});
+
+test('parseSystemTimeoutEl: null input returns null', () => {
+  assert.equal(parseSystemTimeoutEl(null), null);
+});
+
+test('parseSystemTimeoutEl: parses a DOM element directly', async () => {
+  const xml = await fixture('systemtimeout.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const els = doc.getElementsByTagName('systemtimeout');
+  const t = parseSystemTimeoutEl(els && els[0]);
+  assert.ok(t, 'returns a non-null object');
+  assert.equal(t.enabled, true);
+  assert.equal(t.minutes, 20);
+});
+
+// --- parseLowPowerStandbyXml ----------------------------------------
+
+test('parseLowPowerStandbyXml: enabled=true', async () => {
+  const xml = await fixture('lowPowerStandby.xml');
+  const lps = parseLowPowerStandbyXml(xml);
+  assert.ok(lps, 'returns a non-null object');
+  assert.equal(lps.enabled, true);
+});
+
+test('parseLowPowerStandbyXml: enabled=false', async () => {
+  const xml = await fixture('lowPowerStandby-off.xml');
+  const lps = parseLowPowerStandbyXml(xml);
+  assert.ok(lps, 'returns a non-null object');
+  assert.equal(lps.enabled, false);
+});
+
+test('parseLowPowerStandbyXml: empty string returns null', () => {
+  assert.equal(parseLowPowerStandbyXml(''), null);
+});
+
+test('parseLowPowerStandbyXml: non-lowPowerStandby XML returns null', () => {
+  assert.equal(parseLowPowerStandbyXml('<volume>0</volume>'), null);
+});
+
+test('parseLowPowerStandbyEl: null input returns null', () => {
+  assert.equal(parseLowPowerStandbyEl(null), null);
+});
+
+test('parseLowPowerStandbyEl: parses a DOM element directly', async () => {
+  const xml = await fixture('lowPowerStandby.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const els = doc.getElementsByTagName('lowPowerStandby');
+  const lps = parseLowPowerStandbyEl(els && els[0]);
+  assert.ok(lps, 'returns a non-null object');
+  assert.equal(lps.enabled, true);
 });

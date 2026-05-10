@@ -19,6 +19,8 @@ import {
   getSources,
   parseSourcesEl,
   getNetworkInfo,
+  getSystemTimeout,
+  getLowPowerStandby,
 } from './api.js';
 import * as actions from './actions/index.js';
 
@@ -107,6 +109,8 @@ export const FIELDS = [
   // view-entry; user-driven via the section's Refresh button.
   { name: 'network',       fetcher: getNetworkInfo },
   { name: 'recents',       fetcher: () => Promise.resolve(null) },
+  { name: 'systemTimeout',   fetcher: getSystemTimeout },
+  { name: 'lowPowerStandby', fetcher: getLowPowerStandby },
 ];
 
 // Build a lookup map from eventTag → entry for dispatch().
