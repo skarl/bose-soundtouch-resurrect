@@ -20,7 +20,10 @@
 
 UA='Bose_Lisa/27.0.6'
 MAGIC='formats=mp3,aac&lang=de-de&render=json'
-BASE='https://opml.radiotime.com'
+# Plain HTTP, not HTTPS: the busybox wget on this firmware is built
+# without TLS support. The speaker's outbound traffic is on the LAN,
+# and TuneIn's OPML endpoint serves the same body over either scheme.
+BASE='http://opml.radiotime.com'
 
 # CORS preflight: respond and exit before doing any work.
 if [ "${REQUEST_METHOD:-GET}" = 'OPTIONS' ]; then
