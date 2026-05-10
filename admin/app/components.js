@@ -483,8 +483,3 @@ export function stationRow({
 
   return row;
 }
-
-// Deprecated: prior name from the v2 polish. Search.js still imports
-// this; the alias keeps that file building until the search rewrite
-// lands. New code uses stationRow().
-export const resultCard = stationRow;

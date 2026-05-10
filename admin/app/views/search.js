@@ -1,11 +1,9 @@
 // search — TuneIn search + empty-state landing.
 //
-// Sticky input at top, debounced 300ms. Results render via
-// resultCard() — the shared visual station card. Empty state shows two
-// columns: "Recently viewed" (from state.caches.recentlyViewed, last
-// 10 entries) and "Popular" (Browse.ashx?c=local via the tunein CGI).
-// CSS grid in style.css collapses the two columns into a single stack
-// on narrow viewports.
+// Pill-shaped sticky input at top, debounced 300ms. Results render via
+// stationRow() — the shared station list row. Empty state shows two
+// stacked sections: "Recently viewed" (from state.caches.recentlyViewed,
+// last 10 entries) and "Popular near you" (Browse.ashx?c=local).
 //
 // Render strategy (see admin/PLAN.md § Render strategy):
 //   mount() builds the static frame once and returns a `caches` updater
@@ -19,9 +17,11 @@
 
 import { html, mount, defineView } from '../dom.js';
 import { tuneinSearch, tuneinBrowse } from '../api.js';
-import { resultCard } from '../components.js';
+import { stationRow } from '../components.js';
+import { icon } from '../icons.js';
 
 export const DEBOUNCE_MS = 300;
+export const SEARCH_PLACEHOLDER = 'Search TuneIn — try "jazz", "bbc", "ffh"';
 const STATION_GUIDE_ID = /^s\d+$/;
 
 // Pull station leaves out of a TuneIn Search.ashx body — flat filter.
@@ -54,30 +54,80 @@ export function popularStations(json) {
   return out;
 }
 
+// Build a card containing N station rows; mark the last with .is-last so
+// CSS can drop its border.
+function stationRowCard(entries, mapper) {
+  const card = document.createElement('div');
+  card.className = 'browse-card';
+  for (let i = 0; i < entries.length; i++) {
+    const row = stationRow(mapper(entries[i]));
+    if (i === entries.length - 1) row.classList.add('is-last');
+    card.appendChild(row);
+  }
+  return card;
+}
+
 export default defineView({
   mount(root, store, ctx, env) {
     const initialQ = (ctx && ctx.query && typeof ctx.query.q === 'string')
       ? ctx.query.q
       : '';
 
+    // --- input wrapper: leading glyph + input + clear-X + pending dot --
+    const wrap = document.createElement('div');
+    wrap.className = 'search-input-wrap';
+
+    const leading = document.createElement('span');
+    leading.className = 'search-input-icon';
+    leading.appendChild(icon('search', 14));
+
     const input = document.createElement('input');
     input.type = 'search';
     input.className = 'search-input';
-    input.placeholder = 'Search stations';
+    input.placeholder = SEARCH_PLACEHOLDER;
     input.autocomplete = 'off';
     input.spellcheck = false;
     input.setAttribute('aria-label', 'Search stations');
     input.value = initialQ;
 
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'search-clear';
+    clearBtn.setAttribute('aria-label', 'Clear search');
+    clearBtn.appendChild(icon('x', 12));
+    clearBtn.hidden = !initialQ;
+
+    const pending = document.createElement('span');
+    pending.className = 'search-pending';
+    pending.setAttribute('aria-hidden', 'true');
+    pending.hidden = true;
+
+    wrap.appendChild(leading);
+    wrap.appendChild(input);
+    wrap.appendChild(clearBtn);
+    wrap.appendChild(pending);
+
+    // --- results container ---------------------------------------------
     const resultsEl = document.createElement('div');
     resultsEl.className = 'search-results';
     resultsEl.setAttribute('aria-live', 'polite');
     resultsEl.hidden = true;
 
+    // --- empty state: Recently viewed + Popular sections ---------------
+    const emptyEl = document.createElement('div');
+    emptyEl.className = 'search-empty';
+
     const recentSection = document.createElement('section');
     recentSection.className = 'search-empty-section';
     const recentH = document.createElement('h2');
-    recentH.textContent = 'Recently viewed';
+    recentH.className = 'section-h section-h--inline';
+    const recentTitle = document.createElement('span');
+    recentTitle.className = 'section-h__title';
+    recentTitle.appendChild(icon('clock', 11));
+    const recentLabel = document.createElement('span');
+    recentLabel.textContent = 'Recently viewed';
+    recentTitle.appendChild(recentLabel);
+    recentH.appendChild(recentTitle);
     const recentListEl = document.createElement('div');
     recentListEl.className = 'search-empty-list';
     recentSection.appendChild(recentH);
@@ -86,21 +136,26 @@ export default defineView({
     const popularSection = document.createElement('section');
     popularSection.className = 'search-empty-section';
     const popularH = document.createElement('h2');
-    popularH.textContent = 'Popular';
+    popularH.className = 'section-h section-h--inline';
+    const popularTitle = document.createElement('span');
+    popularTitle.className = 'section-h__title';
+    popularTitle.appendChild(icon('zap', 11));
+    const popularLabel = document.createElement('span');
+    popularLabel.textContent = 'Popular near you';
+    popularTitle.appendChild(popularLabel);
+    popularH.appendChild(popularTitle);
     const popularEl = document.createElement('div');
     popularEl.className = 'search-empty-list';
     popularSection.appendChild(popularH);
     popularSection.appendChild(popularEl);
 
-    const emptyEl = document.createElement('div');
-    emptyEl.className = 'search-empty';
     emptyEl.appendChild(recentSection);
     emptyEl.appendChild(popularSection);
 
     mount(root, html`
       <section data-view="search">
         <div class="search-bar">
-          ${input}
+          ${wrap}
         </div>
         ${emptyEl}
         ${resultsEl}
@@ -148,38 +203,58 @@ export default defineView({
       resultsEl.appendChild(p);
     }
 
-    function renderResults(json) {
+    function renderResults(json, q) {
       const stations = searchResultStations(json);
       resultsEl.replaceChildren();
+      // Header line: "N results" + endpoint hint right-aligned.
+      const header = document.createElement('div');
+      header.className = 'section-h section-h--inline';
+      const left = document.createElement('span');
+      left.className = 'section-h__title';
+      left.textContent = `${stations.length.toLocaleString()} ${stations.length === 1 ? 'result' : 'results'}`;
+      const right = document.createElement('span');
+      right.className = 'section-h__meta';
+      right.textContent = `/api/v1/tunein/search?q=${q}`;
+      header.appendChild(left);
+      header.appendChild(right);
+      resultsEl.appendChild(header);
+
       if (stations.length === 0) {
-        setResultsMessage('No matches.', 'search-no-results');
+        setResultsMessageInline('No matches.', 'search-no-results');
         return;
       }
-      for (const e of stations) {
-        resultsEl.appendChild(resultCard({
-          sid:      e.guide_id,
-          name:     e.text,
-          art:      e.image,
-          location: e.subtext,
-          genre:    e.genre_name || e.genre || '',
-          bitrate:  e.bitrate,
-          codec:    e.formats,
-        }));
-      }
+      resultsEl.appendChild(stationRowCard(stations, (e) => ({
+        sid:      e.guide_id,
+        name:     e.text,
+        art:      e.image,
+        location: e.subtext,
+        bitrate:  e.bitrate,
+        codec:    e.formats,
+      })));
+    }
+
+    function setResultsMessageInline(text, cls) {
+      const p = document.createElement('p');
+      p.className = cls;
+      p.textContent = text;
+      resultsEl.appendChild(p);
     }
 
     function runSearch(q) {
       if (!isMounted()) return;
       const token = ++inFlightToken;
       showSearchPane();
+      pending.hidden = false;
       setResultsMessage('Searching...', 'search-loading');
       tuneinSearch(q)
         .then((json) => {
           if (token !== inFlightToken || !isMounted()) return;
-          renderResults(json);
+          pending.hidden = true;
+          renderResults(json, q);
         })
         .catch((err) => {
           if (token !== inFlightToken || !isMounted()) return;
+          pending.hidden = true;
           setResultsMessage(`Search failed: ${err.message}`, 'search-error');
         });
     }
@@ -188,11 +263,14 @@ export default defineView({
       const q = value.trim();
       writeHash(q);
       clearDebounce();
+      clearBtn.hidden = q.length === 0;
       if (!q) {
         inFlightToken++;
+        pending.hidden = true;
         showEmptyPane();
         return;
       }
+      pending.hidden = false;
       debounceTimer = setTimeout(() => {
         debounceTimer = null;
         runSearch(q);
@@ -205,26 +283,21 @@ export default defineView({
         : [];
       recentListEl.replaceChildren();
       if (recents.length === 0) {
-        const p = document.createElement('p');
-        p.className = 'search-empty-note';
-        p.textContent = 'Browse to see recently viewed stations.';
-        recentListEl.appendChild(p);
+        recentSection.hidden = true;
         return;
       }
-      for (const entry of recents.slice(0, 10)) {
-        if (!entry || typeof entry.sid !== 'string') continue;
-        recentListEl.appendChild(resultCard({
-          sid:  entry.sid,
-          name: entry.name || entry.sid,
-          art:  entry.art,
-        }));
-      }
+      recentSection.hidden = false;
+      const slice = recents.slice(0, 10).filter((e) => e && typeof e.sid === 'string');
+      recentListEl.appendChild(stationRowCard(slice, (entry) => ({
+        sid:  entry.sid,
+        name: entry.name || entry.sid,
+        art:  entry.art,
+      })));
     }
 
     function renderPopular(json) {
       popularEl.replaceChildren();
       const stations = popularStations(json);
-
       if (stations.length === 0) {
         const p = document.createElement('p');
         p.className = 'search-empty-note';
@@ -232,17 +305,14 @@ export default defineView({
         popularEl.appendChild(p);
         return;
       }
-      for (const e of stations) {
-        popularEl.appendChild(resultCard({
-          sid:      e.guide_id,
-          name:     e.text,
-          art:      e.image,
-          location: e.subtext,
-          genre:    e.genre_name || e.genre || '',
-          bitrate:  e.bitrate,
-          codec:    e.formats,
-        }));
-      }
+      popularEl.appendChild(stationRowCard(stations, (e) => ({
+        sid:      e.guide_id,
+        name:     e.text,
+        art:      e.image,
+        location: e.subtext,
+        bitrate:  e.bitrate,
+        codec:    e.formats,
+      })));
     }
 
     function loadPopular() {
@@ -267,6 +337,11 @@ export default defineView({
     }
 
     input.addEventListener('input', (ev) => handleInput(ev.target.value));
+    clearBtn.addEventListener('click', () => {
+      input.value = '';
+      handleInput('');
+      input.focus();
+    });
 
     renderRecentlyViewed(store.state);
     loadPopular();

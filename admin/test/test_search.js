@@ -21,6 +21,7 @@ const {
   searchResultStations,
   popularStations,
   DEBOUNCE_MS,
+  SEARCH_PLACEHOLDER,
 } = await import('../app/views/search.js');
 
 // --- searchResultStations -------------------------------------------
@@ -73,6 +74,33 @@ test('search: debounce window is 300ms (preserves the v0.3 contract)', () => {
   // A regression guard: if someone tightens the debounce by accident,
   // we want the test to flag it instead of silently spamming TuneIn.
   assert.equal(DEBOUNCE_MS, 300);
+});
+
+test('search: placeholder hints at TuneIn + 3 example queries', () => {
+  // Polish-pass spec: nudge users with concrete query examples.
+  assert.match(SEARCH_PLACEHOLDER, /TuneIn/);
+  assert.match(SEARCH_PLACEHOLDER, /jazz/);
+  assert.match(SEARCH_PLACEHOLDER, /bbc/);
+  assert.match(SEARCH_PLACEHOLDER, /ffh/);
+});
+
+// --- search input wrap: pill-shape + leading icon (CSS contract) ---
+//
+// The polish pass moved the search input into a bordered wrapper so the
+// magnifier glyph sits inside the field. The contract is the visible
+// .search-input-wrap class with a 38px pill-style row.
+test('search css: .search-input-wrap exists and the input is borderless', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const css = fs.readFileSync(path.resolve('admin/style.css'), 'utf8');
+  const wrapRule = css.match(/^\.search-input-wrap\s*\{([^}]+)\}/m);
+  assert.ok(wrapRule, 'found .search-input-wrap rule');
+  assert.match(wrapRule[1], /\bheight:\s*38px\b/);
+  assert.match(wrapRule[1], /\bborder:\s*1px solid\b/);
+
+  const inputRule = css.match(/^\.search-input\s*\{([^}]+)\}/m);
+  assert.ok(inputRule, 'found .search-input rule');
+  assert.match(inputRule[1], /\bborder:\s*0\b/);
 });
 
 // --- recently-viewed cache: cap at 10, dedupe by sid, latest-first --
