@@ -4,7 +4,6 @@ import {
   postSelectLocalSource,
   postName,
   postSystemTimeout,
-  postLowPowerStandby,
   postStandby,
   postSetPower,
   postDSPMonoStereo,
@@ -70,11 +69,6 @@ export async function setName(name) {
 export async function setSystemTimeout(seconds) {
   recordOutgoing('settings');
   await postSystemTimeout(seconds);
-}
-
-export async function setLowPowerStandby(enabled) {
-  recordOutgoing('settings');
-  await postLowPowerStandby(enabled);
 }
 
 export async function standby() {

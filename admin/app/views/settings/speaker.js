@@ -28,11 +28,6 @@ export default defineView({
           <select class="settings-sleep"></select>
         </label>
 
-        <label class="settings-row settings-row--inline">
-          <input class="settings-lowpower" type="checkbox">
-          <span class="settings-label">Low-power standby</span>
-        </label>
-
         <div class="settings-row settings-row--inline">
           <button class="settings-standby" type="button">Standby</button>
           <button class="settings-wake" type="button">Wake</button>
@@ -42,7 +37,6 @@ export default defineView({
 
     const nameEl     = root.querySelector('.settings-name');
     const sleepEl    = root.querySelector('.settings-sleep');
-    const lowPowerEl = root.querySelector('.settings-lowpower');
     const standbyEl  = root.querySelector('.settings-standby');
     const wakeEl     = root.querySelector('.settings-wake');
 
@@ -114,18 +108,6 @@ export default defineView({
       }
     });
 
-    lowPowerEl.addEventListener('change', async () => {
-      const enabled = lowPowerEl.checked;
-      try {
-        await actions.setLowPowerStandby(enabled);
-        store.update('speaker', (s) => {
-          s.speaker.lowPowerStandby = { enabled };
-        });
-      } catch (_err) {
-        lowPowerEl.checked = !enabled;
-      }
-    });
-
     standbyEl.addEventListener('click', () => {
       actions.standby().catch(() => {});
     });
@@ -151,11 +133,6 @@ export default defineView({
       }
     }
 
-    function applyLowPower(lps) {
-      const enabled = !!(lps && lps.enabled);
-      if (lowPowerEl.checked !== enabled) lowPowerEl.checked = enabled;
-    }
-
     function applyPower(np) {
       const standby = np && np.source === 'STANDBY';
       wakeEl.disabled    = !standby;
@@ -165,14 +142,12 @@ export default defineView({
     const sp = store.state.speaker;
     applyName(sp.info);
     applySleep(sp.systemTimeout);
-    applyLowPower(sp.lowPowerStandby);
     applyPower(sp.nowPlaying);
 
     return {
       speaker(state) {
         applyName(state.speaker.info);
         applySleep(state.speaker.systemTimeout);
-        applyLowPower(state.speaker.lowPowerStandby);
         applyPower(state.speaker.nowPlaying);
       },
     };

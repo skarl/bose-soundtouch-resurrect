@@ -871,47 +871,6 @@ export async function postSystemTimeout(minutes) {
   if (!res.ok) throw new Error(`postSystemTimeout: HTTP ${res.status}`);
 }
 
-// Reference shape:
-//   <lowPowerStandby>
-//     <enabled>true</enabled>
-//   </lowPowerStandby>
-export function parseLowPowerStandbyEl(el) {
-  if (!el) return null;
-  const col = el.getElementsByTagName('enabled');
-  const enabled = col && col[0] ? col[0].textContent : '';
-  return { enabled: enabled === 'true' };
-}
-
-export function parseLowPowerStandbyXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-  const els = doc.getElementsByTagName('lowPowerStandby');
-  if (!els || !els[0]) return null;
-  return parseLowPowerStandbyEl(els[0]);
-}
-
-export async function getLowPowerStandby() {
-  const res = await fetch(`${apiBase}/speaker/lowPowerStandby`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getLowPowerStandby: HTTP ${res.status}`);
-  return parseLowPowerStandbyXml(await res.text());
-}
-
-export async function postLowPowerStandby(enabled) {
-  const xml = `<lowPowerStandby><enabled>${enabled ? 'true' : 'false'}</enabled></lowPowerStandby>`;
-  const res = await fetch(`${apiBase}/speaker/lowPowerStandby`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: xml,
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postLowPowerStandby: HTTP ${res.status}`);
-}
-
 export async function postStandby() {
   const res = await fetch(`${apiBase}/speaker/standby`, {
     method: 'POST',

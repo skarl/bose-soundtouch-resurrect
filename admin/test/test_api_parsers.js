@@ -20,7 +20,6 @@ import {
   parseSourcesXml, parseSourcesEl,
   parseNetworkInfoXml, parseNetworkInfoEl,
   parseSystemTimeoutXml, parseSystemTimeoutEl,
-  parseLowPowerStandbyXml, parseLowPowerStandbyEl,
   parseBluetoothInfoXml, parseBluetoothInfoEl,
   parseBassXml, parseBassEl,
   parseBassCapabilitiesXml, parseBassCapabilitiesEl,
@@ -347,43 +346,6 @@ test('parseSystemTimeoutEl: parses a DOM element directly', async () => {
   assert.ok(t, 'returns a non-null object');
   assert.equal(t.enabled, true);
   assert.equal(t.minutes, 20);
-});
-
-// --- parseLowPowerStandbyXml ----------------------------------------
-
-test('parseLowPowerStandbyXml: enabled=true', async () => {
-  const xml = await fixture('lowPowerStandby.xml');
-  const lps = parseLowPowerStandbyXml(xml);
-  assert.ok(lps, 'returns a non-null object');
-  assert.equal(lps.enabled, true);
-});
-
-test('parseLowPowerStandbyXml: enabled=false', async () => {
-  const xml = await fixture('lowPowerStandby-off.xml');
-  const lps = parseLowPowerStandbyXml(xml);
-  assert.ok(lps, 'returns a non-null object');
-  assert.equal(lps.enabled, false);
-});
-
-test('parseLowPowerStandbyXml: empty string returns null', () => {
-  assert.equal(parseLowPowerStandbyXml(''), null);
-});
-
-test('parseLowPowerStandbyXml: non-lowPowerStandby XML returns null', () => {
-  assert.equal(parseLowPowerStandbyXml('<volume>0</volume>'), null);
-});
-
-test('parseLowPowerStandbyEl: null input returns null', () => {
-  assert.equal(parseLowPowerStandbyEl(null), null);
-});
-
-test('parseLowPowerStandbyEl: parses a DOM element directly', async () => {
-  const xml = await fixture('lowPowerStandby.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('lowPowerStandby');
-  const lps = parseLowPowerStandbyEl(els && els[0]);
-  assert.ok(lps, 'returns a non-null object');
-  assert.equal(lps.enabled, true);
 });
 
 // --- parseBluetoothInfoXml ------------------------------------------

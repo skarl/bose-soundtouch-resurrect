@@ -20,7 +20,6 @@ import {
   parseSourcesEl,
   getNetworkInfo,
   getSystemTimeout,
-  getLowPowerStandby,
   getBluetoothInfo,
   getBass,
   parseBassEl,
@@ -162,7 +161,6 @@ export const FIELDS = [
   { name: 'network',       fetcher: getNetworkInfo },
   { name: 'recents',       fetcher: () => Promise.resolve(null) },
   { name: 'systemTimeout',   fetcher: getSystemTimeout },
-  { name: 'lowPowerStandby', fetcher: getLowPowerStandby },
 ];
 
 // Build a lookup map from eventTag → entry for dispatch().
