@@ -78,3 +78,11 @@ test('malformed XML does not throw', () => {
   const store = makeStore();
   assert.doesNotThrow(() => dispatch('<not valid xml', store));
 });
+
+test('sourcesUpdated hint-only event does not throw and triggers refetch (async)', async () => {
+  // The hint-only <sourcesUpdated/> has no inline sources list.
+  // dispatch() fires getSources() async; we just assert no synchronous throw.
+  const xml = await fixture('sources-updated.xml');
+  const store = makeStore();
+  assert.doesNotThrow(() => dispatch(xml, store));
+});

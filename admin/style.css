@@ -464,6 +464,46 @@ nav.routes a:hover {
   color: var(--bg);
 }
 
+/* Source picker pills */
+.np-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.np-source-pill {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+
+.np-source-pill:not(:disabled):hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.np-source-pill[data-active="true"] {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
+.np-source-pill[data-status="UNAVAILABLE"],
+.np-source-pill:disabled {
+  color: var(--muted);
+  background: var(--surface);
+  border-color: var(--border);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 /* STANDBY / asleep state */
 .np-asleep {
   border: 1px solid var(--border);

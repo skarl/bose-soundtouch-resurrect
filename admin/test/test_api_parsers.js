@@ -1,5 +1,5 @@
-// Tests for api.js parsers: parseNowPlayingXml / parseNowPlayingEl.
-// Slice 3 will add volume, slice 5 will add sources cases.
+// Tests for api.js parsers: parseNowPlayingXml / parseNowPlayingEl / parseSourcesXml.
+// Slice 3 will add volume cases.
 //
 // Run: node --test admin/test
 
@@ -14,7 +14,11 @@ globalThis.DOMParser = class extends XmldomDOMParser {
   constructor() { super({ onError: () => {} }); }
 };
 
-import { parseNowPlayingXml, parseNowPlayingEl, parseVolumeXml, parseVolumeEl } from '../app/api.js';
+import {
+  parseNowPlayingXml, parseNowPlayingEl,
+  parseVolumeXml, parseVolumeEl,
+  parseSourcesXml, parseSourcesEl,
+} from '../app/api.js';
 import { dispatch } from '../app/ws.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -172,4 +176,65 @@ test('volumeUpdated dispatch sets state.speaker.volume and touches speaker', asy
   assert.equal(vol.actualVolume, 32);
   assert.equal(vol.muteEnabled, false);
   assert.ok(store._touched.includes('speaker'), 'speaker key was touched');
+});
+
+// --- parseSourcesXml ------------------------------------------------
+
+test('parseSourcesXml: returns 4-element array with correct fields', async () => {
+  const xml = await fixture('sources.xml');
+  const sources = parseSourcesXml(xml);
+  assert.ok(Array.isArray(sources), 'returns an array');
+  assert.equal(sources.length, 4);
+
+  const tunein = sources[0];
+  assert.equal(tunein.source, 'TUNEIN');
+  assert.equal(tunein.sourceAccount, '');
+  assert.equal(tunein.status, 'READY');
+  assert.equal(tunein.isLocal, false, 'isLocal is boolean false');
+  assert.equal(tunein.displayName, 'TuneIn');
+
+  const aux = sources[1];
+  assert.equal(aux.source, 'AUX');
+  assert.equal(aux.sourceAccount, 'AUX');
+  assert.equal(aux.status, 'READY');
+  assert.equal(aux.isLocal, true, 'isLocal is boolean true');
+  assert.equal(aux.displayName, 'AUX');
+
+  const bt = sources[2];
+  assert.equal(bt.source, 'BLUETOOTH');
+  assert.equal(bt.status, 'UNAVAILABLE');
+  assert.equal(bt.isLocal, true);
+  assert.equal(bt.displayName, 'Bluetooth');
+
+  const spotify = sources[3];
+  assert.equal(spotify.source, 'SPOTIFY');
+  assert.equal(spotify.sourceAccount, 'account-1');
+  assert.equal(spotify.isLocal, false);
+});
+
+test('parseSourcesXml: empty string returns null', () => {
+  assert.equal(parseSourcesXml(''), null);
+});
+
+test('parseSourcesXml: no-sources <sources/> returns empty array', () => {
+  const sources = parseSourcesXml('<sources deviceID="test"/>');
+  assert.ok(Array.isArray(sources), 'returns an array');
+  assert.equal(sources.length, 0);
+});
+
+// --- parseSourcesEl (DOM element path) ------------------------------
+
+test('parseSourcesEl: parses a DOM element directly', async () => {
+  const xml = await fixture('sources.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const els = doc.getElementsByTagName('sources');
+  const sources = parseSourcesEl(els && els[0]);
+  assert.ok(Array.isArray(sources), 'returns an array');
+  assert.equal(sources.length, 4);
+  assert.equal(sources[0].source, 'TUNEIN');
+  assert.equal(sources[0].isLocal, false);
+});
+
+test('parseSourcesEl: null input returns null', () => {
+  assert.equal(parseSourcesEl(null), null);
 });

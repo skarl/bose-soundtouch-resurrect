@@ -8,7 +8,7 @@
 
 import { html, mount } from '../dom.js';
 import { store, setPresets, setNowPlaying } from '../state.js';
-import { speakerNowPlaying, presetsList, postVolume } from '../api.js';
+import { speakerNowPlaying, presetsList, postVolume, postSelect, postSelectLocalSource } from '../api.js';
 import { setArt } from '../art.js';
 import { postKey, makeVolumeSender } from '../transport.js';
 import { setVolumeConfirmFn } from '../ws.js';
@@ -23,6 +23,7 @@ let metaEl     = null;
 let cardEl     = null;
 let asleepEl   = null;
 let transportEl = null;
+let sourcesEl  = null;
 let btnPrev    = null;
 let btnPlay    = null;
 let btnNext    = null;
@@ -185,6 +186,60 @@ function applyNowPlaying(np) {
   syncPlayBtn(np);
 }
 
+// --- source picker pills -------------------------------------------
+
+// Active source comes from state.speaker.nowPlaying.source.
+// Render once on init (empty); mutate pill attributes on each update.
+function applySourcePills(sources, activeSource) {
+  if (!sourcesEl) return;
+
+  const existing = sourcesEl.querySelectorAll('.np-source-pill');
+  const sourcesArr = Array.isArray(sources) ? sources : [];
+
+  if (existing.length !== sourcesArr.length) {
+    // Sources list changed length — rebuild the pill row.
+    sourcesEl.textContent = '';
+    for (const src of sourcesArr) {
+      const btn = document.createElement('button');
+      btn.className = 'np-source-pill';
+      btn.type = 'button';
+      btn.dataset.source = src.source;
+      btn.dataset.account = src.sourceAccount || '';
+      btn.dataset.status = src.status;
+      btn.dataset.local = src.isLocal ? 'true' : 'false';
+      btn.textContent = src.displayName || src.source;
+      btn.addEventListener('click', onSourceClick);
+      sourcesEl.appendChild(btn);
+    }
+  }
+
+  // Mutate active/disabled state on existing pill nodes.
+  const pills = sourcesEl.querySelectorAll('.np-source-pill');
+  for (const pill of pills) {
+    const src = pill.dataset.source;
+    const unavail = pill.dataset.status === 'UNAVAILABLE';
+    pill.disabled = unavail;
+    pill.dataset.active = (src === activeSource) ? 'true' : 'false';
+  }
+}
+
+async function onSourceClick(evt) {
+  const btn = evt.currentTarget;
+  const source = btn.dataset.source;
+  const sourceAccount = btn.dataset.account || '';
+  const isLocal = btn.dataset.local === 'true';
+  try {
+    if (isLocal) {
+      await postSelectLocalSource(source);
+    } else {
+      await postSelect({ source, sourceAccount });
+    }
+  } catch (_err) {
+    // Switch errors are non-fatal — the source pill state will self-correct
+    // when the next nowPlaying update arrives.
+  }
+}
+
 // --- transport click handlers --------------------------------------
 
 let keyInFlight = false;
@@ -233,6 +288,7 @@ export default {
           <input class="np-slider" type="range" min="0" max="100" step="1" aria-label="Volume">
           <button class="np-mute" type="button" title="Mute" aria-pressed="false">&#x1F507;</button>
         </div>
+        <div class="np-sources"></div>
         <div class="np-asleep" hidden>
           <p>Speaker is asleep</p>
           <p class="np-asleep-hint">Press Play to wake it up.</p>
@@ -246,6 +302,7 @@ export default {
     trackEl    = root.querySelector('.np-track');
     metaEl     = root.querySelector('.np-meta');
     transportEl = root.querySelector('.np-transport');
+    sourcesEl  = root.querySelector('.np-sources');
     asleepEl   = root.querySelector('.np-asleep');
     volumeRowEl = root.querySelector('.np-volume');
     sliderEl   = root.querySelector('.np-slider');
@@ -276,8 +333,10 @@ export default {
 
     muteEl.addEventListener('click', () => { postKey('MUTE'); });
 
-    applyNowPlaying(store.state.speaker.nowPlaying);
-    applyVolume(store.state.speaker.volume);
+    const sp = store.state.speaker;
+    applyNowPlaying(sp.nowPlaying);
+    applyVolume(sp.volume);
+    applySourcePills(sp.sources, sp.nowPlaying && sp.nowPlaying.source);
 
     bindVisibilityOnce();
     if (!document.hidden) startPolling();
@@ -288,12 +347,14 @@ export default {
     if (changedKey !== 'speaker') return;
     applyNowPlaying(state.speaker.nowPlaying);
     applyVolume(state.speaker.volume);
+    const activeSource = state.speaker.nowPlaying && state.speaker.nowPlaying.source;
+    applySourcePills(state.speaker.sources, activeSource);
   },
 
   _teardown() {
     clearPoll();
     cardEl = artEl = nameEl = trackEl = metaEl = null;
-    transportEl = asleepEl = btnPrev = btnPlay = btnNext = null;
+    transportEl = sourcesEl = asleepEl = btnPrev = btnPlay = btnNext = null;
     sliderEl = muteEl = volumeRowEl = null;
     volumeSender = null;
     setVolumeConfirmFn(null);
