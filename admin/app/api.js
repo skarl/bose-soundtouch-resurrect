@@ -668,6 +668,90 @@ export async function postSetPower(state) {
 }
 
 
+// --- bluetooth ------------------------------------------------------
+
+// GET /cgi-bin/api/v1/speaker/bluetoothInfo → { paired: [{name, mac}, ...] }.
+// The speaker reports its paired-devices list; pairing-mode state is not in
+// this payload (no reliable WS event observed either), so the view uses a
+// transient client-side hint after enterBluetoothPairing().
+export async function getBluetoothInfo() {
+  const res = await fetch(`${apiBase}/speaker/bluetoothInfo`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getBluetoothInfo: HTTP ${res.status}`);
+  const text = await res.text();
+  return parseBluetoothInfoXml(text);
+}
+
+// Parse the speaker's <BluetoothInfo> XML into:
+//   { paired: [{ name, mac }, ...] }
+//
+// Reference shapes (firmware does not publish a schema; observed):
+//   Empty:
+//     <BluetoothInfo/>
+//   or
+//     <BluetoothInfo><pairedList/></BluetoothInfo>
+//   Populated:
+//     <BluetoothInfo>
+//       <pairedList>
+//         <pairedDevice mac="AA:BB:CC:DD:EE:FF">My Phone</pairedDevice>
+//         ...
+//       </pairedList>
+//     </BluetoothInfo>
+//
+// Defensive: tolerates either tag-case (BluetoothInfo / bluetoothInfo) and
+// missing pairedList.
+export function parseBluetoothInfoXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+
+  let root = doc.getElementsByTagName('BluetoothInfo');
+  if (!root || !root[0]) root = doc.getElementsByTagName('bluetoothInfo');
+  if (!root || !root[0]) return null;
+
+  return parseBluetoothInfoEl(root[0]);
+}
+
+// Parse an already-resolved <BluetoothInfo> DOM element.
+export function parseBluetoothInfoEl(el) {
+  if (!el) return null;
+  const devices = el.getElementsByTagName('pairedDevice');
+  const paired = [];
+  for (let i = 0; i < devices.length; i++) {
+    const d = devices[i];
+    const mac = d.getAttribute('mac') || d.getAttribute('MAC') || '';
+    const name = (d.textContent || '').trim();
+    paired.push({ name, mac });
+  }
+  return { paired };
+}
+
+// POST /cgi-bin/api/v1/speaker/enterBluetoothPairing — one-shot. Bo's
+// firmware accepts an empty body; the proxy just forwards it.
+export async function postEnterBluetoothPairing() {
+  const res = await fetch(`${apiBase}/speaker/enterBluetoothPairing`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: '',
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postEnterBluetoothPairing: HTTP ${res.status}`);
+}
+
+// POST /cgi-bin/api/v1/speaker/clearBluetoothPaired — one-shot. Empty body.
+export async function postClearBluetoothPaired() {
+  const res = await fetch(`${apiBase}/speaker/clearBluetoothPaired`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: '',
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postClearBluetoothPaired: HTTP ${res.status}`);
+}
+
 // POST /presets/:slot with {id, slot, name, kind, json}.
 // Slot is 1..6; payload must include matching `slot` and `kind:"playable"`
 // (the CGI rejects anything else with a structured error).

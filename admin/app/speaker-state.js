@@ -21,6 +21,7 @@ import {
   getNetworkInfo,
   getSystemTimeout,
   getLowPowerStandby,
+  getBluetoothInfo,
 } from './api.js';
 import * as actions from './actions/index.js';
 
@@ -103,7 +104,7 @@ export const FIELDS = [
   { name: 'balance',       fetcher: () => Promise.resolve(null) },
   { name: 'dspMonoStereo', fetcher: () => Promise.resolve(null) },
   { name: 'zone',          fetcher: () => Promise.resolve(null) },
-  { name: 'bluetooth',     fetcher: () => Promise.resolve(null) },
+  { name: 'bluetooth',     fetcher: getBluetoothInfo },
   // No reliable WS event for /networkInfo — connectionStateUpdated
   // covers the Wi-Fi flap separately (state.ws). Refetched on settings
   // view-entry; user-driven via the section's Refresh button.

@@ -21,6 +21,7 @@ import {
   parseNetworkInfoXml, parseNetworkInfoEl,
   parseSystemTimeoutXml, parseSystemTimeoutEl,
   parseLowPowerStandbyXml, parseLowPowerStandbyEl,
+  parseBluetoothInfoXml, parseBluetoothInfoEl,
 } from '../app/api.js';
 import { dispatch } from '../app/ws.js';
 
@@ -378,4 +379,53 @@ test('parseLowPowerStandbyEl: parses a DOM element directly', async () => {
   const lps = parseLowPowerStandbyEl(els && els[0]);
   assert.ok(lps, 'returns a non-null object');
   assert.equal(lps.enabled, true);
+});
+
+// --- parseBluetoothInfoXml ------------------------------------------
+
+test('parseBluetoothInfoXml: empty pairedList returns paired=[]', async () => {
+  const xml = await fixture('bluetooth-info-empty.xml');
+  const bt = parseBluetoothInfoXml(xml);
+  assert.ok(bt, 'returns a non-null object');
+  assert.ok(Array.isArray(bt.paired), 'paired is an array');
+  assert.equal(bt.paired.length, 0);
+});
+
+test('parseBluetoothInfoXml: populated returns name+mac per device', async () => {
+  const xml = await fixture('bluetooth-info-populated.xml');
+  const bt = parseBluetoothInfoXml(xml);
+  assert.ok(bt);
+  assert.equal(bt.paired.length, 2);
+  assert.equal(bt.paired[0].name, "Sven's Phone");
+  assert.equal(bt.paired[0].mac, 'AA:BB:CC:DD:EE:FF');
+  assert.equal(bt.paired[1].name, 'MacBook Pro');
+  assert.equal(bt.paired[1].mac, '11:22:33:44:55:66');
+});
+
+test('parseBluetoothInfoXml: bare <BluetoothInfo/> returns paired=[]', () => {
+  const bt = parseBluetoothInfoXml('<BluetoothInfo/>');
+  assert.ok(bt);
+  assert.equal(bt.paired.length, 0);
+});
+
+test('parseBluetoothInfoXml: empty string returns null', () => {
+  assert.equal(parseBluetoothInfoXml(''), null);
+});
+
+test('parseBluetoothInfoXml: non-bluetooth XML returns null', () => {
+  assert.equal(parseBluetoothInfoXml('<volume>42</volume>'), null);
+});
+
+test('parseBluetoothInfoEl: null input returns null', () => {
+  assert.equal(parseBluetoothInfoEl(null), null);
+});
+
+test('parseBluetoothInfoEl: parses a DOM element directly', async () => {
+  const xml = await fixture('bluetooth-info-populated.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const els = doc.getElementsByTagName('BluetoothInfo');
+  const bt = parseBluetoothInfoEl(els && els[0]);
+  assert.ok(bt);
+  assert.equal(bt.paired.length, 2);
+  assert.equal(bt.paired[0].mac, 'AA:BB:CC:DD:EE:FF');
 });

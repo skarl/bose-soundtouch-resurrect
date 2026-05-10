@@ -34,7 +34,7 @@ async function wsFixture(name) { return readFile(join(WS_FIX, name), 'utf8'); }
 
 function makeStore() {
   const state = {
-    speaker: { info: null, nowPlaying: null, presets: null, volume: null, sources: null, network: null },
+    speaker: { info: null, nowPlaying: null, presets: null, volume: null, sources: null, network: null, bluetooth: null },
     ws: { connected: false, lastEvent: null },
     caches: {},
     ui: {},
@@ -55,6 +55,7 @@ const FAKE_PRESETS   = { ok: true, data: [{ slot: 1, source: 'TUNEIN', type: 'st
 const FAKE_VOLUME    = { targetVolume: 32, actualVolume: 32, muteEnabled: false };
 const FAKE_SOURCES   = [{ source: 'TUNEIN', sourceAccount: '', status: 'READY', isLocal: false, displayName: 'TuneIn' }];
 const FAKE_NETWORK   = { macAddress: '0CB2B709F837', ipAddress: '192.168.178.36', ssid: 'WLAN-Oben', signal: 'GOOD_SIGNAL', frequencyKHz: 5240000, name: 'wlan0', type: 'WIFI_INTERFACE', state: 'NETWORK_WIFI_CONNECTED', mode: 'STATION' };
+const FAKE_BLUETOOTH = { paired: [{ name: 'Phone', mac: 'AA:BB:CC:DD:EE:FF' }] };
 
 // Replace the fetcher on a FIELDS entry for the duration of a test.
 function withFetchers(overrides, fn) {
@@ -88,6 +89,7 @@ const ALL_RESOLVED = {
   volume:     async () => FAKE_VOLUME,
   sources:    async () => FAKE_SOURCES,
   network:    async () => FAKE_NETWORK,
+  bluetooth:  async () => FAKE_BLUETOOTH,
 };
 
 // --- Tests -----------------------------------------------------------
@@ -105,6 +107,7 @@ test('reconcile: all fulfilled → single store.touch("speaker")', () =>
     assert.deepEqual(store.state.speaker.volume, FAKE_VOLUME);
     assert.deepEqual(store.state.speaker.sources, FAKE_SOURCES);
     assert.deepEqual(store.state.speaker.network, FAKE_NETWORK);
+    assert.deepEqual(store.state.speaker.bluetooth, FAKE_BLUETOOTH);
   }),
 );
 
@@ -218,6 +221,33 @@ test('dispatch: volumeUpdated → afterApply confirms actions slider with actual
   actions.setVolume(32);
   assert.equal(actions.hasPending('volume'), false,
     'confirm(32) gates a set(32) — no in-flight POST');
+});
+
+test('reconcile: bluetooth fetcher result is applied to state.speaker.bluetooth', () =>
+  withFetchers({ ...ALL_RESOLVED, bluetooth: async () => FAKE_BLUETOOTH }, async () => {
+    const store = makeStore();
+    await reconcile(store);
+    assert.deepEqual(store.state.speaker.bluetooth, FAKE_BLUETOOTH);
+  }),
+);
+
+test('reconcile: bluetooth fetcher rejection — bluetooth stays null, others apply', () =>
+  withFetchers({
+    ...ALL_RESOLVED,
+    bluetooth: async () => { throw new Error('network error'); },
+  }, async () => {
+    const store = makeStore();
+    await assert.doesNotReject(() => reconcile(store));
+    assert.equal(store.state.speaker.bluetooth, null, 'bluetooth stays null');
+    assert.deepEqual(store.state.speaker.info, FAKE_INFO);
+  }),
+);
+
+test('registry: bluetooth field exists with a fetcher and no eventTag (fetch-only)', () => {
+  const bt = FIELDS.find((f) => f.name === 'bluetooth');
+  assert.ok(bt, 'bluetooth entry present');
+  assert.equal(typeof bt.fetcher, 'function', 'bluetooth has a fetcher');
+  assert.equal(bt.eventTag, undefined, 'bluetooth is fetch-only — no WS event');
 });
 
 test('registry sanity: every entry with eventTag has parseInline and a fetcher', () => {

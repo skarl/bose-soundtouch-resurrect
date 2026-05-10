@@ -9,6 +9,8 @@ import {
   postSetPower,
   presetsAssign,
   previewStream as apiPreviewStream,
+  postEnterBluetoothPairing,
+  postClearBluetoothPaired,
 } from '../api.js';
 import { recordOutgoing, wasRecent } from './ledger.js';
 import { controllerFor, volumeCtl } from './sliders.js';
@@ -74,6 +76,16 @@ export async function standby() {
 export async function setPower(state) {
   recordOutgoing('transport');
   await postSetPower(state);
+}
+
+export async function enterBluetoothPairing() {
+  recordOutgoing('bluetooth');
+  await postEnterBluetoothPairing();
+}
+
+export async function clearBluetoothPaired() {
+  recordOutgoing('bluetooth');
+  await postClearBluetoothPaired();
 }
 
 export { wasRecent };

@@ -91,6 +91,72 @@ export function updateVuDot(dot, state) {
   dot.dataset.playing = playing ? 'true' : 'false';
 }
 
+// confirm(message, options) — minimal modal confirm. Returns
+// Promise<boolean> that resolves true on accept, false on cancel /
+// dismiss / Escape. Single-button confirm; no typed-confirmation. Used
+// for low-risk destructive actions (e.g. clear paired BT devices); a
+// future caller wanting typed-confirm can extend the options.
+//
+// options: { confirmLabel?: string, cancelLabel?: string, danger?: boolean }
+//
+// Mounts itself on document.body; tears itself down on resolve.
+export function confirm(message, options = {}) {
+  return new Promise((resolve) => {
+    const confirmLabel = options.confirmLabel || 'OK';
+    const cancelLabel  = options.cancelLabel  || 'Cancel';
+    const danger       = !!options.danger;
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'confirm-backdrop';
+
+    const dialog = document.createElement('div');
+    dialog.className = 'confirm-dialog';
+    dialog.setAttribute('role', 'alertdialog');
+    dialog.setAttribute('aria-modal', 'true');
+
+    const msg = document.createElement('p');
+    msg.className = 'confirm-message';
+    msg.textContent = message;
+    dialog.appendChild(msg);
+
+    const actions = document.createElement('div');
+    actions.className = 'confirm-actions';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'confirm-btn confirm-btn--cancel';
+    cancelBtn.textContent = cancelLabel;
+
+    const okBtn = document.createElement('button');
+    okBtn.type = 'button';
+    okBtn.className = 'confirm-btn confirm-btn--ok';
+    if (danger) okBtn.classList.add('confirm-btn--danger');
+    okBtn.textContent = confirmLabel;
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(okBtn);
+    dialog.appendChild(actions);
+    backdrop.appendChild(dialog);
+
+    function close(result) {
+      document.removeEventListener('keydown', onKey, true);
+      backdrop.remove();
+      resolve(result);
+    }
+    function onKey(e) {
+      if (e.key === 'Escape') { e.preventDefault(); close(false); }
+    }
+
+    cancelBtn.addEventListener('click', () => close(false));
+    okBtn.addEventListener('click', () => close(true));
+    backdrop.addEventListener('click', (e) => { if (e.target === backdrop) close(false); });
+    document.addEventListener('keydown', onKey, true);
+
+    document.body.appendChild(backdrop);
+    okBtn.focus();
+  });
+}
+
 // Build a clickable card for a TuneIn station. `sid` is the only
 // required field; everything else degrades gracefully when missing.
 // Clicking the card sets location.hash to #/station/<sid> via the
