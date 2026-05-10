@@ -25,6 +25,14 @@ import {
 let volumeConfirmFn = null;
 export function setVolumeConfirmFn(fn) { volumeConfirmFn = fn; }
 
+// Registered "is the user currently committing a volume change?" probe.
+// volume.js wires its hasPending() in here. Used by volume's apply to
+// avoid overwriting the user's eager targetVolume with a stale WS one
+// during fast drags (the speaker reports the previous target until our
+// queued POST resolves).
+let volumePendingFn = null;
+export function setVolumePendingFn(fn) { volumePendingFn = fn; }
+
 // Field entry shape:
 //   name        — key in state.speaker
 //   fetcher     — () => Promise<value>
@@ -67,6 +75,22 @@ export const FIELDS = [
     parseInline(el) {
       const vols = el.getElementsByTagName('volume');
       return vols && vols[0] ? parseVolumeEl(vols[0]) : null;
+    },
+    apply(state, value) {
+      if (!value) return;
+      const prev = state.speaker.volume;
+      // While the user has a queued/in-flight volume command, the WS
+      // event's targetVolume may still reflect the previous level —
+      // overwriting would yank the slider thumb back. Keep our eager
+      // targetVolume; only update what the speaker uniquely owns.
+      if (prev && volumePendingFn && volumePendingFn()) {
+        state.speaker.volume = {
+          ...value,
+          targetVolume: prev.targetVolume,
+        };
+      } else {
+        state.speaker.volume = value;
+      }
     },
     afterApply(value) {
       if (volumeConfirmFn && value) volumeConfirmFn(value.actualVolume);

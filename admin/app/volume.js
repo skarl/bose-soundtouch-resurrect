@@ -1,7 +1,7 @@
 import { store } from './state.js';
 import { postVolume } from './api.js';
 import { postKey } from './transport.js';
-import { setVolumeConfirmFn } from './speaker-state.js';
+import { setVolumeConfirmFn, setVolumePendingFn } from './speaker-state.js';
 import { recordOutgoing } from './io-ledger.js';
 
 export function makeVolumeController({ store: s, postVolume: postVol, postKey: postK }) {
@@ -51,8 +51,16 @@ export function makeVolumeController({ store: s, postVolume: postVol, postKey: p
     confirm(actualVolume) {
       confirmed = actualVolume;
     },
+
+    // True while a postVolume is in flight or queued — used by
+    // speaker-state.js to skip overwriting the user's eager target with
+    // a stale WS targetVolume during fast drags.
+    hasPending() {
+      return inFlight || queued !== null;
+    },
   };
 }
 
 export const volumeController = makeVolumeController({ store, postVolume, postKey });
 setVolumeConfirmFn((v) => volumeController.confirm(v));
+setVolumePendingFn(() => volumeController.hasPending());
