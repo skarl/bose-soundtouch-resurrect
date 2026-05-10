@@ -592,6 +592,65 @@ test('STANDBY: card hidden, asleep panel shown', () => {
   }
 });
 
+test('now-playing card: mono metadata pill rides next to the equalizer', () => {
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: 'KEXP', type: 'stationurl' },
+      playStatus: 'PLAY_STATE',
+    },
+  });
+
+  const { root, destroy } = mountView();
+  try {
+    const metaRow = root.querySelector('.np-meta-row');
+    assert.ok(metaRow, 'meta row container exists');
+    const eq = metaRow.querySelector('.np-eq-slot');
+    const meta = metaRow.querySelector('.np-meta');
+    assert.ok(eq, 'equalizer slot present in meta row');
+    assert.ok(meta, 'mono metadata pill present in meta row');
+    assert.ok(meta.textContent.includes('TUNEIN'),
+      `meta should include source key, got ${meta.textContent}`);
+    assert.equal(meta.hidden, false,
+      'meta pill is visible when nowPlaying carries source/type');
+  } finally {
+    destroy();
+  }
+});
+
+test('preset cards: every cell carries a deterministic gradient hue', () => {
+  setSpeakerState({
+    presets: [
+      { slot: 1, empty: false, itemName: 'KEXP', source: 'TUNEIN', location: 's1' },
+      { slot: 2, empty: true },
+      { slot: 3, empty: false, itemName: 'BBC 6', source: 'TUNEIN', location: 's2' },
+      { slot: 4, empty: true },
+      { slot: 5, empty: true },
+      { slot: 6, empty: true },
+    ],
+  });
+
+  const { root, destroy } = mountView();
+  try {
+    const presets = root.querySelectorAll('.np-preset');
+    assert.equal(presets.length, 6, 'six preset cells');
+    // Both occupied AND empty slots get a deterministic hue so the grid
+    // stays visually consistent (empty cells are desaturated by CSS).
+    for (let i = 0; i < presets.length; i++) {
+      const hue = presets[i].style.getPropertyValue('--np-preset-hue');
+      assert.ok(/^\d+$/.test(hue),
+        `preset ${i + 1} should carry --np-preset-hue, got ${hue}`);
+    }
+    // Empty cells render no station-name string.
+    const emptyCell = presets[1];
+    const emptyName = emptyCell.querySelector('.np-preset-name');
+    assert.equal(emptyName.textContent, '',
+      'empty preset cell renders a blank label slot');
+  } finally {
+    destroy();
+  }
+});
+
 test('volume slider: WS-driven re-render mutates in place (focus survives)', () => {
   setSpeakerState({
     volume: { targetVolume: 30, actualVolume: 30, muteEnabled: false },

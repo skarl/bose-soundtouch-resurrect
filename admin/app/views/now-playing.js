@@ -1,6 +1,7 @@
-// now-playing — live home view (compact card + 3-col preset grid).
-// Art + station name + track/artist + source metadata + transport on a
-// single horizontal card; volume in its own row beneath.
+// now-playing — live home view. Composite tinted card carrying art +
+// mono metadata pill + title/track + transport on top, with the volume
+// row separated by a hairline border below. Source switcher card +
+// 3-up gradient preset grid follow.
 //
 // REST polling runs as a fallback; the primary update path is the WS
 // 'speaker' subscription wired by the view shell.
@@ -85,30 +86,46 @@ export default defineView({
     mount(root, html`
       <section class="np-view" data-view="now-playing">
         <div class="np-card">
-          <div class="np-art-wrap">
-            <img class="np-art" alt="">
-          </div>
-          <div class="np-body">
-            <div class="np-text">
-              <h1 class="np-name"></h1>
-              <p class="np-track" aria-live="polite" hidden></p>
-              <p class="np-meta" hidden></p>
+          <div class="np-card__top">
+            <div class="np-art-wrap">
+              <img class="np-art" alt="">
             </div>
-            <div class="np-transport">
-              <button class="np-btn np-btn--prev" type="button" title="Previous" aria-label="Previous track"></button>
-              <button class="np-btn np-btn--play" type="button" title="Play" aria-label="Play"></button>
-              <button class="np-btn np-btn--next" type="button" title="Next" aria-label="Next track"></button>
+            <div class="np-body">
+              <div class="np-text">
+                <div class="np-meta-row">
+                  <span class="np-eq-slot" aria-hidden="true"></span>
+                  <span class="np-meta" hidden></span>
+                </div>
+                <h1 class="np-name"></h1>
+                <p class="np-track" aria-live="polite" hidden></p>
+              </div>
+              <div class="np-transport">
+                <button class="np-btn np-btn--prev" type="button" title="Previous" aria-label="Previous track"></button>
+                <button class="np-btn np-btn--play" type="button" title="Play" aria-label="Play"></button>
+                <button class="np-btn np-btn--next" type="button" title="Next" aria-label="Next track"></button>
+              </div>
             </div>
           </div>
-          <span class="np-eq-slot" aria-hidden="true"></span>
+          <div class="np-volume" hidden>
+            <button class="np-mute" type="button" title="Mute" aria-pressed="false" aria-label="Mute"></button>
+            <span class="np-slider-slot"></span>
+            <span class="np-vol-value" aria-hidden="true">0</span>
+          </div>
         </div>
-        <div class="np-volume" hidden>
-          <span class="np-vol-icon" aria-hidden="true"></span>
-          <span class="np-slider-slot"></span>
-          <button class="np-mute" type="button" title="Mute" aria-pressed="false" aria-label="Mute"></button>
+        <div class="np-source-card">
+          <div class="np-section-h">
+            <span>Source</span>
+            <span class="np-section-h__meta np-source-current"></span>
+          </div>
+          <div class="np-sources" role="toolbar" aria-label="Sources"></div>
         </div>
-        <div class="np-sources" role="toolbar" aria-label="Sources"></div>
-        <div class="np-presets-grid" role="toolbar" aria-label="Presets"></div>
+        <div class="np-presets">
+          <div class="np-section-h">
+            <span>Presets</span>
+            <span class="np-section-h__hint">tap to play · long-press to replace</span>
+          </div>
+          <div class="np-presets-grid" role="toolbar" aria-label="Presets"></div>
+        </div>
         <div class="np-asleep" hidden>
           <p>Speaker is asleep</p>
           <p class="np-asleep-hint">Press Play to wake it up.</p>
@@ -121,27 +138,27 @@ export default defineView({
     const nameEl     = root.querySelector('.np-name');
     const trackEl    = root.querySelector('.np-track');
     const metaEl     = root.querySelector('.np-meta');
-    const transportEl = root.querySelector('.np-transport');
     const sourcesEl  = root.querySelector('.np-sources');
+    const sourceCurEl = root.querySelector('.np-source-current');
     const presetsEl  = root.querySelector('.np-presets-grid');
     const asleepEl   = root.querySelector('.np-asleep');
     const volumeRowEl = root.querySelector('.np-volume');
     const muteEl     = root.querySelector('.np-mute');
     const eqSlot     = root.querySelector('.np-eq-slot');
     const sliderSlot = root.querySelector('.np-slider-slot');
-    const volIconSlot = root.querySelector('.np-vol-icon');
+    const volValueEl = root.querySelector('.np-vol-value');
     const btnPrev = root.querySelector('.np-btn--prev');
     const btnPlay = root.querySelector('.np-btn--play');
     const btnNext = root.querySelector('.np-btn--next');
 
     eqSlot.appendChild(eqEl);
     sliderSlot.appendChild(volumeSlider);
-    volIconSlot.appendChild(icon('vol', 18));
-    btnPrev.appendChild(icon('prev', 22));
-    btnNext.appendChild(icon('next', 22));
-    const playIconRef = { node: icon('play', 22) };
+    btnPrev.appendChild(icon('prev', 16));
+    btnNext.appendChild(icon('next', 16));
+    const playIconRef = { node: icon('play', 16) };
     btnPlay.appendChild(playIconRef.node);
-    muteEl.appendChild(icon('mute', 16));
+    const muteIconRef = { node: icon('vol', 14) };
+    muteEl.appendChild(muteIconRef.node);
 
     // Long-press state — closure-local.
     let longPressTimer    = null;
@@ -159,7 +176,7 @@ export default defineView({
 
     function syncPlayBtn(np) {
       const playing = np && np.playStatus === 'PLAY_STATE';
-      const next = playing ? icon('pause', 22) : icon('play', 22);
+      const next = playing ? icon('pause', 16) : icon('play', 16);
       btnPlay.replaceChild(next, playIconRef.node);
       playIconRef.node = next;
       btnPlay.title = playing ? 'Pause' : 'Play';
@@ -180,6 +197,11 @@ export default defineView({
       muteEl.title = muted ? 'Unmute' : 'Mute';
       muteEl.setAttribute('aria-pressed', muted ? 'true' : 'false');
       muteEl.setAttribute('aria-label', muted ? 'Unmute' : 'Mute');
+      // Mute icon swaps between vol / mute glyph.
+      const muteNext = icon(muted ? 'mute' : 'vol', 14);
+      muteEl.replaceChild(muteNext, muteIconRef.node);
+      muteIconRef.node = muteNext;
+      volValueEl.textContent = muted ? 'MUTED' : String(level);
       volumeRowEl.hidden = !vol;
     }
 
@@ -242,15 +264,14 @@ export default defineView({
 
         // Per-slot deterministic gradient. hashHue keeps the colour
         // stable across reloads so all six render simultaneously
-        // without scheduling six concurrent canvas reads.
-        if (empty) {
-          btn.style.removeProperty('--np-preset-hue');
-        } else {
-          btn.style.setProperty('--np-preset-hue', String(hashHue(newName)));
-        }
+        // without scheduling six concurrent canvas reads. Empty slots
+        // still get a deterministic hue (keyed on the slot) so the
+        // grid reads as six placeholder tiles rather than blank squares.
+        const hueKey = empty ? `preset-${i + 1}` : newName;
+        btn.style.setProperty('--np-preset-hue', String(hashHue(hueKey)));
 
         const labelEl = btn.querySelector('.np-preset-name');
-        if (labelEl) labelEl.textContent = empty ? 'Empty' : newName;
+        if (labelEl) labelEl.textContent = empty ? '' : newName;
       }
     }
 
@@ -341,12 +362,18 @@ export default defineView({
 
       const num = document.createElement('span');
       num.className = 'np-preset-num';
-      num.textContent = String(i + 1);
+      num.textContent = '0' + (i + 1);
       btn.appendChild(num);
+
+      const eq = document.createElement('span');
+      eq.className = 'np-preset-eq';
+      eq.setAttribute('aria-hidden', 'true');
+      eq.appendChild(equalizer({ playing: true }));
+      btn.appendChild(eq);
 
       const labelSpan = document.createElement('span');
       labelSpan.className = 'np-preset-name';
-      labelSpan.textContent = 'Empty';
+      labelSpan.textContent = '';
       btn.appendChild(labelSpan);
 
       btn.addEventListener('click', onPresetClick);
@@ -396,6 +423,8 @@ export default defineView({
         pill2.dataset.active = (src === activeSource) ? 'true' : 'false';
         pill2.setAttribute('aria-pressed', src === activeSource ? 'true' : 'false');
       }
+
+      if (sourceCurEl) sourceCurEl.textContent = activeSource || '';
     }
 
     async function onSourceClick(evt) {

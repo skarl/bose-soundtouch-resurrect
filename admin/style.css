@@ -385,53 +385,47 @@ main {
 .np-view {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.875rem;
 }
 
-/* Single horizontal card: art (left) + body column (right). The hero
-   background blends an album-art tint (tint.js sets --np-tint on
-   .np-view) into --surface. Falls back to plain --surface when the
-   tint isn't set (initial load, missing art, CORS-tainted canvas).
-   The equalizer dot sits at the top-right via .np-eq-slot. */
+/* Single composite card: tinted top region (art + metadata + transport)
+   sitting above a thin volume row separated by a border. The hero tint
+   blends an album-art-derived hue (tint.js sets --np-tint on .np-view)
+   into --surface; falls back to --accent when tint is unset. */
 .np-card {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: 1rem;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1rem;
-  background:
-    linear-gradient(135deg,
-      color-mix(in srgb, var(--np-tint, var(--surface)) 35%, var(--surface)) 0%,
-      var(--surface) 70%);
-  position: relative;
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.np-card__top {
+  display: flex;
+  gap: 14px;
+  padding: 14px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, var(--np-tint, var(--accent)) 7%, var(--surface)),
+    var(--surface));
   transition: background 600ms ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .np-card { transition: none; }
+  .np-card__top { transition: none; }
 }
 
 .np-art-wrap {
   flex: 0 0 auto;
-  align-self: center;
+  align-self: flex-start;
 }
 
 .np-art {
-  width: 6rem;
-  height: 6rem;
+  width: 88px;
+  height: 88px;
   object-fit: cover;
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--border);
   display: block;
-}
-
-@media (min-width: 640px) {
-  .np-art {
-    width: 7.5rem;
-    height: 7.5rem;
-  }
 }
 
 .np-body {
@@ -439,8 +433,6 @@ main {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 0.75rem;
 }
 
 .np-text {
@@ -448,13 +440,40 @@ main {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 4px;
+}
+
+.np-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 14px;
+}
+
+.np-eq-slot {
+  display: inline-flex;
+  align-items: center;
+  color: var(--np-tint, var(--accent));
+  font-size: 12px;
+}
+
+.np-meta {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .np-name {
-  font-size: 1.15rem;
+  font-size: 17px;
   margin: 0;
   font-weight: 600;
+  letter-spacing: -0.01em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -462,46 +481,28 @@ main {
 
 .np-track {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: 14px;
   color: var(--fg-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.np-meta {
-  margin: 0;
-  font-size: 0.8rem;
-  color: var(--fg-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Equalizer slot — anchored top-right of the card. The icon module's
-   .equalizer wrapper sits inside; its bars animate when nowPlaying is
-   PLAY_STATE (driven by data-state="playing" set by components.js). */
-.np-eq-slot {
-  position: absolute;
-  top: 0.6rem;
-  right: 0.7rem;
-  color: var(--accent);
-  font-size: 1.1rem;
-  pointer-events: none;
-}
-
-/* Transport row — prev / play-pause / next, left-aligned within body. */
+/* Transport row — prev / play-pause / next, anchored to the bottom of
+   the body column so the row aligns with the foot of the album art. */
 .np-transport {
   display: flex;
   justify-content: flex-start;
-  gap: 0.75rem;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 8px;
 }
 
 .np-btn {
   font: inherit;
   line-height: 1;
-  width: 2.6rem;
-  height: 2.6rem;
+  width: 30px;
+  height: 30px;
   border: 1px solid var(--border);
   border-radius: 50%;
   background: var(--surface);
@@ -511,6 +512,7 @@ main {
   align-items: center;
   justify-content: center;
   padding: 0;
+  flex-shrink: 0;
   transition: border-color 120ms, background 120ms, color 120ms;
 }
 
@@ -524,34 +526,85 @@ main {
 }
 
 .np-btn--play {
-  width: 3rem;
-  height: 3rem;
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-fg, #ffffff);
 }
 
 .np-btn--play:hover {
   background: var(--accent);
-  color: var(--bg);
+  border-color: var(--accent);
+  color: var(--accent-fg, #ffffff);
+  filter: brightness(1.05);
 }
 
-/* Source picker pills — only READY sources are rendered, so disabled /
-   UNAVAILABLE styling is no longer needed. */
+@media (prefers-reduced-motion: reduce) {
+  .np-btn { transition: none; }
+}
+
+/* Section header — used by both the source card and the presets block.
+   Title on the left, optional meta/hint on the right (small + dim). */
+.np-section-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg);
+}
+
+.np-section-h__meta {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--text-dim, var(--fg-muted));
+}
+
+.np-section-h__hint {
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-dim, var(--fg-muted));
+}
+
+/* Source switcher: header + 3-up button grid, all inside a card. */
+.np-source-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Source picker — 3-up grid of buttons. Only READY sources render. */
 .np-sources {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 6px;
 }
 
 .np-source-pill {
   font: inherit;
-  font-size: 0.85rem;
-  padding: 0.3rem 0.85rem;
+  font-size: 12.5px;
+  padding: 6px 10px;
+  flex: 1 1 calc(33% - 4px);
+  min-width: 0;
+  text-align: center;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
+  border-radius: 6px;
+  background: var(--bg);
   color: var(--fg);
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: background 120ms, color 120ms, border-color 120ms;
 }
 
@@ -562,39 +615,49 @@ main {
 
 .np-source-pill[data-active="true"] {
   background: var(--accent);
-  color: var(--bg);
+  color: var(--accent-fg, #ffffff);
   border-color: var(--accent);
 }
 
-/* Preset row — 3-column grid of art-style gradient cards. Each card
-   renders the slot number top-left and station name bottom-left.
-   --np-preset-hue is set per slot (deterministic via art.js hashHue)
-   so all six render simultaneously without scheduling concurrent
-   canvas reads. Active preset gets an inset accent border. */
+@media (prefers-reduced-motion: reduce) {
+  .np-source-pill { transition: none; }
+}
+
+/* Presets block — header above a 3-column grid of art cards. Not a card
+   container itself: the cards carry their own gradient. */
+.np-presets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Preset grid — 3-column art-style cards. Each card renders the slot
+   number top-left, an equalizer top-right when currently playing, and
+   the station name bottom-left over a deterministic per-station gradient
+   (--np-preset-hue is set inline by JS via hashHue). Empty slots still
+   get a hue (keyed on the slot id) but are desaturated and label-less. */
 .np-presets-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 0.5rem;
+  gap: 8px;
 }
 
 .np-preset {
   font: inherit;
-  font-size: 0.85rem;
   text-align: left;
   display: block;
-  padding: 0.5rem 0.65rem;
-  border: 1px solid var(--border);
+  padding: 0;
+  border: 1px solid transparent;
   border-radius: 8px;
-  color: var(--fg);
+  color: #ffffff;
   cursor: pointer;
   position: relative;
-  aspect-ratio: 16 / 10;
-  min-height: 4rem;
+  min-height: 92px;
   overflow: hidden;
   background:
     linear-gradient(135deg,
-      hsl(var(--np-preset-hue, 220), 55%, 62%) 0%,
-      color-mix(in srgb, hsl(var(--np-preset-hue, 220), 45%, 38%) 70%, var(--surface)) 100%);
+      hsl(var(--np-preset-hue, 220), 60%, 55%),
+      color-mix(in srgb, hsl(var(--np-preset-hue, 220), 60%, 30%) 60%, #000));
   transition: border-color 120ms, transform 120ms;
 }
 
@@ -607,58 +670,60 @@ main {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .np-preset {
-    transition: none;
-  }
-  .np-preset:not(:disabled):active {
-    transform: none;
-  }
+  .np-preset { transition: none; }
+  .np-preset:not(:disabled):active { transform: none; }
 }
 
 .np-preset[data-active="true"] {
-  outline: 2px solid var(--accent);
-  outline-offset: -4px;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .np-preset--empty,
 .np-preset:disabled {
-  background: var(--surface);
-  color: var(--fg-muted);
-  cursor: not-allowed;
-  opacity: 0.7;
+  cursor: default;
+  filter: saturate(0.25) brightness(0.85);
+  opacity: 0.55;
 }
 
 .np-preset-num {
   position: absolute;
-  top: 0.4rem;
-  left: 0.55rem;
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--bg);
+  top: 6px;
+  left: 8px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffffff;
+  opacity: 0.85;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
-.np-preset--empty .np-preset-num {
-  color: var(--fg-muted);
-  text-shadow: none;
+.np-preset-eq {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: none;
+  color: #ffffff;
+  font-size: 12px;
+}
+
+.np-preset[data-active="true"] .np-preset-eq {
+  display: inline-flex;
 }
 
 .np-preset-name {
   position: absolute;
-  bottom: 0.45rem;
-  left: 0.55rem;
-  right: 0.55rem;
+  bottom: 10px;
+  left: 10px;
+  right: 10px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--bg);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  letter-spacing: -0.01em;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.np-preset--empty .np-preset-name {
-  color: var(--fg-muted);
-  text-shadow: none;
 }
 
 /* STANDBY / asleep state */
@@ -684,19 +749,16 @@ main {
 }
 
 /* --- volume row -------------------------------------------------- */
-
+/* Lives inside .np-card, separated from the tinted top by a single
+   hairline border. Mute glyph (28×28 ghost circle) → slider (flex) →
+   value display (Geist Mono, right-aligned). */
 .np-volume {
+  border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.25rem 0;
-}
-
-.np-vol-icon {
-  flex: 0 0 auto;
-  color: var(--fg-muted);
-  display: inline-flex;
-  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--surface);
 }
 
 .np-slider-slot {
@@ -714,13 +776,22 @@ main {
   outline-offset: 2px;
 }
 
+.np-vol-value {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--fg-muted);
+  min-width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
 .np-mute {
   flex: 0 0 auto;
-  background: none;
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 50%;
-  width: 2rem;
-  height: 2rem;
+  width: 28px;
+  height: 28px;
   line-height: 1;
   cursor: pointer;
   color: var(--fg);
@@ -728,6 +799,7 @@ main {
   align-items: center;
   justify-content: center;
   padding: 0;
+  transition: border-color 120ms, color 120ms;
 }
 
 .np-mute:hover {
@@ -738,7 +810,11 @@ main {
 .np-mute[aria-pressed="true"] {
   background: var(--accent);
   border-color: var(--accent);
-  color: var(--bg);
+  color: var(--accent-fg, #ffffff);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .np-mute { transition: none; }
 }
 
 .preset-row {
@@ -1404,28 +1480,24 @@ main {
   }
 
   @container (max-inline-size: 480px) {
-    /* Compact card stays horizontal on narrow viewports; only the
-       art/transport sizes shrink. */
+    /* Compact card stays horizontal on narrow viewports; bump tap
+       targets up so transport / volume / mute reach ≥44px while the
+       per-card visual rhythm from the mockup is preserved. */
     .np-art {
-      width: 5rem;
-      height: 5rem;
+      width: 80px;
+      height: 80px;
     }
 
     /* Transport buttons: ≥44px tap target. */
     .np-btn {
-      width: 2.75rem;
-      height: 2.75rem;
-    }
-
-    .np-btn--play {
-      width: 3.25rem;
-      height: 3.25rem;
+      width: 44px;
+      height: 44px;
     }
 
     /* Volume row: bump the mute and slider thumb for tap targets. */
     .np-mute {
-      width: 2.75rem;
-      height: 2.75rem;
+      width: 44px;
+      height: 44px;
     }
 
     .np-slider {
@@ -1444,8 +1516,8 @@ main {
 
     /* Source pills: roomier hit area. */
     .np-source-pill {
-      min-height: 2.75rem;
-      padding: 0.5rem 1rem;
+      min-height: 44px;
+      padding: 8px 12px;
     }
 
     /* Preset assign / row layouts also shift to 3-up on narrow views. */
@@ -1459,7 +1531,7 @@ main {
     }
 
     .np-preset {
-      min-height: 5.5rem;
+      min-height: 92px;
     }
 
     .preset-slot {
