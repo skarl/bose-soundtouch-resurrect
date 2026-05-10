@@ -344,7 +344,11 @@ nav.routes a:hover {
 }
 
 /* Art + text block — stacks vertically on mobile, side-by-side ≥640 px.
-   position:relative anchors the .vu-dot to the card's top-right corner. */
+   position:relative anchors the .vu-dot to the card's top-right corner.
+   The hero background blends a tint sampled from the current album art
+   (set by tint.js as --np-tint on .np-view) into --surface. Falls back
+   to plain --surface when --np-tint is unset (initial load, missing
+   art, CORS-tainted canvas read). */
 .np-card {
   display: flex;
   flex-direction: column;
@@ -352,8 +356,16 @@ nav.routes a:hover {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 1rem;
-  background: var(--surface);
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--np-tint, var(--surface)) 35%, var(--surface)) 0%,
+      var(--surface) 70%);
   position: relative;
+  transition: background 600ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .np-card { transition: none; }
 }
 
 @media (min-width: 640px) {

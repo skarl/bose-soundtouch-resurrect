@@ -7,6 +7,8 @@
 // The fallback is an inline data: URI; no extra request, scales to
 // any size, rerenderable per-name.
 
+import { applyTint } from './tint.js';
+
 export function setArt(imgEl, url, name) {
   if (!imgEl) return;
   imgEl.alt = name || '';
@@ -17,8 +19,10 @@ export function setArt(imgEl, url, name) {
     // can't loop.
     imgEl.onerror = null;
     imgEl.src = fallbackDataUri(name);
+    applyTint(imgEl);
   };
   imgEl.src = url || fallbackDataUri(name);
+  applyTint(imgEl);
 }
 
 // Single-color placeholder. Hue is derived from the name so the same
