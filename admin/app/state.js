@@ -58,11 +58,18 @@ function observable(initial) {
 
 export const store = observable({
   speaker: {
-    info:       null,   // {deviceID, name, type, firmwareVersion, ...}
-    nowPlaying: null,   // {source, item, track, artist, art, playStatus}
-    presets:    null,   // [{slot, source, type, location, itemName, art}, ...]
-    volume:     null,   // {targetVolume, actualVolume, muteEnabled}
-    sources:    null,   // [{source, sourceAccount, displayName, status, isLocal}, ...]
+    info:           null,   // {deviceID, name, type, firmwareVersion, ...}
+    nowPlaying:     null,   // {source, item, track, artist, art, playStatus}
+    presets:        null,   // [{slot, source, type, location, itemName, art}, ...]
+    volume:         null,   // {targetVolume, actualVolume, muteEnabled}
+    sources:        null,   // [{source, sourceAccount, displayName, status, isLocal}, ...]
+    bass:           null,   // {target, actual, min, max, default}
+    balance:        null,   // {target, actual, min, max, default}
+    dspMonoStereo:  null,   // {mode}
+    zone:           null,   // {master, members: [{ipAddress, deviceID}, ...]}
+    bluetooth:      null,   // {paired: [{name, mac}, ...], pairing}
+    network:        null,   // {ssid, ipAddress, macAddress, signalDbm}
+    recents:        null,   // [{deviceID, source, contentItem}, ...]
   },
   caches: {
     probe:          new Map(),               // sid → Probe = {sid, verdict, tuneinJson, expires} — TTL 10 min

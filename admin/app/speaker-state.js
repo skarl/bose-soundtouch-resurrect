@@ -94,6 +94,15 @@ export const FIELDS = [
       return lists && lists[0] ? parseSourcesEl(lists[0]) : null;
     },
   },
+  // Settings-section fields. Real fetchers and WS plumbing land in the
+  // slices that wire each section (#34/#35/#37/#38/#39/#42).
+  { name: 'bass',          fetcher: () => Promise.resolve(null) },
+  { name: 'balance',       fetcher: () => Promise.resolve(null) },
+  { name: 'dspMonoStereo', fetcher: () => Promise.resolve(null) },
+  { name: 'zone',          fetcher: () => Promise.resolve(null) },
+  { name: 'bluetooth',     fetcher: () => Promise.resolve(null) },
+  { name: 'network',       fetcher: () => Promise.resolve(null) },
+  { name: 'recents',       fetcher: () => Promise.resolve(null) },
 ];
 
 // Build a lookup map from eventTag → entry for dispatch().

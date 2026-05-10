@@ -188,6 +188,25 @@ main {
   color: var(--fg);
 }
 
+.settings-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.settings-link:hover {
+  border-color: var(--border);
+  color: var(--fg);
+}
+
 nav.routes {
   display: flex;
   gap: 0.75rem;
@@ -1193,6 +1212,69 @@ nav.routes a:hover {
 
 .preset-modal-pane {
   /* Each pane is a full-width host for the search or browse sub-view. */
+}
+
+/* --- settings view (#/settings) ---------------------------------- */
+
+.settings-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 640px;
+}
+
+.settings-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+.settings-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settings-section {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated, var(--bg));
+}
+
+.settings-section__summary {
+  cursor: pointer;
+  padding: 0.6rem 0.85rem;
+  font-weight: 600;
+  user-select: none;
+  list-style: none;
+}
+
+.settings-section__summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-section__summary::before {
+  content: '▸';
+  display: inline-block;
+  width: 1rem;
+  margin-right: 0.25rem;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.settings-section[open] > .settings-section__summary::before {
+  transform: rotate(90deg);
+}
+
+.settings-section__body {
+  padding: 0.5rem 0.85rem 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.settings-section__body .placeholder {
+  color: var(--muted);
+  font-style: italic;
+  margin: 0;
 }
 
 /* --- mobile-remote: container-query layout ----------------------- */

@@ -11,6 +11,7 @@ import browse     from './views/browse.js';
 import search     from './views/search.js';
 import station    from './views/station.js';
 import preset     from './views/preset.js';
+import settings   from './views/settings.js';
 
 import { installVersionDriftCheck } from './version.js';
 import { getSpeakerInfo } from './api.js';
@@ -39,6 +40,7 @@ const routes = [
   { pattern: /^\/search$/,                       view: search },
   { pattern: /^\/station\/(?<id>s\d+)$/,         view: station },
   { pattern: /^\/preset\/(?<slot>[1-6])$/,       view: preset },
+  { pattern: /^\/settings$/,                     view: settings },
 ];
 
 function renderShell(appRoot) {
@@ -48,6 +50,7 @@ function renderShell(appRoot) {
     <header class="app-header">
       <span class="app-speaker-name"></span>
       ${pill}
+      <a class="settings-link" href="#/settings" aria-label="Settings" title="Settings">⚙</a>
       ${toggle}
     </header>
     <nav class="routes" aria-label="primary">
