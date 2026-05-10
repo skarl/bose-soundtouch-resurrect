@@ -2,7 +2,92 @@
 // Owns the WebSocket lifecycle; internals are not exported.
 // See admin/PLAN.md § Live updates and § State management.
 
+import { getSpeakerInfo, getNowPlaying, presetsList } from './api.js';
+import { setNowPlaying, setPresets } from './state.js';
+
 let socket = null;
+let userInitiatedClose = false;
+
+// --- Backoff sequencer ----------------------------------------------
+
+// Exponential backoff with full jitter. baseline = min(30000, 500 * 2^attempt).
+// Jitter selects uniformly from [0, baseline), keeping reconnect storms
+// at bay when many tabs wake up simultaneously.
+export function backoff(attempt) {
+  const baseline = Math.min(30000, 500 * Math.pow(2, attempt));
+  return Math.random() * baseline;
+}
+
+// --- Module-scoped reconnect state ----------------------------------
+
+let attempt      = 0;   // reconnect attempt counter; reset to 0 on successful hello
+let consecutiveFails = 0; // consecutive close events without a successful hello
+let reconnectTimer = null;
+let pollInterval   = null;
+let storeRef       = null;    // set on first connect() call
+let visibilityBound = false;
+
+// --- Polling fallback -----------------------------------------------
+
+async function pollTick() {
+  if (!storeRef) return;
+  if (typeof document !== 'undefined' && document.hidden) return;
+  try {
+    const [info, np, env] = await Promise.allSettled([
+      getSpeakerInfo(),
+      getNowPlaying(),
+      presetsList(),
+    ]);
+    if (info.status === 'fulfilled' && info.value) {
+      storeRef.state.speaker.info = info.value;
+      storeRef.touch('speaker');
+    }
+    if (np.status === 'fulfilled' && np.value) {
+      setNowPlaying(np.value);
+    }
+    if (env.status === 'fulfilled' && env.value && env.value.ok && Array.isArray(env.value.data)) {
+      setPresets(env.value.data);
+    }
+  } catch (_err) {
+    // Network errors are non-fatal; next tick will retry.
+  }
+}
+
+function startPolling() {
+  if (pollInterval != null) return;
+  pollInterval = setInterval(pollTick, 2000);
+}
+
+function stopPolling() {
+  if (pollInterval == null) return;
+  clearInterval(pollInterval);
+  pollInterval = null;
+}
+
+// --- Full state refetch (called after WS hello) ---------------------
+
+async function refetchAll() {
+  if (!storeRef) return;
+  try {
+    const [info, np, env] = await Promise.allSettled([
+      getSpeakerInfo(),
+      getNowPlaying(),
+      presetsList(),
+    ]);
+    if (info.status === 'fulfilled' && info.value) {
+      storeRef.state.speaker.info = info.value;
+      storeRef.touch('speaker');
+    }
+    if (np.status === 'fulfilled' && np.value) {
+      setNowPlaying(np.value);
+    }
+    if (env.status === 'fulfilled' && env.value && env.value.ok && Array.isArray(env.value.data)) {
+      setPresets(env.value.data);
+    }
+  } catch (_err) {
+    // Non-fatal; state was already live via WS events.
+  }
+}
 
 // --- XML dispatch ---------------------------------------------------
 
@@ -28,7 +113,10 @@ const ENVELOPE_HANDLERS = {
   keyEvent(el, state) {                  // TODO slice 8
     void el; void state;
   },
-  connectionStateUpdated(el, state) {    // TODO slice 2
+  connectionStateUpdated(el, state) {
+    // The speaker sends this when network topology changes (e.g. a
+    // second device connects or disconnects). No state to update yet;
+    // slice 5 (sources) will decode the payload when it needs to.
     void el; void state;
   },
 };
@@ -45,9 +133,15 @@ export function dispatch(xmlText, store) {
   const tag = root.tagName;
 
   if (tag === 'SoundTouchSdkInfo') {
+    // Hello frame received — WS is live. Reset reconnect counters,
+    // stop polling, and refetch state the speaker didn't replay.
+    attempt = 0;
+    consecutiveFails = 0;
+    stopPolling();
     store.state.ws.connected = true;
     store.state.ws.mode = 'ws';
     store.touch('ws');
+    refetchAll();
     return;
   }
 
@@ -86,10 +180,52 @@ function parseXml(text) {
   return doc;
 }
 
+// --- Visibility handling --------------------------------------------
+
+function onVisibilityChange() {
+  if (typeof document === 'undefined') return;
+  if (document.hidden) {
+    // Cancel pending reconnect and REST polling while hidden.
+    // Don't close a live socket — it may still deliver events on resume.
+    if (reconnectTimer != null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    stopPolling();
+  } else {
+    // Tab became visible again.
+    if (storeRef && storeRef.state.ws.connected) {
+      // WS is still alive — events resume automatically.
+    } else {
+      // WS dropped while hidden (or never connected). Retry immediately.
+      attempt = 0;
+      connect(storeRef);
+    }
+  }
+}
+
+function bindVisibility() {
+  if (visibilityBound) return;
+  if (typeof document === 'undefined') return;
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  visibilityBound = true;
+}
+
+function unbindVisibility() {
+  if (!visibilityBound) return;
+  if (typeof document === 'undefined') return;
+  document.removeEventListener('visibilitychange', onVisibilityChange);
+  visibilityBound = false;
+}
+
 // --- Socket lifecycle -----------------------------------------------
 
 export function connect(store) {
   if (socket) return;
+  if (!store) return;
+
+  storeRef = store;
+  bindVisibility();
 
   const url = `ws://${location.hostname}:8080/`;
   socket = new WebSocket(url, 'gabbo');
@@ -104,19 +240,54 @@ export function connect(store) {
 
   socket.addEventListener('close', () => {
     socket = null;
+    if (userInitiatedClose) {
+      userInitiatedClose = false;
+      return;
+    }
+
     store.state.ws.connected = false;
-    store.state.ws.mode = 'offline';
+    consecutiveFails += 1;
+
+    // First close → reconnecting; subsequent → polling (with continued polling).
+    if (consecutiveFails === 1) {
+      store.state.ws.mode = 'reconnecting';
+    } else {
+      store.state.ws.mode = 'polling';
+    }
     store.touch('ws');
+
+    // Start REST polling on first drop and keep it running.
+    if (typeof document === 'undefined' || !document.hidden) {
+      startPolling();
+    }
+
+    // Schedule reconnect unless the tab is hidden.
+    if (typeof document === 'undefined' || !document.hidden) {
+      const delay = backoff(attempt);
+      attempt += 1;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect(store);
+      }, delay);
+    }
   });
 
   socket.addEventListener('error', () => {
-    // 'error' is always followed by 'close', which sets mode to 'offline'.
-    // Nothing extra to do here.
+    // 'error' is always followed by 'close', which drives reconnect logic.
   });
 }
 
 export function disconnect() {
+  if (reconnectTimer != null) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  stopPolling();
+  unbindVisibility();
+  attempt = 0;
+  consecutiveFails = 0;
   if (!socket) return;
+  userInitiatedClose = true;
   socket.close();
   socket = null;
 }

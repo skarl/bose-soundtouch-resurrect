@@ -164,9 +164,11 @@ main {
   background: currentColor;
 }
 
-.conn-pill[data-state="connecting"] { color: var(--pill-amber); }
-.conn-pill[data-state="ws"]         { color: var(--pill-green); }
-.conn-pill[data-state="offline"]    { color: var(--pill-red);   }
+.conn-pill[data-state="connecting"]   { color: var(--pill-amber); }
+.conn-pill[data-state="ws"]           { color: var(--pill-green); }
+.conn-pill[data-state="offline"]      { color: var(--pill-red);   }
+.conn-pill[data-state="reconnecting"] { color: var(--pill-amber); }
+.conn-pill[data-state="polling"]      { color: var(--fg-muted);   }
 
 /* Theme-toggle button. Icon-only, no visible border at rest. */
 .theme-btn {

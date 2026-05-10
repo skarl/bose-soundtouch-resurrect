@@ -14,14 +14,17 @@ import * as theme from './theme.js';
 // the node.
 //
 // Supported data-state values (CSS drives colour via [data-state="…"]):
-//   connecting  — socket opened, hello not yet received
-//   ws          — live WebSocket, hello received
-//   offline     — socket closed or error
-//   reconnecting, polling — reserved for slice 2; no-op here
+//   connecting   — socket opened, hello not yet received
+//   ws           — live WebSocket, hello received
+//   offline      — socket closed, no reconnect scheduled
+//   reconnecting — first close, backoff timer running
+//   polling      — second+ close, falling back to REST while retrying
 const PILL_LABELS = {
-  connecting: 'connecting…',
-  ws:         'live',
-  offline:    'offline',
+  connecting:   'connecting…',
+  ws:           'live',
+  offline:      'offline',
+  reconnecting: 'reconnecting…',
+  polling:      'polling',
 };
 
 export function connectionPill(state) {
