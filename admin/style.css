@@ -1277,6 +1277,48 @@ nav.routes a:hover {
   margin: 0;
 }
 
+.settings-network__rows {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 0.85rem;
+  row-gap: 0.25rem;
+  margin: 0;
+}
+
+.settings-network__rows dt {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.settings-network__rows dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-network__actions {
+  margin-top: 0.5rem;
+}
+
+.settings-network__refresh {
+  font: inherit;
+  padding: 0.25rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-elevated, var(--bg));
+  cursor: pointer;
+}
+
+.settings-network__refresh[disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.settings-network__note {
+  margin: 0.65rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 /* --- mobile-remote: container-query layout ----------------------- */
 /* Container queries (not @media) so the admin shapes itself to its
    own frame width — important when embedded in a wider dashboard

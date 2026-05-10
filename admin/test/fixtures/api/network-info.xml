@@ -1,0 +1,6 @@
+<networkInfo wifiProfileCount="2">
+  <interfaces>
+    <interface type="WIFI_INTERFACE" name="wlan0" macAddress="0CB2B709F837" ipAddress="192.168.178.36" ssid="WLAN-Oben" frequencyKHz="5240000" state="NETWORK_WIFI_CONNECTED" signal="GOOD_SIGNAL" mode="STATION"/>
+    <interface type="WIFI_INTERFACE" name="wlan1" macAddress="0CB2B709F838" state="NETWORK_WIFI_DISCONNECTED"/>
+  </interfaces>
+</networkInfo>

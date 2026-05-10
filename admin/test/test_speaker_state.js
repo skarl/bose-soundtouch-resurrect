@@ -34,7 +34,7 @@ async function wsFixture(name) { return readFile(join(WS_FIX, name), 'utf8'); }
 
 function makeStore() {
   const state = {
-    speaker: { info: null, nowPlaying: null, presets: null, volume: null, sources: null },
+    speaker: { info: null, nowPlaying: null, presets: null, volume: null, sources: null, network: null },
     ws: { connected: false, lastEvent: null },
     caches: {},
     ui: {},
@@ -54,6 +54,7 @@ const FAKE_NOW_PLAY  = { source: 'TUNEIN', item: { name: 'R1', location: '/v1/s1
 const FAKE_PRESETS   = { ok: true, data: [{ slot: 1, source: 'TUNEIN', type: 'stationurl', location: '/v1/s1', itemName: 'R1', art: '' }] };
 const FAKE_VOLUME    = { targetVolume: 32, actualVolume: 32, muteEnabled: false };
 const FAKE_SOURCES   = [{ source: 'TUNEIN', sourceAccount: '', status: 'READY', isLocal: false, displayName: 'TuneIn' }];
+const FAKE_NETWORK   = { macAddress: '0CB2B709F837', ipAddress: '192.168.178.36', ssid: 'WLAN-Oben', signal: 'GOOD_SIGNAL', frequencyKHz: 5240000, name: 'wlan0', type: 'WIFI_INTERFACE', state: 'NETWORK_WIFI_CONNECTED', mode: 'STATION' };
 
 // Replace the fetcher on a FIELDS entry for the duration of a test.
 function withFetchers(overrides, fn) {
@@ -86,6 +87,7 @@ const ALL_RESOLVED = {
   presets:    async () => FAKE_PRESETS,
   volume:     async () => FAKE_VOLUME,
   sources:    async () => FAKE_SOURCES,
+  network:    async () => FAKE_NETWORK,
 };
 
 // --- Tests -----------------------------------------------------------
@@ -102,6 +104,28 @@ test('reconcile: all fulfilled → single store.touch("speaker")', () =>
     assert.ok(Array.isArray(store.state.speaker.presets), 'presets applied');
     assert.deepEqual(store.state.speaker.volume, FAKE_VOLUME);
     assert.deepEqual(store.state.speaker.sources, FAKE_SOURCES);
+    assert.deepEqual(store.state.speaker.network, FAKE_NETWORK);
+  }),
+);
+
+test('network: registry entry is fetch-only (no eventTag) and the fetcher applies via reconcile', () => {
+  const entry = FIELDS.find((f) => f.name === 'network');
+  assert.ok(entry, 'network entry exists in FIELDS');
+  assert.equal(typeof entry.fetcher, 'function', 'network has a real fetcher');
+  assert.equal(entry.eventTag, undefined, 'no WS eventTag — connectionStateUpdated is wired separately');
+  assert.equal(entry.parseInline, undefined, 'no inline parser without an eventTag');
+});
+
+test('reconcile: network fetcher rejection leaves speaker.network=null, others still apply', () =>
+  withFetchers({
+    ...ALL_RESOLVED,
+    network: async () => { throw new Error('network unreachable'); },
+  }, async () => {
+    const store = makeStore();
+    await assert.doesNotReject(() => reconcile(store));
+    assert.equal(store.state.speaker.network, null, 'network stays null on rejection');
+    assert.deepEqual(store.state.speaker.info, FAKE_INFO, 'other fields still applied');
+    assert.equal(store._touched.length, 1, 'single touch');
   }),
 );
 

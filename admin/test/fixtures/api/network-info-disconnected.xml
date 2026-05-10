@@ -1,0 +1,5 @@
+<networkInfo wifiProfileCount="0">
+  <interfaces>
+    <interface type="WIFI_INTERFACE" name="wlan0" macAddress="0CB2B709F837" state="NETWORK_WIFI_DISCONNECTED"/>
+  </interfaces>
+</networkInfo>

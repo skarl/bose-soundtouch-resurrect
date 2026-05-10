@@ -14,6 +14,8 @@
 //   postSelectLocalSource() — POST /speaker/selectLocalSource (AUX, BLUETOOTH)
 //   parseSourcesXml()    — parse <sources> XML into source array
 //   parseSourcesEl()     — same for an already-parsed <sources> DOM element
+//   getNetworkInfo()     — GET /networkInfo (read-only network metadata)
+//   parseNetworkInfoXml(), parseNetworkInfoEl() — networkInfo parsers
 //   presetsList(), presetsAssign() — presets CGI envelope client
 
 export const apiBase = '/cgi-bin/api/v1';
@@ -416,6 +418,86 @@ export function parseSourcesEl(el) {
     });
   }
   return result;
+}
+
+// --- network info ---------------------------------------------------
+
+// GET /cgi-bin/api/v1/speaker/networkInfo → parsed network object.
+// Fields: macAddress, ipAddress, ssid, signal, name, type, state,
+// frequencyKHz, mode (only on the active interface).
+//
+// The endpoint may list several <interface> entries (wlan0/wlan1). We
+// surface the first one that's connected (has an ipAddress); falling
+// back to the first interface so disconnected speakers still expose
+// their MAC.
+export async function getNetworkInfo() {
+  const res = await fetch(`${apiBase}/speaker/networkInfo`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getNetworkInfo: HTTP ${res.status}`);
+  const text = await res.text();
+  return parseNetworkInfoXml(text);
+}
+
+// Parse the speaker's <networkInfo> XML into:
+//   { macAddress, ipAddress, ssid, signal, frequencyKHz, name, type,
+//     state, mode }
+//
+// Reference shape (from the 8090 /networkInfo endpoint):
+//   <networkInfo wifiProfileCount="2">
+//     <interfaces>
+//       <interface type="WIFI_INTERFACE" name="wlan0"
+//                  macAddress="0CB2B709F837" ipAddress="192.168.178.36"
+//                  ssid="WLAN-Oben" frequencyKHz="5240000"
+//                  state="NETWORK_WIFI_CONNECTED" signal="GOOD_SIGNAL"
+//                  mode="STATION"/>
+//       <interface type="WIFI_INTERFACE" name="wlan1"
+//                  macAddress="0CB2B709F838"
+//                  state="NETWORK_WIFI_DISCONNECTED"/>
+//     </interfaces>
+//   </networkInfo>
+export function parseNetworkInfoXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+  const els = doc.getElementsByTagName('networkInfo');
+  if (!els || !els[0]) return null;
+  return parseNetworkInfoEl(els[0]);
+}
+
+// Parse an already-resolved <networkInfo> DOM element.
+// Picks the first <interface> with an ipAddress (i.e. connected); falls
+// back to the first interface so the MAC is still visible offline.
+export function parseNetworkInfoEl(el) {
+  if (!el) return null;
+  const ifaces = el.getElementsByTagName('interface');
+  if (!ifaces || ifaces.length === 0) return null;
+
+  let active = null;
+  for (let i = 0; i < ifaces.length; i++) {
+    if ((ifaces[i].getAttribute('ipAddress') || '') !== '') {
+      active = ifaces[i];
+      break;
+    }
+  }
+  if (!active) active = ifaces[0];
+
+  const freqRaw = active.getAttribute('frequencyKHz') || '';
+  const freq = parseInt(freqRaw, 10);
+
+  return {
+    macAddress:   active.getAttribute('macAddress') || '',
+    ipAddress:    active.getAttribute('ipAddress')  || '',
+    ssid:         active.getAttribute('ssid')       || '',
+    signal:       active.getAttribute('signal')     || '',
+    frequencyKHz: isNaN(freq) ? null : freq,
+    name:         active.getAttribute('name')       || '',
+    type:         active.getAttribute('type')       || '',
+    state:        active.getAttribute('state')      || '',
+    mode:         active.getAttribute('mode')       || '',
+  };
 }
 
 // POST /presets/:slot with {id, slot, name, kind, json}.

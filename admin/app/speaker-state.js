@@ -18,6 +18,7 @@ import {
   parseVolumeEl,
   getSources,
   parseSourcesEl,
+  getNetworkInfo,
 } from './api.js';
 import * as actions from './actions/index.js';
 
@@ -101,7 +102,10 @@ export const FIELDS = [
   { name: 'dspMonoStereo', fetcher: () => Promise.resolve(null) },
   { name: 'zone',          fetcher: () => Promise.resolve(null) },
   { name: 'bluetooth',     fetcher: () => Promise.resolve(null) },
-  { name: 'network',       fetcher: () => Promise.resolve(null) },
+  // No reliable WS event for /networkInfo — connectionStateUpdated
+  // covers the Wi-Fi flap separately (state.ws). Refetched on settings
+  // view-entry; user-driven via the section's Refresh button.
+  { name: 'network',       fetcher: getNetworkInfo },
   { name: 'recents',       fetcher: () => Promise.resolve(null) },
 ];
 

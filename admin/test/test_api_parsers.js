@@ -18,6 +18,7 @@ import {
   parseNowPlayingXml, parseNowPlayingEl,
   parseVolumeXml, parseVolumeEl,
   parseSourcesXml, parseSourcesEl,
+  parseNetworkInfoXml, parseNetworkInfoEl,
 } from '../app/api.js';
 import { dispatch } from '../app/ws.js';
 
@@ -237,4 +238,65 @@ test('parseSourcesEl: parses a DOM element directly', async () => {
 
 test('parseSourcesEl: null input returns null', () => {
   assert.equal(parseSourcesEl(null), null);
+});
+
+// --- parseNetworkInfoXml -------------------------------------------
+
+test('parseNetworkInfoXml: connected interface — fields populated, MAC normalised', async () => {
+  const xml = await fixture('network-info.xml');
+  const net = parseNetworkInfoXml(xml);
+  assert.ok(net, 'returns a non-null object');
+  assert.equal(net.ssid, 'WLAN-Oben');
+  assert.equal(net.ipAddress, '192.168.178.36');
+  assert.equal(net.macAddress, '0CB2B709F837');
+  assert.equal(net.signal, 'GOOD_SIGNAL');
+  assert.equal(net.frequencyKHz, 5240000);
+  assert.equal(net.state, 'NETWORK_WIFI_CONNECTED');
+  assert.equal(net.name, 'wlan0');
+  assert.equal(net.mode, 'STATION');
+});
+
+test('parseNetworkInfoXml: picks the first connected interface, not the disconnected wlan1', async () => {
+  const xml = await fixture('network-info.xml');
+  const net = parseNetworkInfoXml(xml);
+  // wlan0 has the IP, wlan1 doesn't.
+  assert.equal(net.name, 'wlan0');
+  assert.equal(net.macAddress, '0CB2B709F837');
+});
+
+test('parseNetworkInfoXml: disconnected speaker — falls back to first interface, ssid/ip empty', async () => {
+  const xml = await fixture('network-info-disconnected.xml');
+  const net = parseNetworkInfoXml(xml);
+  assert.ok(net, 'returns a non-null object');
+  assert.equal(net.macAddress, '0CB2B709F837');
+  assert.equal(net.ipAddress, '');
+  assert.equal(net.ssid, '');
+  assert.equal(net.signal, '');
+  assert.equal(net.frequencyKHz, null);
+});
+
+test('parseNetworkInfoXml: empty string returns null', () => {
+  assert.equal(parseNetworkInfoXml(''), null);
+});
+
+test('parseNetworkInfoXml: non-networkInfo XML returns null', () => {
+  assert.equal(parseNetworkInfoXml('<volume>42</volume>'), null);
+});
+
+test('parseNetworkInfoXml: <networkInfo/> with no interfaces returns null', () => {
+  assert.equal(parseNetworkInfoXml('<networkInfo/>'), null);
+});
+
+test('parseNetworkInfoEl: parses a DOM element directly', async () => {
+  const xml = await fixture('network-info.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const els = doc.getElementsByTagName('networkInfo');
+  const net = parseNetworkInfoEl(els && els[0]);
+  assert.ok(net, 'returns a non-null object');
+  assert.equal(net.ssid, 'WLAN-Oben');
+  assert.equal(net.ipAddress, '192.168.178.36');
+});
+
+test('parseNetworkInfoEl: null input returns null', () => {
+  assert.equal(parseNetworkInfoEl(null), null);
 });
