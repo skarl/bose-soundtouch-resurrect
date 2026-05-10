@@ -69,6 +69,44 @@ check "port 8090 /info returns XML" \
 check "port 8090 /now_playing returns XML" \
     $SSH root@"$SPEAKER" 'curl -s http://localhost:8090/now_playing | grep -q "<nowPlaying"'
 
+printf '\n=== Admin SPA (skipped if not deployed) ===\n'
+# Probe via the speaker (matches the existing wget/curl-through-ssh
+# pattern). The admin is optional: skip cleanly if index.html isn't
+# served, but if it IS served, assert the meta tag. Also assert the
+# resolver's services endpoint still serves — admin install must not
+# break the resolver tree.
+#
+# busybox wget exits 0 on 2xx and nonzero on 4xx/5xx/network error,
+# so existence-probing is just the exit status. (Don't use `-S` —
+# busybox wget doesn't support it.)
+if $SSH root@"$SPEAKER" 'wget -q -O /dev/null http://127.0.0.1:8181/' 2>/dev/null; then
+    check "admin index has admin-version meta tag" \
+        $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/ | grep -q "admin-version"'
+else
+    printf '  [SKIP] admin shell not deployed\n'
+fi
+
+check "resolver services endpoint still serves" \
+    $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/bmx/registry/v1/services | grep -q "{"'
+
+printf '\n=== Admin CGIs (skipped if not deployed) ===\n'
+# Each probe checks the CGI exists (wget exit status) before asserting
+# response shape. Skips cleanly when a CGI isn't installed.
+
+if $SSH root@"$SPEAKER" 'wget -q -O /dev/null http://127.0.0.1:8181/cgi-bin/api/v1/presets' 2>/dev/null; then
+    check "presets CGI returns ok-envelope" \
+        $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/cgi-bin/api/v1/presets | grep -q "\"ok\":true"'
+else
+    printf '  [SKIP] presets CGI not deployed\n'
+fi
+
+if $SSH root@"$SPEAKER" 'wget -q -O /dev/null http://127.0.0.1:8181/cgi-bin/api/v1/tunein/browse' 2>/dev/null; then
+    check "tunein CGI returns JSON or array" \
+        $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/cgi-bin/api/v1/tunein/browse | head -c 1 | grep -qE "[\\[{]"'
+else
+    printf '  [SKIP] tunein CGI not deployed\n'
+fi
+
 printf '\n=== Summary: %d ok, %d failed ===\n' "$ok" "$fail"
 
 if [ "$fail" -gt 0 ]; then

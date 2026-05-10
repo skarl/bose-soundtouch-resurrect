@@ -1,0 +1,71 @@
+// All views init once; reactivity is via per-view mutators on
+// state-path subscriptions, not via re-rendering. Re-rendering
+// inputs/sliders/scroll-containers breaks them.
+
+// html`...` — tagged template that returns a DocumentFragment.
+//
+// Each interpolation is marked with a numbered HTML comment, then
+// parsed; we walk the resulting tree to substitute real values back in.
+// Comments survive HTML5 parsing intact (unlike text-position sentinels,
+// which are subject to whitespace and NULL-stripping rules), and the
+// numeric index means we don't care about placeholder uniqueness.
+//
+// Element/text positions accept Node | string | number | null/undefined.
+// Nodes are inserted directly; primitives render as text (HTML-escaped);
+// null/undefined render nothing.
+//
+// Attribute positions accept primitives only — Nodes don't make sense
+// in an attribute value, and pass through as the empty string.
+const MARKER_PREFIX = '__HTML_PLACEHOLDER__';
+const MARKER_RE = new RegExp(`<!--${MARKER_PREFIX}(\\d+)-->`, 'g');
+
+export function html(strings, ...values) {
+  let src = strings[0];
+  for (let i = 0; i < values.length; i++) {
+    src += `<!--${MARKER_PREFIX}${i}-->` + strings[i + 1];
+  }
+
+  const tpl = document.createElement('template');
+  tpl.innerHTML = src;
+
+  // Attribute substitutions. Inside an attribute value, the parser
+  // keeps our marker as literal text (comments don't apply in attribute
+  // contexts), so we sweep every attribute on every element and rewrite
+  // any that mentions the marker prefix.
+  for (const el of tpl.content.querySelectorAll('*')) {
+    for (const attr of el.attributes) {
+      if (!attr.value.includes(MARKER_PREFIX)) continue;
+      attr.value = attr.value.replace(MARKER_RE, (_, idx) => {
+        const v = values[parseInt(idx, 10)];
+        if (v == null || v instanceof Node) return '';
+        return String(v);
+      });
+    }
+  }
+
+  // Element / text-position substitutions.
+  const walker = document.createTreeWalker(tpl.content, NodeFilter.SHOW_COMMENT);
+  const markers = [];
+  let node;
+  while ((node = walker.nextNode())) {
+    if (node.nodeValue.startsWith(MARKER_PREFIX)) markers.push(node);
+  }
+  for (const c of markers) {
+    const idx = parseInt(c.nodeValue.slice(MARKER_PREFIX.length), 10);
+    const v = values[idx];
+    if (v instanceof Node) {
+      c.replaceWith(v);
+    } else if (v == null) {
+      c.remove();
+    } else {
+      c.replaceWith(document.createTextNode(String(v)));
+    }
+  }
+  return tpl.content;
+}
+
+// mount(root, fragment): clear root, append fragment, return root.
+export function mount(root, fragment) {
+  root.replaceChildren(fragment);
+  return root;
+}

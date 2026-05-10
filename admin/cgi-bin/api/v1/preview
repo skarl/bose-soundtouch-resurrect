@@ -1,0 +1,175 @@
+#!/bin/sh
+#
+# preview — write the chosen Bose JSON for a station and tell Bo to
+# play it right now via /select. Used by the station-detail audition
+# button: the user picks a stream, clicks ▶, and this endpoint stages
+# the URL on disk and tunes the speaker to it.
+#
+# Body (JSON): { "id": "sNNN", "name": "...", "json": { ... } }
+#
+# Side effect: the resolver entry at
+# /mnt/nv/resolver/bmx/tunein/v1/playback/station/<id> is REPLACED
+# atomically. If a preset already points at this id, its next press
+# uses the previewed URL — same station, possibly different stream.
+# That's intentional: the next "Set as preset" click writes the same
+# JSON anyway, so leaving the previewed copy in place is consistent.
+#
+# busybox-shell only — no bash-isms. Uses /usr/bin/curl for the
+# /select POST (busybox wget is GET-only).
+
+set -u
+
+SPEAKER_BASE='http://localhost:8090'
+RESOLVER_DIR='/mnt/nv/resolver/bmx/tunein/v1/playback/station'
+TMPDIR_FALLBACK="${TMPDIR:-/tmp}"
+
+emit_error() {
+    printf 'Status: %s\r\n' "$1"
+    printf 'Content-Type: application/json; charset=utf-8\r\n'
+    printf 'Cache-Control: no-store\r\n'
+    printf 'Access-Control-Allow-Origin: *\r\n'
+    printf '\r\n'
+    printf '{"ok":false,"error":{"code":"%s","message":"%s"}}\n' "$2" "$3"
+    exit 0
+}
+
+emit_ok() {
+    printf 'Status: 200 OK\r\n'
+    printf 'Content-Type: application/json; charset=utf-8\r\n'
+    printf 'Cache-Control: no-store\r\n'
+    printf 'Access-Control-Allow-Origin: *\r\n'
+    printf 'Access-Control-Allow-Methods: POST, OPTIONS\r\n'
+    printf 'Access-Control-Allow-Headers: Content-Type\r\n'
+    printf '\r\n'
+    printf '{"ok":true}\n'
+    exit 0
+}
+
+# CORS preflight — answer and exit before any work.
+if [ "${REQUEST_METHOD:-GET}" = 'OPTIONS' ]; then
+    printf 'Status: 204 No Content\r\n'
+    printf 'Access-Control-Allow-Origin: *\r\n'
+    printf 'Access-Control-Allow-Methods: POST, OPTIONS\r\n'
+    printf 'Access-Control-Allow-Headers: Content-Type\r\n'
+    printf '\r\n'
+    exit 0
+fi
+
+case "${REQUEST_METHOD:-GET}" in
+    POST) ;;
+    *) emit_error '405 Method Not Allowed' METHOD_NOT_ALLOWED 'POST only' ;;
+esac
+
+# Origin guard — same pattern as the other mutating CGIs. Same-origin
+# and curl-style (no Origin) pass; anything else is rejected.
+case "${HTTP_ORIGIN:-}" in
+    "http://${HTTP_HOST}"|"https://${HTTP_HOST}"|"") ;;
+    *) emit_error '403 Forbidden' CSRF_BLOCKED \
+        'cross-origin POST rejected' ;;
+esac
+
+# Pull a flat string field from the JSON body.
+json_string_field() {
+    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" \
+        | head -n 1
+}
+
+# Pull the raw substring for the nested `json` field. Same brace-walker
+# as the presets CGI uses — copy/pasted to keep this CGI self-contained.
+json_object_field() {
+    awk '
+        BEGIN { found = 0; depth = 0 }
+        {
+            if (!found) {
+                idx = match($0, /"json"[[:space:]]*:[[:space:]]*\{/)
+                if (idx == 0) { next }
+                rest = substr($0, idx + RLENGTH - 1)
+                found = 1
+                line = rest
+            } else {
+                line = $0
+            }
+            for (i = 1; i <= length(line); i++) {
+                c = substr(line, i, 1)
+                printf "%s", c
+                if (c == "{") depth++
+                else if (c == "}") {
+                    depth--
+                    if (depth == 0) { exit }
+                }
+            }
+        }
+    '
+}
+
+# XML-escape for embedding text inside an attribute / element value.
+xml_escape() {
+    printf '%s' "$1" \
+        | sed -e 's/&/\&amp;/g' \
+              -e 's/</\&lt;/g' \
+              -e 's/>/\&gt;/g' \
+              -e 's/"/\&quot;/g' \
+              -e "s/'/\\&apos;/g"
+}
+
+# Slurp the request body to a tempfile.
+body_file="$TMPDIR_FALLBACK/preview.$$.body"
+trap 'rm -f "$body_file" "$body_file.json" "$body_file.json.tmp" "$body_file.sp.body" "$body_file.sp.resp"' EXIT INT TERM
+
+cl="${CONTENT_LENGTH:-0}"
+if [ "$cl" -gt 0 ] 2>/dev/null; then
+    dd bs=1 count="$cl" of="$body_file" 2>/dev/null
+else
+    : >"$body_file"
+fi
+
+body_id=$(json_string_field id <"$body_file")
+body_name=$(json_string_field name <"$body_file")
+body_json=$(json_object_field <"$body_file")
+
+# Validate id like the presets CGI does.
+case "$body_id" in
+    s[0-9]*) ;;
+    *) emit_error '400 Bad Request' INVALID_ID \
+        "id must match ^s[0-9]+\$" ;;
+esac
+if [ -z "$body_name" ]; then
+    emit_error '400 Bad Request' INVALID_NAME 'name must be non-empty'
+fi
+if [ -z "$body_json" ]; then
+    emit_error '400 Bad Request' INVALID_JSON 'json field missing'
+fi
+
+# Atomic write: tmp file beside the destination, then mv.
+target="$RESOLVER_DIR/$body_id"
+tmp="$target.tmp"
+printf '%s' "$body_json" >"$tmp" || \
+    emit_error '500 Internal Server Error' WRITE_FAILED 'tmp write failed'
+mv "$tmp" "$target" || \
+    emit_error '500 Internal Server Error' WRITE_FAILED 'rename failed'
+
+# POST a <ContentItem> to /select. The speaker fetches the resolver
+# JSON for this id (which we just rewrote) and starts playing.
+name_xml=$(xml_escape "$body_name")
+location="/v1/playback/station/$body_id"
+sp_body="<ContentItem source=\"TUNEIN\" type=\"stationurl\" location=\"${location}\" sourceAccount=\"\" isPresetable=\"true\"><itemName>${name_xml}</itemName></ContentItem>"
+
+sp_body_file="$body_file.sp.body"
+sp_resp_file="$body_file.sp.resp"
+printf '%s' "$sp_body" >"$sp_body_file"
+
+sp_status=$(curl -s -o "$sp_resp_file" -w '%{http_code}' \
+    -X POST -H 'Content-Type: application/xml' \
+    --data-binary "@$sp_body_file" \
+    "${SPEAKER_BASE}/select")
+
+if [ -z "$sp_status" ] || [ "$sp_status" = "000" ] || [ "$sp_status" -ge 400 ] 2>/dev/null; then
+    emit_error '502 Bad Gateway' SELECT_REJECTED \
+        "speaker /select failed (HTTP $sp_status)"
+fi
+if grep -q '<error' "$sp_resp_file" 2>/dev/null; then
+    emit_error '502 Bad Gateway' SELECT_REJECTED \
+        'speaker rejected /select'
+fi
+
+emit_ok

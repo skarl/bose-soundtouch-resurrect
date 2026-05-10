@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>SoundTouch WS test</title>
+    <style>
+      body { font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 1rem; color: #111; }
+      h1 { font-size: 1.1rem; margin: 0 0 0.5rem; }
+      #status { font-weight: 600; margin-bottom: 0.75rem; }
+      #log { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; border: 1px solid #ccc; padding: 0.5rem; max-height: 70vh; overflow: auto; }
+    </style>
+  </head>
+  <body>
+    <h1>SoundTouch WebSocket diagnostic</h1>
+    <p>Connects to <code id="url"></code> with the <code>gabbo</code> subprotocol (mandatory — see <code>admin/PLAN.md</code> &sect; <em>Live updates</em>).</p>
+    <div id="status">connecting...</div>
+    <pre id="log"></pre>
+    <script>
+      (function () {
+        var url = 'ws://' + location.hostname + ':8080/';
+        document.getElementById('url').textContent = url;
+        var statusEl = document.getElementById('status');
+        var logEl = document.getElementById('log');
+        function log(line) {
+          var ts = new Date().toISOString().slice(11, 23);
+          logEl.textContent += '[' + ts + '] ' + line + '\n';
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+        function setStatus(s) { statusEl.textContent = s; }
+        var ws;
+        try {
+          ws = new WebSocket(url, 'gabbo');
+        } catch (e) {
+          setStatus('error: ' + e.message);
+          return;
+        }
+        setStatus('connecting (readyState=' + ws.readyState + ')');
+        ws.onopen = function () {
+          setStatus('open (readyState=' + ws.readyState + ', protocol=' + (ws.protocol || '(none)') + ')');
+          log('OPEN');
+        };
+        ws.onmessage = function (ev) {
+          log('FRAME ' + (typeof ev.data === 'string' ? ev.data : '[binary ' + (ev.data.byteLength || 0) + ' bytes]'));
+        };
+        ws.onerror = function () {
+          setStatus('error (readyState=' + ws.readyState + ')');
+          log('ERROR');
+        };
+        ws.onclose = function (ev) {
+          setStatus('closed (code=' + ev.code + ', reason=' + (ev.reason || '(none)') + ', clean=' + ev.wasClean + ')');
+          log('CLOSE code=' + ev.code + ' reason=' + (ev.reason || '(none)'));
+        };
+      })();
+    </script>
+  </body>
+</html>

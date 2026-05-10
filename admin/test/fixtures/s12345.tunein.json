@@ -1,0 +1,25 @@
+{
+  "head": {"status": "200"},
+  "body": [
+    {
+      "element": "audio",
+      "url": "http://streams.example.de/live/hqlivestream.aac",
+      "reliability": 99,
+      "bitrate": 168,
+      "media_type": "aac",
+      "is_hls_advanced": "false",
+      "live_seek_stream": "false",
+      "is_direct": true
+    },
+    {
+      "element": "audio",
+      "url": "http://streams.example.de/live/livestream.mp3",
+      "reliability": 99,
+      "bitrate": 128,
+      "media_type": "mp3",
+      "is_hls_advanced": "false",
+      "live_seek_stream": "false",
+      "is_direct": true
+    }
+  ]
+}

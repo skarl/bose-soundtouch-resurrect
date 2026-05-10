@@ -1,0 +1,6 @@
+[
+  {"sid": "s12345", "name": "Example Radio",     "case": "playable"},
+  {"sid": "s67890", "name": "Mixed Filter Test", "case": "playable"},
+  {"sid": "s99999", "name": "Gated Station",     "case": "gated"},
+  {"sid": "s55555", "name": "Off-air Station",   "case": "dark"}
+]

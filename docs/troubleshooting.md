@@ -21,8 +21,8 @@ ssh -oHostKeyAlgorithms=+ssh-rsa root@$SPEAKER_IP '
 ```
 
 Expect a line like
-`/bin/httpd -f -p 127.0.0.1:8181 -h /mnt/nv/resolver` and a listening
-socket on `127.0.0.1:8181`. If not, see step 2.
+`/bin/httpd -f -p 0.0.0.0:8181 -h /mnt/nv/resolver` and a listening
+socket on `0.0.0.0:8181`. If not, see step 2.
 
 ### 2. Did `shepherdd` pick up the resolver config?
 

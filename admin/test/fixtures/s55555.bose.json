@@ -1,0 +1,34 @@
+{
+  "_links": {
+    "bmx_reporting": {
+      "href": "/v1/report?stream_id=e0&guide_id=s55555&listen_id=0&stream_type=liveRadio"
+    },
+    "bmx_favorite": {
+      "href": "/v1/favorite/s55555"
+    },
+    "bmx_nowplaying": {
+      "href": "/v1/now-playing/station/s55555",
+      "useInternalClient": "ALWAYS"
+    }
+  },
+  "audio": {
+    "hasPlaylist": true,
+    "isRealtime": true,
+    "maxTimeout": 60,
+    "streamUrl": "http://cdn-cms.tunein.com/service/Audio/nostream.enUS.mp3",
+    "streams": [
+      {
+        "bufferingTimeout": 20,
+        "connectingTimeout": 10,
+        "hasPlaylist": true,
+        "isRealtime": true,
+        "streamUrl": "http://cdn-cms.tunein.com/service/Audio/nostream.enUS.mp3",
+        "maxTimeout": 60
+      }
+    ]
+  },
+  "imageUrl": "",
+  "isFavorite": false,
+  "name": "Off-air Station",
+  "streamType": "liveRadio"
+}

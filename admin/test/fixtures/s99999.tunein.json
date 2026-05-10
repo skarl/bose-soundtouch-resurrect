@@ -1,0 +1,12 @@
+{
+  "head": {"status": "200"},
+  "body": [
+    {
+      "element": "audio",
+      "url": "http://cdn-cms.tunein.com/service/Audio/notcompatible.enUS.mp3",
+      "reliability": 99,
+      "bitrate": 0,
+      "media_type": "mp3"
+    }
+  ]
+}

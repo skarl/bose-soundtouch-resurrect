@@ -1,0 +1,631 @@
+/* SoundTouch admin — vanilla, mobile-first. */
+
+:root {
+  --bg: #fff;
+  --fg: #111;
+  --muted: #666;
+  --accent: #0a66c2;
+  --border: #e3e3e3;
+  font-size: 16px;
+}
+
+* { box-sizing: border-box; }
+
+/* Honour the HTML `hidden` attribute even when a more-specific rule
+   sets display: flex/grid/etc. Without this, anything we mark hidden
+   via JS stays visible if its class also styles display. */
+[hidden] { display: none !important; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.4;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.boot {
+  color: var(--muted);
+}
+
+.placeholder {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1rem;
+}
+
+.placeholder h1 {
+  font-size: 1.25rem;
+  margin: 0 0 0.5rem;
+}
+
+.placeholder p {
+  margin: 0;
+  color: var(--muted);
+}
+
+nav.routes {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+nav.routes a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+nav.routes a:hover {
+  text-decoration: underline;
+}
+
+/* --- browse view ------------------------------------------------- */
+
+.browse-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.browse-tab {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.browse-tab.is-active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+.browse-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.browse-section {
+  margin: 0.5rem 0;
+}
+
+.browse-section h2 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.browse-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.browse-link {
+  display: block;
+  padding: 0.5rem 0.25rem;
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.browse-link.is-disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.browse-loading,
+.browse-empty,
+.browse-error {
+  color: var(--muted);
+  padding: 0.5rem 0;
+}
+
+.breadcrumb {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+}
+
+.breadcrumb a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+/* --- station card (used by browse, search, station detail) ------- */
+
+.station-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  text-decoration: none;
+  color: inherit;
+  background: var(--bg);
+}
+
+.station-card:hover {
+  border-color: var(--accent);
+}
+
+.station-card__art {
+  width: 56px;
+  height: 56px;
+  flex-shrink: 0;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.station-card__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.station-card__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.station-card__name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.station-card__meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* --- now-playing header strip (transport/volume land in 0.3) ----- */
+/* Read-only: station name + art + 6 preset slots. */
+
+.now-playing-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.np-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.75rem;
+  min-height: 4rem;
+}
+
+.np-art {
+  width: 3rem;
+  height: 3rem;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--border);
+  flex: 0 0 auto;
+}
+
+.np-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.np-name {
+  font-size: 1.1rem;
+  margin: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Track line for the currently-selected station. Single-line ellipsis
+   for now; a marquee/ticker treatment for long titles + artist is a
+   future enhancement. */
+.np-track {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.5rem;
+}
+
+.preset-slot {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  min-height: 5rem;
+  position: relative;
+}
+
+.preset-slot.empty {
+  color: var(--muted);
+  background: #fafafa;
+}
+
+.preset-num {
+  position: absolute;
+  top: 0.25rem;
+  left: 0.4rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.preset-art {
+  width: 2rem;
+  height: 2rem;
+  object-fit: cover;
+  border-radius: 3px;
+  margin-top: 0.5rem;
+}
+
+.preset-name {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- search view ------------------------------------------------- */
+
+.search-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg);
+  padding: 0.5rem 0;
+  margin: 0 0 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-input {
+  width: 100%;
+  font: inherit;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.search-results,
+.search-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.search-empty-section {
+  margin: 0.5rem 0 1rem;
+}
+
+.search-empty-section h2 {
+  font-size: 0.95rem;
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.search-empty-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.search-empty-note,
+.search-loading,
+.search-no-results,
+.search-error {
+  color: var(--muted);
+  padding: 0.25rem 0;
+}
+
+.search-error {
+  color: #b00020;
+}
+
+/* --- version-drift banner ---------------------------------------- */
+/* Mounted by app/version.js when the served admin-version meta differs
+   from the in-memory one. Non-dismissable on purpose — user clicks
+   Reload to clear it. */
+
+#version-drift-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: #fff8c5;
+  color: #111;
+  border-bottom: 1px solid #d4c95a;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+#version-drift-banner button {
+  font: inherit;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid #111;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#version-drift-banner button:hover {
+  background: #f0f0f0;
+}
+
+/* --- station detail ---------------------------------------------- */
+
+.station-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.station-header {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.station-art {
+  width: 5rem;
+  height: 5rem;
+  flex: 0 0 auto;
+  background: var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.station-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.station-header__body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.station-name {
+  font-size: 1.25rem;
+  margin: 0 0 0.25rem;
+}
+
+.station-slogan {
+  margin: 0 0 0.25rem;
+  font-style: italic;
+  color: var(--muted);
+}
+
+.station-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.station-verdict {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.station-verdict.is-playable {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+.station-verdict.is-gated,
+.station-verdict.is-dark {
+  background: #fff8c5;
+  border-color: #d4c95a;
+  color: var(--fg);
+}
+
+.station-verdict.is-error {
+  background: #fde4e4;
+  border-color: #d49a9a;
+  color: #7a1f1f;
+}
+
+/* --- stream chooser ---------------------------------------------- */
+/* One row per stream returned by Tune.ashx. Click anywhere on the
+   row to select; click ▶ to audition (in the browser, not on the
+   speaker). The currently-selected stream is the one used when the
+   user assigns to a preset slot below. */
+
+.station-streams {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem;
+}
+
+.station-stream {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.station-stream:hover {
+  background: #f5f5f5;
+}
+
+.station-stream.is-selected {
+  background: #e7f3ff;
+  outline: 1px solid var(--accent);
+}
+
+.station-stream-audition {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.station-stream-audition:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.station-stream.is-playing .station-stream-audition {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+.station-stream.is-playing .station-stream-audition::before {
+  content: '\23F8'; /* ⏸ U+23F8 PAUSE SYMBOL */
+}
+.station-stream.is-playing .station-stream-audition {
+  font-size: 0;          /* hide the original ▶ glyph */
+}
+.station-stream.is-playing .station-stream-audition::before {
+  font-size: 0.85rem;
+}
+
+.station-stream-meta {
+  flex: 1 1 auto;
+  font-size: 0.9rem;
+  color: var(--fg);
+}
+
+.station-assign__label {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.station-assign-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.5rem;
+}
+
+.station-assign-btn {
+  font: inherit;
+  padding: 0.75rem 0;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.station-assign-btn:not(:disabled):hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.station-assign-btn:disabled {
+  color: var(--muted);
+  background: #fafafa;
+  cursor: not-allowed;
+}
+
+.station-more-like-this {
+  display: inline-block;
+  color: var(--accent);
+  text-decoration: none;
+  padding: 0.25rem 0;
+}
+
+.station-more-like-this:hover {
+  text-decoration: underline;
+}
+
+/* --- toast banner (app/toast.js) ---------------------------------- */
+/* Stacks short-lived messages at bottom-right. Each toast fades in,
+   sits for ~2s, then fades out. Pointer-events: none on the container
+   so the toast never intercepts clicks underneath it. */
+
+#toast-container {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 0.5rem;
+  pointer-events: none;
+  max-width: calc(100% - 2rem);
+}
+
+.toast {
+  background: #222;
+  color: #fff;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  transform: translateY(0.5rem);
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.toast.is-shown {
+  opacity: 1;
+  transform: translateY(0);
+}

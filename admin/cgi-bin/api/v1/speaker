@@ -1,0 +1,143 @@
+#!/bin/sh
+#
+# Wildcard proxy: /cgi-bin/api/v1/speaker/X  →  http://localhost:8090/X
+#
+# Forwards method, query string, and request body verbatim. The browser
+# never talks to speaker:8090 directly — every call comes through here.
+# This sidesteps the firmware's CORS posture (same-origin from the
+# browser's POV) and gives one place to enforce the Origin CSRF guard.
+#
+# CSRF: POST/PUT/DELETE require the Origin header to match the page's
+# own host (or be absent, e.g. curl). GET is idempotent, so no check —
+# the browser's default CORS rules already block cross-origin reads of
+# the response body.
+#
+# busybox-shell only. No bash-isms. Must pass shellcheck --severity=warning.
+# See admin/PLAN.md § REST API → speaker.
+
+set -u
+
+emit_error() {
+    status="$1"
+    code="$2"
+    msg="$3"
+    printf 'Status: %s\r\n' "$status"
+    printf 'Content-Type: application/json; charset=utf-8\r\n'
+    printf 'Cache-Control: no-store\r\n'
+    printf 'Access-Control-Allow-Origin: *\r\n'
+    printf '\r\n'
+    printf '{"ok":false,"error":{"code":"%s","message":"%s"}}\n' "$code" "$msg"
+}
+
+# CSRF guard: same-origin or no Origin header (curl) → pass.
+# Cross-origin mutating request → 403.
+case "${REQUEST_METHOD:-GET}" in
+    POST|PUT|DELETE)
+        case "${HTTP_ORIGIN:-}" in
+            "http://${HTTP_HOST:-}"|"https://${HTTP_HOST:-}"|"")
+                ;;
+            *)
+                emit_error 403 CSRF_BLOCKED \
+                    "cross-origin mutating request rejected"
+                exit 0
+                ;;
+        esac
+        ;;
+esac
+
+# PATH_INFO is everything after the script name. e.g. for
+# /cgi-bin/api/v1/speaker/now_playing  PATH_INFO == "/now_playing".
+TARGET_PATH="${PATH_INFO:-/}"
+
+# Refuse to proxy without a target path. /cgi-bin/api/v1/speaker on
+# its own has nothing meaningful to forward to.
+if [ "$TARGET_PATH" = "/" ] || [ -z "$TARGET_PATH" ]; then
+    emit_error 404 NO_PATH "no speaker endpoint specified"
+    exit 0
+fi
+
+QS="${QUERY_STRING:-}"
+if [ -n "$QS" ]; then
+    URL="http://localhost:8090${TARGET_PATH}?${QS}"
+else
+    URL="http://localhost:8090${TARGET_PATH}"
+fi
+
+METHOD="${REQUEST_METHOD:-GET}"
+
+# Stage the upstream response body in a tempfile so we can pull its
+# Content-Type and status (captured separately by curl's -w) before
+# deciding what envelope to emit.
+TMPDIR_FALLBACK="${TMPDIR:-/tmp}"
+BODY_FILE="$TMPDIR_FALLBACK/speaker-proxy.$$.body"
+
+cleanup() {
+    rm -f "$BODY_FILE" "$META_FILE"
+}
+trap cleanup EXIT INT TERM
+
+# We use curl (present on the firmware: /usr/bin/curl) rather than
+# busybox wget. wget on the device is the busybox build, which doesn't
+# support `-S` (header capture) or PUT/DELETE methods, so curl is the
+# only way to forward arbitrary methods + extract the upstream status
+# and Content-Type cleanly.
+META_FILE="$TMPDIR_FALLBACK/speaker-proxy.$$.meta"
+
+case "$METHOD" in
+    GET)
+        curl -s -o "$BODY_FILE" -w '%{http_code}\n%{content_type}\n' \
+             "$URL" >"$META_FILE" 2>/dev/null || : >"$META_FILE"
+        ;;
+    POST|PUT|DELETE)
+        # Read the request body from stdin (CGI contract).
+        REQ_FILE="$TMPDIR_FALLBACK/speaker-proxy.$$.req"
+        CL="${CONTENT_LENGTH:-0}"
+        if [ "$CL" -gt 0 ] 2>/dev/null; then
+            dd bs=1 count="$CL" of="$REQ_FILE" 2>/dev/null
+        else
+            : >"$REQ_FILE"
+        fi
+        CT_HDR_ARGS=""
+        if [ -n "${CONTENT_TYPE:-}" ]; then
+            CT_HDR_ARGS="-H Content-Type: ${CONTENT_TYPE}"
+        fi
+        # shellcheck disable=SC2086
+        curl -s -X "$METHOD" -o "$BODY_FILE" \
+             -w '%{http_code}\n%{content_type}\n' \
+             $CT_HDR_ARGS --data-binary "@$REQ_FILE" \
+             "$URL" >"$META_FILE" 2>/dev/null || : >"$META_FILE"
+        rm -f "$REQ_FILE"
+        ;;
+    *)
+        emit_error 501 METHOD_NOT_SUPPORTED \
+            "proxy supports GET, POST, PUT, DELETE only"
+        exit 0
+        ;;
+esac
+
+# Read the two metadata lines curl wrote: status, then content-type.
+UPSTREAM_STATUS=$(sed -n '1p' "$META_FILE")
+UPSTREAM_CT=$(sed -n '2p' "$META_FILE")
+
+# `000` is curl's idiom for "no response received". Treat that as a
+# connection failure, distinct from a real upstream HTTP error.
+if [ -z "$UPSTREAM_STATUS" ] || [ "$UPSTREAM_STATUS" = "000" ]; then
+    emit_error 502 UPSTREAM_UNREACHABLE \
+        "speaker API at localhost:8090 did not respond"
+    exit 0
+fi
+
+# Default to XML when the upstream omits the header (rare; the
+# speaker's /now_playing, /presets, /info, /volume etc. all return XML).
+if [ -z "$UPSTREAM_CT" ]; then
+    UPSTREAM_CT="application/xml; charset=utf-8"
+fi
+
+printf 'Status: %s\r\n' "$UPSTREAM_STATUS"
+printf 'Content-Type: %s\r\n' "$UPSTREAM_CT"
+printf 'Cache-Control: no-store\r\n'
+printf 'Access-Control-Allow-Origin: *\r\n'
+printf 'Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n'
+printf 'Access-Control-Allow-Headers: Content-Type\r\n'
+printf '\r\n'
+cat "$BODY_FILE"
