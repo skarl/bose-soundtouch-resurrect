@@ -7,11 +7,11 @@
 // refs in place — never re-renders. See admin/app/dom.js.
 
 import { html, mount } from '../dom.js';
-import { store, setPresets, setNowPlaying } from '../state.js';
+import { store } from '../state.js';
 import { speakerNowPlaying, presetsList, postVolume, postSelect, postSelectLocalSource } from '../api.js';
 import { setArt } from '../art.js';
 import { postKey, makeVolumeSender } from '../transport.js';
-import { setVolumeConfirmFn } from '../ws.js';
+import { setVolumeConfirmFn } from '../speaker-state.js';
 import { vuDot, updateVuDot } from '../components.js';
 import { recordOutgoing } from '../io-ledger.js';
 
@@ -63,7 +63,7 @@ async function pollOnce() {
   inFlight = true;
   try {
     const np = await speakerNowPlaying();
-    setNowPlaying(np);
+    store.update('speaker', (s) => { s.speaker.nowPlaying = np; });
   } catch (_err) {
     // Network blip — leave previous state visible.
   } finally {
@@ -78,7 +78,7 @@ async function fetchPresetsOnce() {
   try {
     const env = await presetsList();
     if (env && env.ok && Array.isArray(env.data)) {
-      setPresets(env.data);
+      store.update('speaker', (s) => { s.speaker.presets = env.data; });
     }
   } catch (_err) {
     // Non-fatal.

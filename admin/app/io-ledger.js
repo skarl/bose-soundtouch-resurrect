@@ -21,6 +21,21 @@ export function recordOutgoing(kind, detail) {
 }
 
 export function wasRecentOutgoing(kind, detail, withinMs = 2000) {
+  // When called without a detail, also match prefix-keyed entries like
+  // `preset:3` — watchSpeakerButtons calls wasRecentOutgoing('preset') but
+  // recordOutgoing('preset', slot) writes per-slot keys.
+  if (detail == null) {
+    const exact = ledger.get(kind);
+    const prefix = `${kind}:`;
+    let ts = exact;
+    for (const [key, keyTs] of ledger) {
+      if (key === kind || key.startsWith(prefix)) {
+        if (ts == null || keyTs > ts) ts = keyTs;
+      }
+    }
+    if (ts == null) return false;
+    return Date.now() - ts < withinMs;
+  }
   const ts = ledger.get(makeKey(kind, detail));
   if (ts == null) return false;
   return Date.now() - ts < withinMs;
