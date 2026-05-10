@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<updates deviceID="1234567890AB">
+  <nowPlayingUpdated>
+    <nowPlaying source="STANDBY" deviceID="1234567890AB">
+    </nowPlaying>
+  </nowPlayingUpdated>
+</updates>

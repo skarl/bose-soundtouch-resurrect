@@ -10,24 +10,15 @@ import nowPlaying from './views/now-playing.js';
 import browse     from './views/browse.js';
 import search     from './views/search.js';
 import station    from './views/station.js';
+import preset     from './views/preset.js';
 
 import { installVersionDriftCheck } from './version.js';
+import { getSpeakerInfo } from './api.js';
+import { connectionPill, updatePill, themeToggle } from './components.js';
+import * as ws from './ws.js';
+import * as theme from './theme.js';
 
-// #/preset/N is reserved for the 0.3 "replace this preset" modal
-// triggered from now-playing. Until then, render a tiny inline
-// placeholder so the route doesn't 404.
-const presetPlaceholder = {
-  init(root, _store, ctx) {
-    const slot = (ctx && ctx.params && ctx.params.slot) || '?';
-    mount(root, html`
-      <section class="placeholder" data-view="preset">
-        <h1>Preset ${slot}</h1>
-        <p>Coming in 0.3.</p>
-      </section>
-    `);
-  },
-  update() {},
-};
+theme.init();
 
 const notFound = {
   init(root, _store, ctx) {
@@ -47,12 +38,18 @@ const routes = [
   { pattern: /^\/browse$/,                       view: browse },
   { pattern: /^\/search$/,                       view: search },
   { pattern: /^\/station\/(?<id>s\d+)$/,         view: station },
-  { pattern: /^\/preset\/(?<slot>[1-6])$/,       view: presetPlaceholder },
+  { pattern: /^\/preset\/(?<slot>[1-6])$/,       view: preset },
 ];
 
 function renderShell(appRoot) {
-  // Static nav scaffold — view content mounts into <div id="view">.
+  const pill   = connectionPill(store.state);
+  const toggle = themeToggle();
   mount(appRoot, html`
+    <header class="app-header">
+      <span class="app-speaker-name"></span>
+      ${pill}
+      ${toggle}
+    </header>
     <nav class="routes" aria-label="primary">
       <a href="#/">Now playing</a>
       <a href="#/browse">Browse</a>
@@ -60,6 +57,17 @@ function renderShell(appRoot) {
     </nav>
     <div id="view" role="main"></div>
   `);
+
+  const nameEl = appRoot.querySelector('.app-speaker-name');
+
+  store.subscribe('ws', (state) => {
+    updatePill(pill, state);
+  });
+
+  store.subscribe('speaker', (state) => {
+    nameEl.textContent = (state.speaker.info && state.speaker.info.name) || '';
+  });
+
   return appRoot.querySelector('#view');
 }
 
@@ -75,6 +83,19 @@ function boot() {
   });
   router.start();
   installVersionDriftCheck();
+
+  getSpeakerInfo().then((info) => {
+    if (info) {
+      store.state.speaker.info = info;
+      store.touch('speaker');
+    }
+  }).catch(() => {
+    // Non-fatal — header name stays blank; speaker still works.
+  });
+
+  ws.connect(store);
+
+  window.addEventListener('beforeunload', () => ws.disconnect(), { once: true });
 }
 
 if (document.readyState === 'loading') {

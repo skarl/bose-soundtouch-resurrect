@@ -48,3 +48,9 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# --- Node ------------------------------------------------------------
+
+# Dev-only: admin/test/ uses @xmldom/xmldom for fixture-driven WS tests.
+# Lockfile is committed; node_modules is reinstallable via `npm ci`.
+node_modules/

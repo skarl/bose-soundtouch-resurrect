@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Source: docs/api-reference.md § WebSocket events; unwrapped heartbeat frame confirmed by bosesoundtouchapi -->
+<userActivityUpdate deviceID="00112233445566" />

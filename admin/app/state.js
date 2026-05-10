@@ -47,6 +47,11 @@ function observable(initial) {
       if (!subs.has(key)) throw new Error(`unknown state key: ${key}`);
       notify(key);
     },
+    update(key, mutator) {
+      if (!subs.has(key)) throw new Error(`unknown state key: ${key}`);
+      mutator(store.state);
+      notify(key);
+    },
   };
   return store;
 }
@@ -56,26 +61,16 @@ export const store = observable({
     info:       null,   // {deviceID, name, type, firmwareVersion, ...}
     nowPlaying: null,   // {source, item, track, artist, art, playStatus}
     presets:    null,   // [{slot, source, type, location, itemName, art}, ...]
-    volume:     null,   // 0.3+
-    sources:    null,   // 0.3+
+    volume:     null,   // {targetVolume, actualVolume, muteEnabled}
+    sources:    null,   // [{source, sourceAccount, displayName, status, isLocal}, ...]
   },
   caches: {
-    probe:          new Map(),               // sid -> {kind, streams?, reason?, expires}
+    probe:          new Map(),               // sid → Probe = {sid, verdict, tuneinJson, expires} — TTL 10 min
     recentlyViewed: loadRecentlyViewed(),    // [{sid, name, art?}], persisted in localStorage
   },
-  ws: { connected: false, lastEvent: null },   // 0.3+
+  ws: { connected: false, mode: 'offline', lastEvent: null },
   ui: { toast: null, testPlaying: null },
 });
-
-// Reconcile state.speaker.presets from the presets CGI envelope's
-// `data` array. Defensive — the CGI guarantees a length-6 array, but
-// store the value verbatim so any missing slots surface as `undefined`
-// rather than masked. Notifies 'speaker' subscribers (now-playing).
-export function setPresets(list) {
-  if (!Array.isArray(list)) return;
-  store.state.speaker.presets = list;
-  store.touch('speaker');
-}
 
 // Prepend an entry to state.caches.recentlyViewed, dedupe by sid, cap
 // at RECENT_MAX, persist to localStorage, and notify 'caches'

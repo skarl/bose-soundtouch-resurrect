@@ -1,13 +1,83 @@
 /* SoundTouch admin — vanilla, mobile-first. */
 
+/* --- colour tokens ------------------------------------------------ */
+/* Applied via [data-theme] on <html>; init() in theme.js sets the
+   attribute synchronously before any paint, so there is no FOWT.     */
+
+[data-theme="light"] {
+  --bg:         #fff;
+  --fg:         #111;
+  --fg-muted:   #666;
+  --accent:     #0a66c2;
+  --border:     #e3e3e3;
+  --surface:    #fafafa;
+  --surface-hi: #f5f5f5;
+  --stream-sel: #e7f3ff;
+  --warn-bg:    #fff8c5;
+  --warn-border:#d4c95a;
+  --error-bg:   #fde4e4;
+  --error-border:#d49a9a;
+  --error-fg:   #7a1f1f;
+  --search-err: #b00020;
+  --pill-amber: #b07000;
+  --pill-green: #1a7f37;
+  --pill-red:   #b00020;
+  --toast-bg:   #222;
+  --toast-fg:   #fff;
+}
+
+[data-theme="dark"] {
+  --bg:         #15171a;
+  --fg:         #e8eaed;
+  --fg-muted:   #8b949e;
+  --accent:     #4d9cf8;
+  --border:     #30363d;
+  --surface:    #1c1f23;
+  --surface-hi: #21262d;
+  --stream-sel: #1b3554;
+  --warn-bg:    #2d2300;
+  --warn-border:#6b5a00;
+  --error-bg:   #2d0f0f;
+  --error-border:#6b2a2a;
+  --error-fg:   #f08080;
+  --search-err: #f08080;
+  --pill-amber: #d4a000;
+  --pill-green: #3fb950;
+  --pill-red:   #f85149;
+  --toast-bg:   #e8eaed;
+  --toast-fg:   #1c1f23;
+}
+
+/* Fallback: honour legacy :root custom properties for any env that
+   renders before theme.js runs (e.g. prerender, print). Light values. */
 :root {
-  --bg: #fff;
-  --fg: #111;
-  --muted: #666;
-  --accent: #0a66c2;
-  --border: #e3e3e3;
+  --bg:         #fff;
+  --fg:         #111;
+  --fg-muted:   #666;
+  --muted:      #666;     /* keep --muted as alias used widely in markup */
+  --accent:     #0a66c2;
+  --border:     #e3e3e3;
+  --surface:    #fafafa;
+  --surface-hi: #f5f5f5;
+  --stream-sel: #e7f3ff;
+  --warn-bg:    #fff8c5;
+  --warn-border:#d4c95a;
+  --error-bg:   #fde4e4;
+  --error-border:#d49a9a;
+  --error-fg:   #7a1f1f;
+  --search-err: #b00020;
+  --pill-amber: #b07000;
+  --pill-green: #1a7f37;
+  --pill-red:   #b00020;
+  --toast-bg:   #222;
+  --toast-fg:   #fff;
   font-size: 16px;
 }
+
+/* Keep --muted in sync with --fg-muted inside each theme block so
+   existing rules that reference var(--muted) still resolve correctly. */
+[data-theme="light"] { --muted: var(--fg-muted); }
+[data-theme="dark"]  { --muted: var(--fg-muted); }
 
 * { box-sizing: border-box; }
 
@@ -49,6 +119,73 @@ main {
 .placeholder p {
   margin: 0;
   color: var(--muted);
+}
+
+/* --- app header (speaker name + connection pill + theme toggle) --- */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  min-height: 2rem;
+}
+
+.app-speaker-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+/* Connection-state pill. A small coloured dot + label.
+   Colour is driven by [data-state] so later states (reconnecting,
+   polling) only need a CSS rule, not a JS change. */
+.conn-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.conn-pill::before {
+  content: '';
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.conn-pill[data-state="connecting"]   { color: var(--pill-amber); }
+.conn-pill[data-state="ws"]           { color: var(--pill-green); }
+.conn-pill[data-state="offline"]      { color: var(--pill-red);   }
+.conn-pill[data-state="reconnecting"] { color: var(--pill-amber); }
+.conn-pill[data-state="polling"]      { color: var(--fg-muted);   }
+
+/* Theme-toggle button. Icon-only, no visible border at rest. */
+.theme-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.theme-btn:hover {
+  border-color: var(--border);
+  color: var(--fg);
 }
 
 nav.routes {
@@ -198,32 +335,53 @@ nav.routes a:hover {
   font-size: 0.85rem;
 }
 
-/* --- now-playing header strip (transport/volume land in 0.3) ----- */
-/* Read-only: station name + art + 6 preset slots. */
+/* --- now-playing view (0.3 full card) ----------------------------- */
 
-.now-playing-strip {
+.np-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Art + text block — stacks vertically on mobile, side-by-side ≥640 px.
+   position:relative anchors the .vu-dot to the card's top-right corner. */
+.np-card {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  background: var(--surface);
+  position: relative;
 }
 
-.np-header {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.75rem;
-  min-height: 4rem;
+@media (min-width: 640px) {
+  .np-card {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+}
+
+.np-art-wrap {
+  flex: 0 0 auto;
+  align-self: center;
 }
 
 .np-art {
-  width: 3rem;
-  height: 3rem;
+  width: 5rem;
+  height: 5rem;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--border);
-  flex: 0 0 auto;
+  display: block;
+}
+
+@media (min-width: 640px) {
+  .np-art {
+    width: 7rem;
+    height: 7rem;
+  }
 }
 
 .np-text {
@@ -231,11 +389,12 @@ nav.routes a:hover {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.2rem;
+  justify-content: center;
 }
 
 .np-name {
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   margin: 0;
   font-weight: 600;
   overflow: hidden;
@@ -243,16 +402,306 @@ nav.routes a:hover {
   white-space: nowrap;
 }
 
-/* Track line for the currently-selected station. Single-line ellipsis
-   for now; a marquee/ticker treatment for long titles + artist is a
-   future enhancement. */
 .np-track {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.np-meta {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Live VU dot. Positioned at the top-right corner of .np-card.
+   Pulses while data-playing="true"; invisible otherwise. */
+@keyframes vu-pulse {
+  0%   { opacity: 0.9; transform: scale(1); }
+  50%  { opacity: 0.4; transform: scale(0.7); }
+  100% { opacity: 0.9; transform: scale(1); }
+}
+
+.vu-dot {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--pill-green);
+  opacity: 0;
+  transition: opacity 200ms;
+  pointer-events: none;
+}
+
+.vu-dot[data-playing="true"] {
+  opacity: 0.9;
+  animation: vu-pulse 1.2s ease-in-out infinite;
+}
+
+/* Transport row — prev / play-pause / next */
+.np-transport {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.np-btn {
+  font: inherit;
+  font-size: 1.4rem;
+  line-height: 1;
+  width: 3rem;
+  height: 3rem;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 120ms, background 120ms;
+}
+
+.np-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.np-btn:active {
+  background: var(--surface-hi);
+}
+
+.np-btn--play {
+  font-size: 1.2rem;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.np-btn--play:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+/* Source picker pills */
+.np-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.np-source-pill {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+}
+
+.np-source-pill:not(:disabled):hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.np-source-pill[data-active="true"] {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
+.np-source-pill[data-status="UNAVAILABLE"],
+.np-source-pill:disabled {
+  color: var(--muted);
+  background: var(--surface);
+  border-color: var(--border);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Preset card row (slice 6) */
+.np-presets {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.np-preset {
+  font: inherit;
+  font-size: 0.78rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.4rem 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+  position: relative;
+  min-height: 4.5rem;
+  transition: border-color 120ms, background 120ms;
+}
+
+.np-preset:not(:disabled):hover {
+  border-color: var(--accent);
+}
+
+.np-preset:not(:disabled):active {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.np-preset--empty,
+.np-preset:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.np-preset-num {
+  position: absolute;
+  top: 0.2rem;
+  left: 0.3rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.np-preset-art {
+  width: 1.75rem;
+  height: 1.75rem;
+  object-fit: cover;
+  border-radius: 3px;
+  margin-top: 0.6rem;
+}
+
+.np-preset-name {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  padding: 0 0.1rem;
+}
+
+/* STANDBY / asleep state */
+.np-asleep {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2rem 1rem;
+  text-align: center;
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.np-asleep p {
+  margin: 0 0 0.4rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.np-asleep-hint {
+  font-size: 0.9rem !important;
+  font-weight: normal !important;
+  color: var(--muted);
+}
+
+/* --- volume row (slice 3) ---------------------------------------- */
+
+.np-volume {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.np-vol-icon {
+  font-size: 1.1rem;
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.np-slider {
+  flex: 1 1 auto;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+
+.np-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.np-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.np-slider:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.np-mute {
+  flex: 0 0 auto;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 2rem;
+  height: 2rem;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.np-mute:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.np-mute[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
 }
 
 .preset-row {
@@ -277,7 +726,7 @@ nav.routes a:hover {
 
 .preset-slot.empty {
   color: var(--muted);
-  background: #fafafa;
+  background: var(--surface);
 }
 
 .preset-num {
@@ -365,7 +814,7 @@ nav.routes a:hover {
 }
 
 .search-error {
-  color: #b00020;
+  color: var(--search-err);
 }
 
 /* --- version-drift banner ---------------------------------------- */
@@ -384,9 +833,9 @@ nav.routes a:hover {
   justify-content: center;
   gap: 0.75rem;
   padding: 0.5rem 1rem;
-  background: #fff8c5;
-  color: #111;
-  border-bottom: 1px solid #d4c95a;
+  background: var(--warn-bg);
+  color: var(--fg);
+  border-bottom: 1px solid var(--warn-border);
   font-size: 0.9rem;
   text-align: center;
 }
@@ -394,14 +843,15 @@ nav.routes a:hover {
 #version-drift-banner button {
   font: inherit;
   padding: 0.25rem 0.75rem;
-  border: 1px solid #111;
-  background: #fff;
+  border: 1px solid var(--fg);
+  background: var(--bg);
+  color: var(--fg);
   border-radius: 4px;
   cursor: pointer;
 }
 
 #version-drift-banner button:hover {
-  background: #f0f0f0;
+  background: var(--surface-hi);
 }
 
 /* --- station detail ---------------------------------------------- */
@@ -470,15 +920,15 @@ nav.routes a:hover {
 
 .station-verdict.is-gated,
 .station-verdict.is-dark {
-  background: #fff8c5;
-  border-color: #d4c95a;
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
   color: var(--fg);
 }
 
 .station-verdict.is-error {
-  background: #fde4e4;
-  border-color: #d49a9a;
-  color: #7a1f1f;
+  background: var(--error-bg);
+  border-color: var(--error-border);
+  color: var(--error-fg);
 }
 
 /* --- stream chooser ---------------------------------------------- */
@@ -507,11 +957,11 @@ nav.routes a:hover {
 }
 
 .station-stream:hover {
-  background: #f5f5f5;
+  background: var(--surface-hi);
 }
 
 .station-stream.is-selected {
-  background: #e7f3ff;
+  background: var(--stream-sel);
   outline: 1px solid var(--accent);
 }
 
@@ -570,6 +1020,7 @@ nav.routes a:hover {
   padding: 0.75rem 0;
   border: 1px solid var(--border);
   background: var(--bg);
+  color: var(--fg);
   border-radius: 6px;
   cursor: pointer;
 }
@@ -581,7 +1032,7 @@ nav.routes a:hover {
 
 .station-assign-btn:disabled {
   color: var(--muted);
-  background: #fafafa;
+  background: var(--surface);
   cursor: not-allowed;
 }
 
@@ -614,8 +1065,8 @@ nav.routes a:hover {
 }
 
 .toast {
-  background: #222;
-  color: #fff;
+  background: var(--toast-bg);
+  color: var(--toast-fg);
   padding: 0.5rem 0.75rem;
   border-radius: 6px;
   font-size: 0.9rem;
@@ -628,4 +1079,106 @@ nav.routes a:hover {
 .toast.is-shown {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* --- preset modal (#/preset/N) ------------------------------------ */
+/* Full-screen on mobile; centred dialog on wider viewports.
+   Opened via long-press / right-click on a preset card. The modal is a
+   real hash route, so browser back closes it cleanly. */
+
+.preset-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+@media (min-width: 480px) {
+  .preset-modal-backdrop {
+    align-items: center;
+  }
+}
+
+.preset-modal {
+  background: var(--bg);
+  border-radius: 12px 12px 0 0;
+  width: 100%;
+  max-height: 92dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@media (min-width: 480px) {
+  .preset-modal {
+    border-radius: 12px;
+    max-width: 520px;
+    max-height: 80dvh;
+  }
+}
+
+.preset-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.preset-modal-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.preset-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0 0.25rem;
+}
+
+.preset-modal-close:hover {
+  color: var(--fg);
+}
+
+.preset-modal-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.preset-modal-tab {
+  flex: 1 1 auto;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.preset-modal-tab[data-active="true"] {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+.preset-modal-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0.75rem 1rem;
+}
+
+.preset-modal-pane {
+  /* Each pane is a full-width host for the search or browse sub-view. */
 }

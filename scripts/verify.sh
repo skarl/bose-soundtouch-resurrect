@@ -102,9 +102,59 @@ fi
 
 if $SSH root@"$SPEAKER" 'wget -q -O /dev/null http://127.0.0.1:8181/cgi-bin/api/v1/tunein/browse' 2>/dev/null; then
     check "tunein CGI returns JSON or array" \
-        $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/cgi-bin/api/v1/tunein/browse | head -c 1 | grep -qE "[\\[{]"'
+        $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/cgi-bin/api/v1/tunein/browse | grep -qE "[\\[{]"'
 else
     printf '  [SKIP] tunein CGI not deployed\n'
+fi
+
+printf '\n=== 0.3 WS + speaker proxy probes ===\n'
+# These probes run from the laptop (not via SSH), testing port 8080 and
+# the speaker proxy CGI on 8181. They require the 0.3 admin to be deployed.
+
+# WS handshake — curl sends the Upgrade headers; expect 101 and
+# Sec-WebSocket-Protocol: gabbo in the response. curl blocks after the
+# handshake (the speaker keeps the WS open), so --max-time 3 is enough
+# to capture the response headers before timing out. curl exits 28 on
+# timeout, which is after a successful 101, so we capture stdout first.
+ws_response=$(curl -si \
+    -H 'Connection: Upgrade' \
+    -H 'Upgrade: websocket' \
+    -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+    -H 'Sec-WebSocket-Version: 13' \
+    -H 'Sec-WebSocket-Protocol: gabbo' \
+    --max-time 3 \
+    "http://$SPEAKER:8080/" 2>/dev/null || true)
+check "WS port 8080 returns 101 Switching Protocols" \
+    sh -c 'printf "%s" "$0" | grep -q "101 Switching"' "$ws_response"
+check "WS response carries Sec-WebSocket-Protocol: gabbo" \
+    sh -c 'printf "%s" "$0" | grep -qi "Sec-WebSocket-Protocol: gabbo"' "$ws_response"
+
+# Speaker proxy POST round-trip — read current volume, POST the same
+# level back (no audible change), expect 2xx from the proxy.
+# Requires the CGI proxy fix from slice 10 (--config Content-Type header).
+if curl -fsS "http://$SPEAKER:8181/cgi-bin/api/v1/speaker/volume" \
+        -o /dev/null 2>/dev/null; then
+    vol=$(curl -fsS "http://$SPEAKER:8181/cgi-bin/api/v1/speaker/volume" 2>/dev/null \
+        | grep -o '<actualvolume>[0-9]*</actualvolume>' \
+        | grep -o '[0-9]*' || echo 20)
+    check "speaker proxy POST /volume round-trip returns 2xx" \
+        curl -fsS -X POST \
+            -H 'Content-Type: application/xml' \
+            -d "<volume>${vol:-20}</volume>" \
+            "http://$SPEAKER:8181/cgi-bin/api/v1/speaker/volume"
+    # Origin guard — same POST but with a Referer from a foreign host.
+    # busybox httpd v1.19.4 does not forward the Origin header; the proxy
+    # CGI uses HTTP_REFERER as the CSRF signal instead. Expect 403.
+    check "speaker proxy rejects cross-origin Referer (CSRF guard, expect 403)" \
+        sh -c 'code=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/xml" \
+            -H "Referer: http://evil.example/page" \
+            -d "<volume>'"${vol:-20}"'</volume>" \
+            "http://'"$SPEAKER"':8181/cgi-bin/api/v1/speaker/volume"); \
+            [ "$code" = "403" ]'
+else
+    printf '  [SKIP] speaker proxy not deployed (skipping 0.3 proxy probes)\n'
 fi
 
 printf '\n=== Summary: %d ok, %d failed ===\n' "$ok" "$fail"

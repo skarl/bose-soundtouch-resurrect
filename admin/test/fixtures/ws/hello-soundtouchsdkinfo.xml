@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Source: docs/api-reference.md § WebSocket events; shape confirmed by libsoundtouch and bosesoundtouchapi -->
+<SoundTouchSdkInfo serverVersion="4" serverBuild="trunk r46330 v4 epdbuild hepdswbld04" />
