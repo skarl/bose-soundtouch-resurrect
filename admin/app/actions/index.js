@@ -4,8 +4,6 @@ import {
   postSelectLocalSource,
   postName,
   postSystemTimeout,
-  postStandby,
-  postSetPower,
   postDSPMonoStereo,
   presetsAssign,
   previewStream as apiPreviewStream,
@@ -69,16 +67,6 @@ export async function setName(name) {
 export async function setSystemTimeout(seconds) {
   recordOutgoing('settings');
   await postSystemTimeout(seconds);
-}
-
-export async function standby() {
-  recordOutgoing('transport');
-  await postStandby();
-}
-
-export async function setPower(state) {
-  recordOutgoing('transport');
-  await postSetPower(state);
 }
 
 export async function enterBluetoothPairing() {

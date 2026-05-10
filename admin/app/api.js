@@ -871,31 +871,6 @@ export async function postSystemTimeout(minutes) {
   if (!res.ok) throw new Error(`postSystemTimeout: HTTP ${res.status}`);
 }
 
-export async function postStandby() {
-  const res = await fetch(`${apiBase}/speaker/standby`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: '<standby/>',
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postStandby: HTTP ${res.status}`);
-}
-
-// /setPower wakes from standby. `state` is a string the firmware
-// accepts ('ON' / 'OFF'); leaving the wrapper generic so callers can
-// experiment without an action-layer rewrite.
-export async function postSetPower(state) {
-  const xml = `<setPower>${xmlEscape(state)}</setPower>`;
-  const res = await fetch(`${apiBase}/speaker/setPower`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: xml,
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postSetPower: HTTP ${res.status}`);
-}
-
-
 // --- bluetooth ------------------------------------------------------
 
 // GET /cgi-bin/api/v1/speaker/bluetoothInfo → { paired: [{name, mac}, ...] }.

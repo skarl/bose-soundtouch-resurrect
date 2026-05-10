@@ -108,12 +108,15 @@ export default defineView({
       }
     });
 
+    // Bo's firmware /standby rejects body shapes (CLIENT_XML_ERROR) and
+    // /setPower returns 404. Power is toggled the same way the hardware
+    // does it — by emulating the POWER key press+release.
     standbyEl.addEventListener('click', () => {
-      actions.standby().catch(() => {});
+      actions.pressKey('POWER').catch(() => {});
     });
 
     wakeEl.addEventListener('click', () => {
-      actions.setPower('ON').catch(() => {});
+      actions.pressKey('POWER').catch(() => {});
     });
 
     function applyName(info) {
