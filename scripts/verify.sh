@@ -117,6 +117,49 @@ else
     printf '  [SKIP] tunein CGI not deployed\n'
 fi
 
+printf '\n=== 0.4 settings surface (skipped if admin not deployed) ===\n'
+# Settings sub-views talk to the speaker exclusively through the
+# wildcard speaker proxy. Probe a representative endpoint per section
+# so a regression in the proxy or in busybox CGI dispatch surfaces
+# here without us repeating speaker-specific assertions.
+#
+# /networkInfo and /bluetoothInfo are GET-only and idempotent on Bo's
+# firmware. /bass is the canonical Audio probe — DSPMonoStereo would
+# work too but bass is present on every speaker that supports the
+# proxy at all.
+#
+# /lowPowerStandby is intentionally never probed — the endpoint is a
+# trigger, not a query, and any GET locks the LAN out (see
+# project memory project-low-power-standby-out-of-scope.md).
+
+if $SSH root@"$SPEAKER" 'wget -q -O /dev/null http://127.0.0.1:8181/cgi-bin/api/v1/speaker/info' 2>/dev/null; then
+    check "speaker proxy /networkInfo returns parseable XML" \
+        sh -c 'curl -fsS "http://'"$SPEAKER"':8181/cgi-bin/api/v1/speaker/networkInfo" | grep -q "<networkInfo"'
+    check "speaker proxy /bass returns parseable XML" \
+        sh -c 'curl -fsS "http://'"$SPEAKER"':8181/cgi-bin/api/v1/speaker/bass" | grep -q "<bass"'
+    # /bluetoothInfo only exposes the speaker's own MAC on this firmware;
+    # paired-device list never populates. The MAC attribute IS reliable.
+    check "speaker proxy /bluetoothInfo carries BluetoothMACAddress" \
+        sh -c 'curl -fsS "http://'"$SPEAKER"':8181/cgi-bin/api/v1/speaker/bluetoothInfo" | grep -q "BluetoothMACAddress"'
+else
+    printf '  [SKIP] speaker proxy not deployed (skipping 0.4 settings probes)\n'
+fi
+
+printf '\n=== 0.4 admin shell + assets (skipped if not deployed) ===\n'
+# Shell rebuild added a four-zone host element + self-hosted Geist
+# fonts. Assert the shell host class lands and that the font files
+# serve. busybox httpd's MIME map is in admin/httpd.conf — woff2 is
+# correctly typed from there, but we accept any 2xx since some
+# environments swap the table.
+if $SSH root@"$SPEAKER" 'wget -q -O /dev/null http://127.0.0.1:8181/' 2>/dev/null; then
+    check "admin index hosts the four-zone shell (.shell-header)" \
+        $SSH root@"$SPEAKER" 'wget -qO - http://127.0.0.1:8181/ | grep -q "shell-header"'
+    check "Geist 400 woff2 served on /fonts/Geist-400.woff2" \
+        $SSH root@"$SPEAKER" 'wget -q -O /dev/null http://127.0.0.1:8181/fonts/Geist-400.woff2'
+else
+    printf '  [SKIP] admin shell not deployed (skipping shell + font probes)\n'
+fi
+
 printf '\n=== 0.3 WS + speaker proxy probes ===\n'
 # These probes run from the laptop (not via SSH), testing port 8080 and
 # the speaker proxy CGI on 8181. They require the 0.3 admin to be deployed.
