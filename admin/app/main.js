@@ -10,6 +10,7 @@ import nowPlaying from './views/now-playing.js';
 import browse     from './views/browse.js';
 import search     from './views/search.js';
 import station    from './views/station.js';
+import preset     from './views/preset.js';
 
 import { installVersionDriftCheck } from './version.js';
 import { getSpeakerInfo } from './api.js';
@@ -18,22 +19,6 @@ import * as ws from './ws.js';
 import * as theme from './theme.js';
 
 theme.init();
-
-// #/preset/N is reserved for the 0.3 "replace this preset" modal
-// triggered from now-playing. Until then, render a tiny inline
-// placeholder so the route doesn't 404.
-const presetPlaceholder = {
-  init(root, _store, ctx) {
-    const slot = (ctx && ctx.params && ctx.params.slot) || '?';
-    mount(root, html`
-      <section class="placeholder" data-view="preset">
-        <h1>Preset ${slot}</h1>
-        <p>Coming in 0.3.</p>
-      </section>
-    `);
-  },
-  update() {},
-};
 
 const notFound = {
   init(root, _store, ctx) {
@@ -53,7 +38,7 @@ const routes = [
   { pattern: /^\/browse$/,                       view: browse },
   { pattern: /^\/search$/,                       view: search },
   { pattern: /^\/station\/(?<id>s\d+)$/,         view: station },
-  { pattern: /^\/preset\/(?<slot>[1-6])$/,       view: presetPlaceholder },
+  { pattern: /^\/preset\/(?<slot>[1-6])$/,       view: preset },
 ];
 
 function renderShell(appRoot) {

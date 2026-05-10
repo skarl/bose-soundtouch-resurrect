@@ -1080,3 +1080,105 @@ nav.routes a:hover {
   opacity: 1;
   transform: translateY(0);
 }
+
+/* --- preset modal (#/preset/N) ------------------------------------ */
+/* Full-screen on mobile; centred dialog on wider viewports.
+   Opened via long-press / right-click on a preset card. The modal is a
+   real hash route, so browser back closes it cleanly. */
+
+.preset-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+@media (min-width: 480px) {
+  .preset-modal-backdrop {
+    align-items: center;
+  }
+}
+
+.preset-modal {
+  background: var(--bg);
+  border-radius: 12px 12px 0 0;
+  width: 100%;
+  max-height: 92dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@media (min-width: 480px) {
+  .preset-modal {
+    border-radius: 12px;
+    max-width: 520px;
+    max-height: 80dvh;
+  }
+}
+
+.preset-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.preset-modal-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.preset-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0 0.25rem;
+}
+
+.preset-modal-close:hover {
+  color: var(--fg);
+}
+
+.preset-modal-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.preset-modal-tab {
+  flex: 1 1 auto;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.preset-modal-tab[data-active="true"] {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+
+.preset-modal-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0.75rem 1rem;
+}
+
+.preset-modal-pane {
+  /* Each pane is a full-width host for the search or browse sub-view. */
+}
