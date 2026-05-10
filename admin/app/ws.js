@@ -9,6 +9,8 @@ import {
   getSources, parseSourcesEl,
 } from './api.js';
 import { setNowPlaying, setPresets } from './state.js';
+import { showToast } from './toast.js';
+import { wasRecentOutgoing } from './io-ledger.js';
 
 let socket = null;
 let userInitiatedClose = false;
@@ -37,6 +39,67 @@ let reconnectTimer = null;
 let pollInterval   = null;
 let storeRef       = null;    // set on first connect() call
 let visibilityBound = false;
+
+// --- Speaker-button attribution (Option B) --------------------------
+//
+// We can't rely on <keyEvent> firing on physical button presses — the
+// spike showed nowPlayingUpdated/volumeUpdated DO fire reliably but
+// keyEvent does not. Instead, watch state changes and attribute them to
+// hardware buttons when no outgoing API call was recorded in the last 2s.
+
+let prevPlayStatus = null;    // last known playStatus value
+let prevSource     = null;    // last known nowPlaying source/item combo
+let prevVolume     = null;    // last known actualVolume
+let volToastTs     = 0;       // timestamp of last volume toast (throttle)
+const VOL_TOAST_COOLDOWN = 1500;
+
+function watchSpeakerButtons(store) {
+  store.subscribe('speaker', (state) => {
+    const np  = state.speaker.nowPlaying;
+    const vol = state.speaker.volume;
+
+    // --- play/pause change ---
+    const ps = np && np.playStatus;
+    if (ps !== prevPlayStatus) {
+      if (prevPlayStatus !== null && (ps === 'PLAY_STATE' || ps === 'PAUSE_STATE')) {
+        if (!wasRecentOutgoing('transport')) {
+          showToast('Play/Pause pressed on speaker');
+        }
+      }
+      prevPlayStatus = ps;
+    }
+
+    // --- source / selection change ---
+    // Use source + item location as a compound key to distinguish preset changes.
+    const sourceKey = np && np.source && np.source !== 'STANDBY'
+      ? `${np.source}:${(np.item && np.item.location) || ''}`
+      : null;
+    if (sourceKey !== null && sourceKey !== prevSource) {
+      if (prevSource !== null && !wasRecentOutgoing('source') && !wasRecentOutgoing('preset')) {
+        showToast('Source switched on speaker');
+      }
+      prevSource = sourceKey;
+    } else if (sourceKey !== null) {
+      prevSource = sourceKey;
+    }
+
+    // --- volume change ---
+    const av = vol && vol.actualVolume;
+    if (typeof av === 'number' && av !== prevVolume) {
+      if (prevVolume !== null && !wasRecentOutgoing('volume')) {
+        const delta = Math.abs(av - prevVolume);
+        if (delta > 1) {
+          const now = Date.now();
+          if (now - volToastTs > VOL_TOAST_COOLDOWN) {
+            showToast('Volume changed on speaker');
+            volToastTs = now;
+          }
+        }
+      }
+      prevVolume = av;
+    }
+  });
+}
 
 // --- Polling fallback -----------------------------------------------
 
@@ -171,8 +234,9 @@ const ENVELOPE_HANDLERS = {
   presetsUpdated(el, store) {            // TODO slice 6
     void el; void store;
   },
-  keyEvent(el, store) {                  // TODO slice 8
-    void el; void store;
+  keyEvent(el, store) {
+    store.state.ws.lastEvent = Date.now();
+    store.touch('ws');
   },
   connectionStateUpdated(el, store) {
     // The speaker sends this when network topology changes (e.g. a
@@ -281,11 +345,17 @@ function unbindVisibility() {
 
 // --- Socket lifecycle -----------------------------------------------
 
+let speakerWatchBound = false;
+
 export function connect(store) {
   if (socket) return;
   if (!store) return;
 
   storeRef = store;
+  if (!speakerWatchBound) {
+    watchSpeakerButtons(store);
+    speakerWatchBound = true;
+  }
   bindVisibility();
 
   const url = `ws://${location.hostname}:8080/`;
@@ -347,6 +417,11 @@ export function disconnect() {
   unbindVisibility();
   attempt = 0;
   consecutiveFails = 0;
+  speakerWatchBound = false;
+  prevPlayStatus = null;
+  prevSource     = null;
+  prevVolume     = null;
+  volToastTs     = 0;
   if (!socket) return;
   userInitiatedClose = true;
   socket.close();

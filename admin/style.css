@@ -343,7 +343,8 @@ nav.routes a:hover {
   gap: 1.25rem;
 }
 
-/* Art + text block — stacks vertically on mobile, side-by-side ≥640 px */
+/* Art + text block — stacks vertically on mobile, side-by-side ≥640 px.
+   position:relative anchors the .vu-dot to the card's top-right corner. */
 .np-card {
   display: flex;
   flex-direction: column;
@@ -352,6 +353,7 @@ nav.routes a:hover {
   border-radius: 8px;
   padding: 1rem;
   background: var(--surface);
+  position: relative;
 }
 
 @media (min-width: 640px) {
@@ -416,6 +418,32 @@ nav.routes a:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Live VU dot. Positioned at the top-right corner of .np-card.
+   Pulses while data-playing="true"; invisible otherwise. */
+@keyframes vu-pulse {
+  0%   { opacity: 0.9; transform: scale(1); }
+  50%  { opacity: 0.4; transform: scale(0.7); }
+  100% { opacity: 0.9; transform: scale(1); }
+}
+
+.vu-dot {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--pill-green);
+  opacity: 0;
+  transition: opacity 200ms;
+  pointer-events: none;
+}
+
+.vu-dot[data-playing="true"] {
+  opacity: 0.9;
+  animation: vu-pulse 1.2s ease-in-out infinite;
 }
 
 /* Transport row — prev / play-pause / next */
