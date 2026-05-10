@@ -8,10 +8,10 @@
 
 import { html, mount } from '../dom.js';
 import { store } from '../state.js';
-import { speakerNowPlaying, presetsList, postVolume, postSelect, postSelectLocalSource } from '../api.js';
+import { speakerNowPlaying, presetsList, postSelect, postSelectLocalSource } from '../api.js';
 import { setArt } from '../art.js';
-import { postKey, makeVolumeSender } from '../transport.js';
-import { setVolumeConfirmFn } from '../speaker-state.js';
+import { postKey } from '../transport.js';
+import { volumeController } from '../volume.js';
 import { vuDot, updateVuDot } from '../components.js';
 import { recordOutgoing } from '../io-ledger.js';
 
@@ -41,9 +41,6 @@ let sliderEl   = null;
 let muteEl     = null;
 let volumeRowEl = null;
 let vuDotEl    = null;
-
-// Volume sender — created once in init(); survives WS events.
-let volumeSender = null;
 
 // Polling state
 let pollTimer       = null;
@@ -157,7 +154,7 @@ function syncPlayBtn(np) {
 function applyVolume(vol) {
   if (!sliderEl) return;
   const muted = vol && vol.muteEnabled;
-  const level = vol ? vol.actualVolume : 0;
+  const level = vol ? vol.targetVolume : 0;
   // Only update slider if the value differs — avoid stomping on an
   // active drag (the user's thumb should stay under their finger).
   if (sliderEl.value !== String(level)) {
@@ -481,21 +478,11 @@ export default {
     btnPlay.addEventListener('click', onPlayPause);
     btnNext.addEventListener('click', onNext);
 
-    // Build the volume sender and wire its confirm callback into ws.js so
-    // volumeUpdated events suppress redundant outbound POSTs.
-    volumeSender = makeVolumeSender(postVolume);
-    setVolumeConfirmFn(volumeSender.confirm);
-
     sliderEl.addEventListener('input', () => {
-      const level = Number(sliderEl.value);
-      // Eager local feedback: update targetVolume so the thumb stays live.
-      if (store.state.speaker.volume) {
-        store.state.speaker.volume.targetVolume = level;
-      }
-      volumeSender.setVolume(level);
+      volumeController.set(Number(sliderEl.value));
     });
 
-    muteEl.addEventListener('click', () => { postKey('MUTE'); });
+    muteEl.addEventListener('click', () => { volumeController.toggleMute(); });
 
     const sp = store.state.speaker;
     applyNowPlaying(sp.nowPlaying);
@@ -529,7 +516,5 @@ export default {
     sliderEl = muteEl = volumeRowEl = null;
     presetBtns = [];
     vuDotEl = null;
-    volumeSender = null;
-    setVolumeConfirmFn(null);
   },
 };
