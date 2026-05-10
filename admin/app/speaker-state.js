@@ -13,24 +13,26 @@ import {
   getSpeakerInfo,
   getNowPlaying,
   presetsList,
-  parseNowPlayingEl,
   getVolume,
-  parseVolumeEl,
   getSources,
-  parseSourcesEl,
   getNetworkInfo,
   getSystemTimeout,
   getBluetoothInfo,
   getBass,
-  parseBassEl,
   getBalance,
-  parseBalanceEl,
   getDSPMonoStereo,
   getRecents,
-  parseRecentsEl,
   getZone,
-  parseZoneEl,
 } from './api.js';
+import {
+  parseNowPlayingEl,
+  parseVolumeEl,
+  parseSourcesEl,
+  parseBassEl,
+  parseBalanceEl,
+  parseRecentsEl,
+  parseZoneEl,
+} from './speaker-xml.js';
 import * as actions from './actions/index.js';
 
 // Field entry shape:

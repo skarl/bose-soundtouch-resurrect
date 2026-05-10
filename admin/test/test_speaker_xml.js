@@ -1,5 +1,6 @@
-// Tests for api.js parsers: parseNowPlayingXml / parseNowPlayingEl / parseSourcesXml.
-// Slice 3 will add volume cases.
+// Tests for speaker-xml.js parsers — pure XML→domain mapping.
+// Each parseXxxXml/parseXxxEl pair is fixture-driven and shared by both
+// the REST fetchers in api.js and the WS dispatch path in speaker-state.js.
 //
 // Run: node --test admin/test
 
@@ -30,7 +31,7 @@ import {
   parseRecentsXml, parseRecentsEl,
   parseZoneXml, parseZoneEl,
   parseListMediaServersXml, parseListMediaServersEl,
-} from '../app/api.js';
+} from '../app/speaker-xml.js';
 import { dispatch } from '../app/ws.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
