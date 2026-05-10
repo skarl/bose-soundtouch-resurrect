@@ -24,6 +24,7 @@ import { tuneinStation, tuneinProbe, presetsAssign, presetsList } from '../api.j
 import { addRecentlyViewed, setPresets } from '../state.js';
 import { classify, reshape } from '../reshape.js';
 import { showToast } from '../toast.js';
+import { setArt } from '../art.js';
 
 const PROBE_TTL_MS = 10 * 60 * 1000;   // 10 minutes
 const ASSIGN_SLOTS = 6;
@@ -147,15 +148,11 @@ function applyMetadata(root, stationBody, fallbackName) {
   }
 
   if (artBox) {
-    const art = pickArt(stationBody);
-    if (art) {
-      const img = document.createElement('img');
-      img.src = art;
-      img.alt = name;
-      img.loading = 'lazy';
-      artBox.replaceChildren(img);
-      artBox.removeAttribute('hidden');
-    }
+    const img = document.createElement('img');
+    img.loading = 'lazy';
+    artBox.replaceChildren(img);
+    artBox.removeAttribute('hidden');
+    setArt(img, pickArt(stationBody) || '', name);
   }
 }
 

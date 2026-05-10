@@ -10,12 +10,14 @@
 import { html, mount } from '../dom.js';
 import { store, setPresets } from '../state.js';
 import { speakerNowPlaying, presetsList } from '../api.js';
+import { setArt } from '../art.js';
 
 const POLL_MS = 2000;
 const PRESET_SLOTS = 6;
 
 // Refs to mutable DOM nodes — populated by init(), used by update().
 let nameEl    = null;
+let trackEl   = null;
 let artEl     = null;
 let presetEls = [];
 
@@ -98,18 +100,25 @@ function renderName(np) {
 
 function applyNowPlaying(np) {
   if (!nameEl) return;
-  nameEl.textContent = renderName(np);
+  const name = renderName(np);
+  nameEl.textContent = name;
+
+  // Track for the currently-selected station only (one line).
+  // For stations whose track equals the station name (TuneIn often
+  // does this — sometimes with different casing), suppress the
+  // duplicate. A future ticker/marquee will surface long titles +
+  // artist when we run out of space.
+  if (trackEl) {
+    const track = (np && typeof np.track === 'string') ? np.track.trim() : '';
+    const showTrack = !!track && track.toLowerCase() !== (name || '').toLowerCase();
+    trackEl.textContent = showTrack ? track : '';
+    trackEl.toggleAttribute('hidden', !showTrack);
+  }
 
   const artUrl = np && typeof np.art === 'string' && np.art.startsWith('http')
     ? np.art
     : '';
-  if (artUrl) {
-    if (artEl.getAttribute('src') !== artUrl) artEl.setAttribute('src', artUrl);
-    artEl.removeAttribute('hidden');
-  } else {
-    artEl.removeAttribute('src');
-    artEl.setAttribute('hidden', '');
-  }
+  setArt(artEl, artUrl, name);
 }
 
 function applyPresets(presets) {
@@ -120,7 +129,8 @@ function applyPresets(presets) {
     const p = presets && presets[i] ? presets[i] : null;
     const labelEl = slot.querySelector('.preset-name');
     const imgEl   = slot.querySelector('.preset-art');
-    if (!p) {
+
+    if (!p || p.empty) {
       slot.classList.add('empty');
       if (labelEl) labelEl.textContent = 'Empty';
       if (imgEl) {
@@ -129,16 +139,13 @@ function applyPresets(presets) {
       }
       continue;
     }
+
     slot.classList.remove('empty');
-    if (labelEl) labelEl.textContent = p.itemName || `Preset ${i + 1}`;
+    const name = p.itemName || `Preset ${i + 1}`;
+    if (labelEl) labelEl.textContent = name;
     if (imgEl) {
-      if (p.art && typeof p.art === 'string' && p.art.startsWith('http')) {
-        if (imgEl.getAttribute('src') !== p.art) imgEl.setAttribute('src', p.art);
-        imgEl.removeAttribute('hidden');
-      } else {
-        imgEl.removeAttribute('src');
-        imgEl.setAttribute('hidden', '');
-      }
+      const url = (typeof p.art === 'string' && p.art.startsWith('http')) ? p.art : '';
+      setArt(imgEl, url, name);
     }
   }
 }
@@ -178,14 +185,18 @@ export default {
     mount(root, html`
       <section class="now-playing-strip" data-view="now-playing">
         <header class="np-header">
-          <img class="np-art" alt="" hidden>
-          <h1 class="np-name"></h1>
+          <img class="np-art" alt="">
+          <div class="np-text">
+            <h1 class="np-name"></h1>
+            <p class="np-track" hidden></p>
+          </div>
         </header>
         ${presetRow}
       </section>
     `);
 
     nameEl    = root.querySelector('.np-name');
+    trackEl   = root.querySelector('.np-track');
     artEl     = root.querySelector('.np-art');
     presetEls = slotNodes;
 
@@ -213,6 +224,7 @@ export default {
   _teardown() {
     clearPoll();
     nameEl    = null;
+    trackEl   = null;
     artEl     = null;
     presetEls = [];
   },

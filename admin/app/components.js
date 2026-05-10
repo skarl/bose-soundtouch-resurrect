@@ -5,6 +5,8 @@
 // text-position interpolation only, and stationCard needs to set
 // href/src/dataset on real elements.
 
+import { setArt } from './art.js';
+
 // Build a clickable card for a TuneIn station. `sid` is the only
 // required field; everything else degrades gracefully when missing.
 // Clicking the card sets location.hash to #/station/<sid> via the
@@ -17,13 +19,10 @@ export function stationCard({ sid, name, art, location, format }) {
 
   const artBox = document.createElement('div');
   artBox.className = 'station-card__art';
-  if (art) {
-    const img = document.createElement('img');
-    img.src = art;
-    img.alt = name || '';
-    img.loading = 'lazy';
-    artBox.appendChild(img);
-  }
+  const img = document.createElement('img');
+  img.loading = 'lazy';
+  artBox.appendChild(img);
+  setArt(img, art || '', name || sid);
 
   const nameEl = document.createElement('div');
   nameEl.className = 'station-card__name';
