@@ -11,6 +11,11 @@
 
 * { box-sizing: border-box; }
 
+/* Honour the HTML `hidden` attribute even when a more-specific rule
+   sets display: flex/grid/etc. Without this, anything we mark hidden
+   via JS stays visible if its class also styles display. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
