@@ -34,7 +34,11 @@ async function wsFixture(name) { return readFile(join(WS_FIX, name), 'utf8'); }
 
 function makeStore() {
   const state = {
-    speaker: { info: null, nowPlaying: null, presets: null, volume: null, sources: null, network: null, bluetooth: null },
+    speaker: {
+      info: null, nowPlaying: null, presets: null, volume: null, sources: null,
+      network: null, bluetooth: null,
+      bass: null, balance: null, dspMonoStereo: null,
+    },
     ws: { connected: false, lastEvent: null },
     caches: {},
     ui: {},
@@ -262,4 +266,69 @@ test('registry sanity: every entry with eventTag has parseInline and a fetcher',
       `${entry.name} with eventTag must have a fetcher for hint-only fallback`,
     );
   }
+});
+
+// --- bass / balance WS dispatch -------------------------------------
+
+test('dispatch: inline payload (bassUpdated) → field applied, single touch', async () => {
+  const xml = await wsFixture('bass-updated.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const child = doc.documentElement.children[0]; // <bassUpdated>
+
+  const store = makeStore();
+  await dispatch(child, store);
+
+  assert.equal(store._touched.length, 1, 'touch called exactly once');
+  assert.equal(store._touched[0], 'speaker');
+  const bass = store.state.speaker.bass;
+  assert.ok(bass, 'bass set');
+  assert.equal(bass.targetBass, -3);
+  assert.equal(bass.actualBass, -3);
+});
+
+test('dispatch: bassUpdated → afterApply confirms bass slider with actualBass', async () => {
+  const xml = await wsFixture('bass-updated.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const child = doc.documentElement.children[0];
+
+  const store = makeStore();
+  await dispatch(child, store);
+
+  // confirm(-3) was forwarded — a follow-up setBass(-3) is then a no-op.
+  const { store: realStore } = await import('../app/state.js');
+  realStore.state.speaker.bass = { targetBass: -3, actualBass: -3 };
+  actions.setBass(-3);
+  assert.equal(actions.hasPending('bass'), false,
+    'confirm(-3) gates a setBass(-3) — no in-flight POST');
+});
+
+test('dispatch: inline payload (balanceUpdated) → field applied, single touch', async () => {
+  const xml = await wsFixture('balance-updated.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const child = doc.documentElement.children[0]; // <balanceUpdated>
+
+  const store = makeStore();
+  await dispatch(child, store);
+
+  assert.equal(store._touched.length, 1, 'touch called exactly once');
+  assert.equal(store._touched[0], 'speaker');
+  const balance = store.state.speaker.balance;
+  assert.ok(balance, 'balance set');
+  assert.equal(balance.targetBalance, 2);
+  assert.equal(balance.actualBalance, 2);
+});
+
+test('dispatch: balanceUpdated → afterApply confirms balance slider with actualBalance', async () => {
+  const xml = await wsFixture('balance-updated.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const child = doc.documentElement.children[0];
+
+  const store = makeStore();
+  await dispatch(child, store);
+
+  const { store: realStore } = await import('../app/state.js');
+  realStore.state.speaker.balance = { targetBalance: 2, actualBalance: 2 };
+  actions.setBalance(2);
+  assert.equal(actions.hasPending('balance'), false,
+    'confirm(2) gates a setBalance(2) — no in-flight POST');
 });

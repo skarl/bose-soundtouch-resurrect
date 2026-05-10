@@ -63,9 +63,9 @@ export const store = observable({
     presets:        null,   // [{slot, source, type, location, itemName, art}, ...]
     volume:         null,   // {targetVolume, actualVolume, muteEnabled}
     sources:        null,   // [{source, sourceAccount, displayName, status, isLocal}, ...]
-    bass:           null,   // {target, actual, min, max, default}
-    balance:        null,   // {target, actual, min, max, default}
-    dspMonoStereo:  null,   // {mode}
+    bass:           null,   // {targetBass, actualBass}
+    balance:        null,   // {targetBalance, actualBalance}
+    dspMonoStereo:  null,   // {mode: 'mono' | 'stereo'}
     zone:           null,   // {master, members: [{ipAddress, deviceID}, ...]}
     bluetooth:      null,   // {paired: [{name, mac}, ...], pairing}
     network:        null,   // {ssid, ipAddress, macAddress, signalDbm}

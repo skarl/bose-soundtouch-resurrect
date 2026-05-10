@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<updates deviceID="689E19D55555">
+  <balanceUpdated>
+    <balance>
+      <targetbalance>2</targetbalance>
+      <actualbalance>2</actualbalance>
+    </balance>
+  </balanceUpdated>
+</updates>

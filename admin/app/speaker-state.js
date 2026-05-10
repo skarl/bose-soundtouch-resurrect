@@ -22,6 +22,11 @@ import {
   getSystemTimeout,
   getLowPowerStandby,
   getBluetoothInfo,
+  getBass,
+  parseBassEl,
+  getBalance,
+  parseBalanceEl,
+  getDSPMonoStereo,
 } from './api.js';
 import * as actions from './actions/index.js';
 
@@ -99,10 +104,56 @@ export const FIELDS = [
     },
   },
   // Settings-section fields. Real fetchers and WS plumbing land in the
-  // slices that wire each section (#34/#35/#37/#38/#39/#42).
-  { name: 'bass',          fetcher: () => Promise.resolve(null) },
-  { name: 'balance',       fetcher: () => Promise.resolve(null) },
-  { name: 'dspMonoStereo', fetcher: () => Promise.resolve(null) },
+  // slices that wire each section (#35/#37/#38/#39/#42).
+  {
+    name: 'bass',
+    fetcher: getBass,
+    eventTag: 'bassUpdated',
+    parseInline(el) {
+      const els = el.getElementsByTagName('bass');
+      return els && els[0] ? parseBassEl(els[0]) : null;
+    },
+    apply(state, value) {
+      if (!value) return;
+      const prev = state.speaker.bass;
+      if (prev && actions.hasPending('bass')) {
+        state.speaker.bass = {
+          ...value,
+          targetBass: prev.targetBass,
+        };
+      } else {
+        state.speaker.bass = value;
+      }
+    },
+    afterApply(value) {
+      if (value) actions._confirmSlider('bass', value.actualBass);
+    },
+  },
+  {
+    name: 'balance',
+    fetcher: getBalance,
+    eventTag: 'balanceUpdated',
+    parseInline(el) {
+      const els = el.getElementsByTagName('balance');
+      return els && els[0] ? parseBalanceEl(els[0]) : null;
+    },
+    apply(state, value) {
+      if (!value) return;
+      const prev = state.speaker.balance;
+      if (prev && actions.hasPending('balance')) {
+        state.speaker.balance = {
+          ...value,
+          targetBalance: prev.targetBalance,
+        };
+      } else {
+        state.speaker.balance = value;
+      }
+    },
+    afterApply(value) {
+      if (value) actions._confirmSlider('balance', value.actualBalance);
+    },
+  },
+  { name: 'dspMonoStereo', fetcher: getDSPMonoStereo },
   { name: 'zone',          fetcher: () => Promise.resolve(null) },
   { name: 'bluetooth',     fetcher: getBluetoothInfo },
   // No reliable WS event for /networkInfo — connectionStateUpdated

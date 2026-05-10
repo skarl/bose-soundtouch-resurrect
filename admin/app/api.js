@@ -9,6 +9,14 @@
 //   parseNowPlayingEl()  — same parser for an already-parsed DOM element
 //   getVolume(), postVolume() — GET/POST /speaker/volume
 //   parseVolumeXml(), parseVolumeEl() — shared volume parser (REST + WS)
+//   getBass(), postBass()       — GET/POST /speaker/bass
+//   parseBassXml(), parseBassEl() — shared bass parser (REST + WS)
+//   getBassCapabilities(), parseBassCapabilitiesXml(), parseBassCapabilitiesEl()
+//   getBalance(), postBalance() — GET/POST /speaker/balance
+//   parseBalanceXml(), parseBalanceEl() — shared balance parser (REST + WS)
+//   getBalanceCapabilities(), parseBalanceCapabilitiesXml(), parseBalanceCapabilitiesEl()
+//   getDSPMonoStereo(), postDSPMonoStereo() — GET/POST /speaker/DSPMonoStereo
+//   parseDSPMonoStereoXml(), parseDSPMonoStereoEl()
 //   getSources()         — GET /speaker/sources → array of source objects
 //   postSelect()         — POST /speaker/select with a ContentItem (streaming sources)
 //   postSelectLocalSource() — POST /speaker/selectLocalSource (AUX, BLUETOOTH)
@@ -334,6 +342,267 @@ export async function postVolume(level) {
     cache: 'no-store',
   });
   if (!res.ok) throw new Error(`postVolume: HTTP ${res.status}`);
+}
+
+// --- bass -----------------------------------------------------------
+
+// Parse the speaker's <bass> XML into:
+//   { targetBass, actualBass }
+//
+// Reference shape:
+//   <bass>
+//     <targetbass>-1</targetbass>
+//     <actualbass>-1</actualbass>
+//   </bass>
+export function parseBassXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+  const els = doc.getElementsByTagName('bass');
+  if (!els || !els[0]) return null;
+  return parseBassEl(els[0]);
+}
+
+export function parseBassEl(el) {
+  if (!el) return null;
+  const g = (tag) => {
+    const col = el.getElementsByTagName(tag);
+    return col && col[0] ? col[0].textContent : '';
+  };
+  const target = parseInt(g('targetbass'), 10);
+  const actual = parseInt(g('actualbass'), 10);
+  if (isNaN(target) && isNaN(actual)) return null;
+  return {
+    targetBass: isNaN(target) ? 0 : target,
+    actualBass: isNaN(actual) ? 0 : actual,
+  };
+}
+
+// GET /cgi-bin/api/v1/speaker/bass
+export async function getBass() {
+  const res = await fetch(`${apiBase}/speaker/bass`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getBass: HTTP ${res.status}`);
+  const text = await res.text();
+  return parseBassXml(text);
+}
+
+// POST /cgi-bin/api/v1/speaker/bass with body <bass>NN</bass>.
+export async function postBass(level) {
+  const res = await fetch(`${apiBase}/speaker/bass`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: `<bass>${Math.round(level)}</bass>`,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postBass: HTTP ${res.status}`);
+}
+
+// Parse the speaker's <bassCapabilities> XML into:
+//   { bassMin, bassMax, bassDefault }
+//
+// Reference shape:
+//   <bassCapabilities>
+//     <bassMin>-9</bassMin>
+//     <bassMax>0</bassMax>
+//     <bassDefault>0</bassDefault>
+//   </bassCapabilities>
+export function parseBassCapabilitiesXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+  const els = doc.getElementsByTagName('bassCapabilities');
+  if (!els || !els[0]) return null;
+  return parseBassCapabilitiesEl(els[0]);
+}
+
+export function parseBassCapabilitiesEl(el) {
+  if (!el) return null;
+  const g = (tag) => {
+    const col = el.getElementsByTagName(tag);
+    return col && col[0] ? col[0].textContent : '';
+  };
+  const min = parseInt(g('bassMin'), 10);
+  const max = parseInt(g('bassMax'), 10);
+  const def = parseInt(g('bassDefault'), 10);
+  if (isNaN(min) && isNaN(max)) return null;
+  return {
+    bassMin:     isNaN(min) ? 0 : min,
+    bassMax:     isNaN(max) ? 0 : max,
+    bassDefault: isNaN(def) ? 0 : def,
+  };
+}
+
+// GET /cgi-bin/api/v1/speaker/bassCapabilities
+export async function getBassCapabilities() {
+  const res = await fetch(`${apiBase}/speaker/bassCapabilities`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getBassCapabilities: HTTP ${res.status}`);
+  const text = await res.text();
+  return parseBassCapabilitiesXml(text);
+}
+
+// --- balance --------------------------------------------------------
+
+// Parse the speaker's <balance> XML into:
+//   { targetBalance, actualBalance }
+//
+// Reference shape:
+//   <balance>
+//     <targetbalance>0</targetbalance>
+//     <actualbalance>0</actualbalance>
+//   </balance>
+export function parseBalanceXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+  const els = doc.getElementsByTagName('balance');
+  if (!els || !els[0]) return null;
+  return parseBalanceEl(els[0]);
+}
+
+export function parseBalanceEl(el) {
+  if (!el) return null;
+  const g = (tag) => {
+    const col = el.getElementsByTagName(tag);
+    return col && col[0] ? col[0].textContent : '';
+  };
+  const target = parseInt(g('targetbalance'), 10);
+  const actual = parseInt(g('actualbalance'), 10);
+  if (isNaN(target) && isNaN(actual)) return null;
+  return {
+    targetBalance: isNaN(target) ? 0 : target,
+    actualBalance: isNaN(actual) ? 0 : actual,
+  };
+}
+
+// GET /cgi-bin/api/v1/speaker/balance
+export async function getBalance() {
+  const res = await fetch(`${apiBase}/speaker/balance`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getBalance: HTTP ${res.status}`);
+  const text = await res.text();
+  return parseBalanceXml(text);
+}
+
+// POST /cgi-bin/api/v1/speaker/balance with body <balance>NN</balance>.
+export async function postBalance(level) {
+  const res = await fetch(`${apiBase}/speaker/balance`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: `<balance>${Math.round(level)}</balance>`,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postBalance: HTTP ${res.status}`);
+}
+
+// Parse the speaker's <balanceCapabilities> XML into:
+//   { balanceMin, balanceMax, balanceDefault }
+//
+// Reference shape:
+//   <balanceCapabilities>
+//     <balanceMin>-7</balanceMin>
+//     <balanceMax>7</balanceMax>
+//     <balanceDefault>0</balanceDefault>
+//   </balanceCapabilities>
+export function parseBalanceCapabilitiesXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+  const els = doc.getElementsByTagName('balanceCapabilities');
+  if (!els || !els[0]) return null;
+  return parseBalanceCapabilitiesEl(els[0]);
+}
+
+export function parseBalanceCapabilitiesEl(el) {
+  if (!el) return null;
+  const g = (tag) => {
+    const col = el.getElementsByTagName(tag);
+    return col && col[0] ? col[0].textContent : '';
+  };
+  const min = parseInt(g('balanceMin'), 10);
+  const max = parseInt(g('balanceMax'), 10);
+  const def = parseInt(g('balanceDefault'), 10);
+  if (isNaN(min) && isNaN(max)) return null;
+  return {
+    balanceMin:     isNaN(min) ? 0 : min,
+    balanceMax:     isNaN(max) ? 0 : max,
+    balanceDefault: isNaN(def) ? 0 : def,
+  };
+}
+
+// GET /cgi-bin/api/v1/speaker/balanceCapabilities
+export async function getBalanceCapabilities() {
+  const res = await fetch(`${apiBase}/speaker/balanceCapabilities`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getBalanceCapabilities: HTTP ${res.status}`);
+  const text = await res.text();
+  return parseBalanceCapabilitiesXml(text);
+}
+
+// --- DSP mono/stereo ------------------------------------------------
+
+// Parse the speaker's <DSPMonoStereo> XML into:
+//   { mode: 'mono' | 'stereo' }
+//
+// Reference shape:
+//   <DSPMonoStereo>
+//     <mono enabled="false"/>
+//   </DSPMonoStereo>
+export function parseDSPMonoStereoXml(xmlText) {
+  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+  const els = doc.getElementsByTagName('DSPMonoStereo');
+  if (!els || !els[0]) return null;
+  return parseDSPMonoStereoEl(els[0]);
+}
+
+export function parseDSPMonoStereoEl(el) {
+  if (!el) return null;
+  const monoEls = el.getElementsByTagName('mono');
+  const monoEl = monoEls && monoEls[0];
+  const enabled = monoEl ? monoEl.getAttribute('enabled') === 'true' : false;
+  return { mode: enabled ? 'mono' : 'stereo' };
+}
+
+// GET /cgi-bin/api/v1/speaker/DSPMonoStereo
+export async function getDSPMonoStereo() {
+  const res = await fetch(`${apiBase}/speaker/DSPMonoStereo`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`getDSPMonoStereo: HTTP ${res.status}`);
+  const text = await res.text();
+  return parseDSPMonoStereoXml(text);
+}
+
+// POST /cgi-bin/api/v1/speaker/DSPMonoStereo with body
+// <DSPMonoStereo><mono enabled="true|false"/></DSPMonoStereo>.
+// mode ∈ 'mono' | 'stereo'.
+export async function postDSPMonoStereo(mode) {
+  const enabled = mode === 'mono' ? 'true' : 'false';
+  const xml = `<DSPMonoStereo><mono enabled="${enabled}"/></DSPMonoStereo>`;
+  const res = await fetch(`${apiBase}/speaker/DSPMonoStereo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body: xml,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`postDSPMonoStereo: HTTP ${res.status}`);
 }
 
 // --- sources --------------------------------------------------------

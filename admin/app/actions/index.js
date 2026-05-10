@@ -7,13 +7,14 @@ import {
   postLowPowerStandby,
   postStandby,
   postSetPower,
+  postDSPMonoStereo,
   presetsAssign,
   previewStream as apiPreviewStream,
   postEnterBluetoothPairing,
   postClearBluetoothPaired,
 } from '../api.js';
 import { recordOutgoing, wasRecent } from './ledger.js';
-import { controllerFor, volumeCtl } from './sliders.js';
+import { controllerFor, volumeCtl, bassCtl, balanceCtl } from './sliders.js';
 
 function kindForKey(key) {
   if (/^PRESET_\d+$/.test(key)) return 'preset';
@@ -23,6 +24,14 @@ function kindForKey(key) {
 export function setVolume(level)  { volumeCtl.set(level); }
 export function adjustVolume(delta) { volumeCtl.adjust(delta); }
 export function toggleMute() { return pressKey('MUTE'); }
+
+export function setBass(level)    { bassCtl.set(level); }
+export function setBalance(level) { balanceCtl.set(level); }
+
+export async function setDSPMonoStereo(mode) {
+  recordOutgoing('dspMonoStereo');
+  await postDSPMonoStereo(mode);
+}
 
 export async function pressKey(name) {
   recordOutgoing(kindForKey(name));

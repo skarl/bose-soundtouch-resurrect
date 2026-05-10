@@ -1,5 +1,5 @@
 import { store } from '../state.js';
-import { postVolume } from '../api.js';
+import { postVolume, postBass, postBalance } from '../api.js';
 import { recordOutgoing } from './ledger.js';
 
 export function makeSliderController({ field, postFn, eventTag, targetProperty }) {
@@ -55,9 +55,9 @@ export function makeSliderController({ field, postFn, eventTag, targetProperty }
   };
 }
 
-const _volumeCtl  = makeSliderController({ field: 'volume',  postFn: postVolume,        eventTag: 'volume'  });
-const _bassCtl    = makeSliderController({ field: 'bass',    postFn: _unimplemented('bass'),    eventTag: 'bass'    });
-const _balanceCtl = makeSliderController({ field: 'balance', postFn: _unimplemented('balance'), eventTag: 'balance' });
+const _volumeCtl  = makeSliderController({ field: 'volume',  postFn: postVolume,  eventTag: 'volume'  });
+const _bassCtl    = makeSliderController({ field: 'bass',    postFn: postBass,    eventTag: 'bass',    targetProperty: 'targetBass'    });
+const _balanceCtl = makeSliderController({ field: 'balance', postFn: postBalance, eventTag: 'balance', targetProperty: 'targetBalance' });
 
 const BY_KIND = new Map([
   ['volume',  _volumeCtl],
@@ -65,12 +65,10 @@ const BY_KIND = new Map([
   ['balance', _balanceCtl],
 ]);
 
-function _unimplemented(name) {
-  return async () => { throw new Error(`${name} POST not wired (lands in #34)`); };
-}
-
 export function controllerFor(kind) {
   return BY_KIND.get(kind) || null;
 }
 
-export const volumeCtl = _volumeCtl;
+export const volumeCtl  = _volumeCtl;
+export const bassCtl    = _bassCtl;
+export const balanceCtl = _balanceCtl;

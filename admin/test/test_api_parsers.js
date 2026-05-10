@@ -22,6 +22,11 @@ import {
   parseSystemTimeoutXml, parseSystemTimeoutEl,
   parseLowPowerStandbyXml, parseLowPowerStandbyEl,
   parseBluetoothInfoXml, parseBluetoothInfoEl,
+  parseBassXml, parseBassEl,
+  parseBassCapabilitiesXml, parseBassCapabilitiesEl,
+  parseBalanceXml, parseBalanceEl,
+  parseBalanceCapabilitiesXml, parseBalanceCapabilitiesEl,
+  parseDSPMonoStereoXml, parseDSPMonoStereoEl,
 } from '../app/api.js';
 import { dispatch } from '../app/ws.js';
 
@@ -428,4 +433,172 @@ test('parseBluetoothInfoEl: parses a DOM element directly', async () => {
   assert.ok(bt);
   assert.equal(bt.paired.length, 2);
   assert.equal(bt.paired[0].mac, 'AA:BB:CC:DD:EE:FF');
+});
+
+// --- parseBassXml ---------------------------------------------------
+
+test('parseBassXml: returns expected fields', async () => {
+  const xml = await fixture('bass.xml');
+  const bass = parseBassXml(xml);
+  assert.ok(bass, 'returns a non-null object');
+  assert.equal(bass.targetBass, -3);
+  assert.equal(bass.actualBass, -3);
+});
+
+test('parseBassXml: empty string returns null', () => {
+  assert.equal(parseBassXml(''), null);
+});
+
+test('parseBassXml: non-bass XML returns null', () => {
+  assert.equal(parseBassXml('<volume>0</volume>'), null);
+});
+
+test('parseBassEl: null input returns null', () => {
+  assert.equal(parseBassEl(null), null);
+});
+
+test('parseBassEl: parses a DOM element directly', async () => {
+  const xml = await fixture('bass.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const els = doc.getElementsByTagName('bass');
+  const bass = parseBassEl(els && els[0]);
+  assert.ok(bass);
+  assert.equal(bass.targetBass, -3);
+  assert.equal(bass.actualBass, -3);
+});
+
+// --- parseBassCapabilitiesXml ---------------------------------------
+
+test('parseBassCapabilitiesXml: returns min/max/default', async () => {
+  const xml = await fixture('bass-capabilities.xml');
+  const caps = parseBassCapabilitiesXml(xml);
+  assert.ok(caps);
+  assert.equal(caps.bassMin, -9);
+  assert.equal(caps.bassMax, 0);
+  assert.equal(caps.bassDefault, 0);
+});
+
+test('parseBassCapabilitiesEl: parses a DOM element directly', async () => {
+  const xml = await fixture('bass-capabilities.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const els = doc.getElementsByTagName('bassCapabilities');
+  const caps = parseBassCapabilitiesEl(els && els[0]);
+  assert.ok(caps);
+  assert.equal(caps.bassMin, -9);
+  assert.equal(caps.bassMax, 0);
+});
+
+test('parseBassCapabilitiesEl: null input returns null', () => {
+  assert.equal(parseBassCapabilitiesEl(null), null);
+});
+
+// --- WS dispatch: bassUpdated ---------------------------------------
+
+test('bassUpdated dispatch sets state.speaker.bass and touches speaker', async () => {
+  const xml = await wsFixture('bass-updated.xml');
+  const store = makeStore();
+  dispatch(xml, store);
+  const bass = store.state.speaker.bass;
+  assert.ok(bass, 'bass is set');
+  assert.equal(bass.targetBass, -3);
+  assert.equal(bass.actualBass, -3);
+  assert.ok(store._touched.includes('speaker'), 'speaker key was touched');
+});
+
+// --- parseBalanceXml ------------------------------------------------
+
+test('parseBalanceXml: returns expected fields', async () => {
+  const xml = await fixture('balance.xml');
+  const balance = parseBalanceXml(xml);
+  assert.ok(balance);
+  assert.equal(balance.targetBalance, 2);
+  assert.equal(balance.actualBalance, 2);
+});
+
+test('parseBalanceXml: empty string returns null', () => {
+  assert.equal(parseBalanceXml(''), null);
+});
+
+test('parseBalanceXml: non-balance XML returns null', () => {
+  assert.equal(parseBalanceXml('<volume>0</volume>'), null);
+});
+
+test('parseBalanceEl: null input returns null', () => {
+  assert.equal(parseBalanceEl(null), null);
+});
+
+test('parseBalanceEl: parses a DOM element directly', async () => {
+  const xml = await fixture('balance.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const els = doc.getElementsByTagName('balance');
+  const balance = parseBalanceEl(els && els[0]);
+  assert.ok(balance);
+  assert.equal(balance.targetBalance, 2);
+});
+
+// --- parseBalanceCapabilitiesXml ------------------------------------
+
+test('parseBalanceCapabilitiesXml: returns min/max/default', async () => {
+  const xml = await fixture('balance-capabilities.xml');
+  const caps = parseBalanceCapabilitiesXml(xml);
+  assert.ok(caps);
+  assert.equal(caps.balanceMin, -7);
+  assert.equal(caps.balanceMax, 7);
+  assert.equal(caps.balanceDefault, 0);
+});
+
+test('parseBalanceCapabilitiesEl: parses a DOM element directly', async () => {
+  const xml = await fixture('balance-capabilities.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const els = doc.getElementsByTagName('balanceCapabilities');
+  const caps = parseBalanceCapabilitiesEl(els && els[0]);
+  assert.ok(caps);
+  assert.equal(caps.balanceMin, -7);
+  assert.equal(caps.balanceMax, 7);
+});
+
+test('parseBalanceCapabilitiesEl: null input returns null', () => {
+  assert.equal(parseBalanceCapabilitiesEl(null), null);
+});
+
+// --- WS dispatch: balanceUpdated ------------------------------------
+
+test('balanceUpdated dispatch sets state.speaker.balance and touches speaker', async () => {
+  const xml = await wsFixture('balance-updated.xml');
+  const store = makeStore();
+  dispatch(xml, store);
+  const balance = store.state.speaker.balance;
+  assert.ok(balance, 'balance is set');
+  assert.equal(balance.targetBalance, 2);
+  assert.equal(balance.actualBalance, 2);
+  assert.ok(store._touched.includes('speaker'));
+});
+
+// --- parseDSPMonoStereoXml ------------------------------------------
+
+test('parseDSPMonoStereoXml: stereo (mono enabled=false) → mode=stereo', async () => {
+  const xml = await fixture('dsp-mono-stereo.xml');
+  const dsp = parseDSPMonoStereoXml(xml);
+  assert.ok(dsp);
+  assert.equal(dsp.mode, 'stereo');
+});
+
+test('parseDSPMonoStereoXml: mono (mono enabled=true) → mode=mono', async () => {
+  const xml = await fixture('dsp-mono-stereo-mono.xml');
+  const dsp = parseDSPMonoStereoXml(xml);
+  assert.ok(dsp);
+  assert.equal(dsp.mode, 'mono');
+});
+
+test('parseDSPMonoStereoEl: null input returns null', () => {
+  assert.equal(parseDSPMonoStereoEl(null), null);
+});
+
+test('parseDSPMonoStereoEl: parses a DOM element directly', async () => {
+  const xml = await fixture('dsp-mono-stereo.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const els = doc.getElementsByTagName('DSPMonoStereo');
+  const dsp = parseDSPMonoStereoEl(els && els[0]);
+  assert.ok(dsp);
+  assert.equal(dsp.mode, 'stereo');
 });
