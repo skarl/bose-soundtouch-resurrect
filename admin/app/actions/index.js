@@ -17,7 +17,10 @@ import {
 import { store } from '../state.js';
 import { recordOutgoing, wasRecent } from './ledger.js';
 import { controllerFor, volumeCtl, bassCtl, balanceCtl } from '../sliders.js';
+import { ledgerKindForField } from '../speaker-state.js';
 
+// Hardware-key kinds aren't fields — 'preset' and 'transport' have no FIELDS
+// row, so the mapping stays here.
 function kindForKey(key) {
   if (/^PRESET_\d+$/.test(key)) return 'preset';
   return 'transport';
@@ -31,7 +34,7 @@ export function setBass(level)    { bassCtl.set(level); }
 export function setBalance(level) { balanceCtl.set(level); }
 
 export async function setDSPMonoStereo(mode) {
-  recordOutgoing('dspMonoStereo');
+  recordOutgoing(ledgerKindForField('dspMonoStereo'));
   await postDSPMonoStereo(mode);
 }
 
@@ -48,7 +51,7 @@ export async function pressKey(name) {
 // know the wire shape.
 export async function selectSource(src) {
   if (!src || !src.source) return;
-  recordOutgoing('source');
+  recordOutgoing(ledgerKindForField('sources'));
   if (src.isLocal) {
     await postSelectLocalSource(src.source);
   } else {
@@ -98,27 +101,27 @@ export async function setSystemTimeout(seconds) {
 }
 
 export async function enterBluetoothPairing() {
-  recordOutgoing('bluetooth');
+  recordOutgoing(ledgerKindForField('bluetooth'));
   await postEnterBluetoothPairing();
 }
 
 export async function clearBluetoothPaired() {
-  recordOutgoing('bluetooth');
+  recordOutgoing(ledgerKindForField('bluetooth'));
   await postClearBluetoothPaired();
 }
 
 export async function setZone(zone) {
-  recordOutgoing('zone');
+  recordOutgoing(ledgerKindForField('zone'));
   await postSetZone(zone);
 }
 
 export async function addZoneSlave(zone) {
-  recordOutgoing('zone');
+  recordOutgoing(ledgerKindForField('zone'));
   await postAddZoneSlave(zone);
 }
 
 export async function removeZoneSlave(zone) {
-  recordOutgoing('zone');
+  recordOutgoing(ledgerKindForField('zone'));
   await postRemoveZoneSlave(zone);
 }
 

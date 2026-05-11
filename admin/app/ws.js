@@ -22,9 +22,12 @@
 //   reconnecting-> polling       second+ consecutive close
 //   polling     -> connected     hello frame on a later reconnect attempt
 
-import { reconcile, dispatch as speakerDispatch } from './speaker-state.js';
+import { reconcile, dispatch as speakerDispatch, ledgerKindForEventTag } from './speaker-state.js';
 import { showToast } from './toast.js';
 import { wasRecent } from './actions/index.js';
+
+const SOURCE_KIND = ledgerKindForEventTag('sourcesUpdated');
+const VOLUME_KIND = ledgerKindForEventTag('volumeUpdated');
 
 const PRESETS_TOAST_GAP_MS = 1500;
 const VOL_TOAST_COOLDOWN   = 1500;
@@ -88,7 +91,7 @@ function watchSpeakerButtons(store) {
       ? `${np.source}:${(np.item && np.item.location) || ''}`
       : null;
     if (sourceKey !== null && sourceKey !== watch.prevSource) {
-      if (watch.prevSource !== null && !wasRecent('source') && !wasRecent('preset')) {
+      if (watch.prevSource !== null && !wasRecent(SOURCE_KIND) && !wasRecent('preset')) {
         showToast('Source switched on speaker');
       }
       watch.prevSource = sourceKey;
@@ -99,7 +102,7 @@ function watchSpeakerButtons(store) {
     // --- volume change ---
     const av = vol && vol.actualVolume;
     if (typeof av === 'number' && av !== watch.prevVolume) {
-      if (watch.prevVolume !== null && !wasRecent('volume')) {
+      if (watch.prevVolume !== null && !wasRecent(VOLUME_KIND)) {
         const delta = Math.abs(av - watch.prevVolume);
         if (delta > 1) {
           const now = Date.now();
