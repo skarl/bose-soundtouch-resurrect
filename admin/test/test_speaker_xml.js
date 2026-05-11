@@ -17,6 +17,7 @@ globalThis.DOMParser = class extends XmldomDOMParser {
 
 import {
   parseNowPlayingXml, parseNowPlayingEl,
+  parseInfoXml, parseInfoEl,
   parseVolumeXml, parseVolumeEl,
   parseSourcesXml, parseSourcesEl,
   parseNetworkInfoXml, parseNetworkInfoEl,
@@ -132,6 +133,80 @@ test('nowPlayingUpdated dispatch: STANDBY sets source=STANDBY', async () => {
   assert.ok(np, 'nowPlaying is set even for STANDBY');
   assert.equal(np.source, 'STANDBY');
   assert.ok(store._touched.includes('speaker'));
+});
+
+// --- parseInfoXml ---------------------------------------------------
+
+test('parseInfoXml: extracts deviceID, name, type, and SCM firmwareVersion', async () => {
+  const xml = await fixture('info.xml');
+  const info = parseInfoXml(xml);
+  assert.ok(info, 'returns a non-null object');
+  assert.equal(info.deviceID, '3415139ABD77');
+  assert.equal(info.name, 'Bo');
+  assert.equal(info.type, 'SoundTouch 10');
+  assert.equal(
+    info.firmwareVersion,
+    '27.0.6.29798 epdbuild hepdswbld04 (Sep 20 2016 12:19:09)',
+  );
+});
+
+test('parseInfoXml: firmwareVersion comes from the SCM component, not PackagedProduct', async () => {
+  const xml = '<info deviceID="AA">' +
+              '<name>X</name><type>Y</type>' +
+              '<components>' +
+              '<component><componentCategory>PackagedProduct</componentCategory>' +
+              '<softwareVersion>9.9.9</softwareVersion></component>' +
+              '<component><componentCategory>SCM</componentCategory>' +
+              '<softwareVersion>27.0.6.29798</softwareVersion></component>' +
+              '</components></info>';
+  const info = parseInfoXml(xml);
+  assert.ok(info);
+  assert.equal(info.firmwareVersion, '27.0.6.29798');
+});
+
+test('parseInfoXml: no SCM component → firmwareVersion is empty', () => {
+  const xml = '<info deviceID="AA"><name>X</name><type>Y</type>' +
+              '<components><component>' +
+              '<componentCategory>PackagedProduct</componentCategory>' +
+              '<softwareVersion>9.9.9</softwareVersion>' +
+              '</component></components></info>';
+  const info = parseInfoXml(xml);
+  assert.ok(info);
+  assert.equal(info.firmwareVersion, '');
+});
+
+test('parseInfoXml: missing <components> → firmwareVersion empty, other fields populated', () => {
+  const xml = '<info deviceID="BB"><name>N</name><type>T</type></info>';
+  const info = parseInfoXml(xml);
+  assert.ok(info);
+  assert.equal(info.deviceID, 'BB');
+  assert.equal(info.name, 'N');
+  assert.equal(info.type, 'T');
+  assert.equal(info.firmwareVersion, '');
+});
+
+test('parseInfoXml: empty string returns null', () => {
+  assert.equal(parseInfoXml(''), null);
+});
+
+test('parseInfoXml: non-info XML returns null', () => {
+  assert.equal(parseInfoXml('<volume>0</volume>'), null);
+});
+
+test('parseInfoEl: null input returns null', () => {
+  assert.equal(parseInfoEl(null), null);
+});
+
+test('parseInfoEl: parses a DOM element directly', async () => {
+  const xml = await fixture('info.xml');
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const els = doc.getElementsByTagName('info');
+  const info = parseInfoEl(els && els[0]);
+  assert.ok(info);
+  assert.equal(info.deviceID, '3415139ABD77');
+  assert.equal(info.name, 'Bo');
+  assert.equal(info.type, 'SoundTouch 10');
+  assert.ok(info.firmwareVersion.startsWith('27.0.6.29798'));
 });
 
 // --- parseVolumeXml -------------------------------------------------

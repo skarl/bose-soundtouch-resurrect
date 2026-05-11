@@ -122,28 +122,41 @@ export function parseNowPlayingEl(np) {
 export function parseInfoXml(xmlText) {
   if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
   const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.querySelector('parsererror')) return null;
-  const info = doc.querySelector('info');
-  if (!info) return null;
+  if (doc.getElementsByTagName('parsererror').length > 0) return null;
+  const els = doc.getElementsByTagName('info');
+  if (!els || !els[0]) return null;
+  return parseInfoEl(els[0]);
+}
 
-  const text = (sel) => {
-    const el = info.querySelector(sel);
-    return el && el.textContent != null ? el.textContent.trim() : '';
+// Parse an already-resolved <info> DOM element.
+// Uses getElementsByTagName so it works in both browser (DOMParser) and
+// @xmldom/xmldom (test runtime, which lacks querySelector).
+export function parseInfoEl(el) {
+  if (!el) return null;
+
+  const text = (tag) => {
+    const col = el.getElementsByTagName(tag);
+    return col && col[0] && col[0].textContent != null
+      ? col[0].textContent.trim()
+      : '';
   };
 
   // Firmware version lives in the first SCM component's softwareVersion.
   let firmwareVersion = '';
-  for (const comp of info.querySelectorAll('component')) {
-    const cat = comp.querySelector('componentCategory');
-    if (cat && cat.textContent.trim() === 'SCM') {
-      const sv = comp.querySelector('softwareVersion');
-      if (sv) firmwareVersion = sv.textContent.trim();
+  const comps = el.getElementsByTagName('component');
+  for (let i = 0; i < comps.length; i++) {
+    const comp = comps[i];
+    const cats = comp.getElementsByTagName('componentCategory');
+    const cat = cats && cats[0];
+    if (cat && (cat.textContent || '').trim() === 'SCM') {
+      const svs = comp.getElementsByTagName('softwareVersion');
+      if (svs && svs[0]) firmwareVersion = (svs[0].textContent || '').trim();
       break;
     }
   }
 
   return {
-    deviceID:        info.getAttribute('deviceID') || '',
+    deviceID:        el.getAttribute('deviceID') || '',
     name:            text('name'),
     type:            text('type'),
     firmwareVersion,

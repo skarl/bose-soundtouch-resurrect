@@ -36,13 +36,16 @@ import {
 import { controllerFor as sliderControllerFor } from './sliders.js';
 
 // Field entry shape:
-//   name        — key in state.speaker
-//   fetcher     — () => Promise<value>
-//   eventTag?   — child tag inside <updates> that carries this field's event
-//   parseInline — (el) => value | null. Null means hint-only: fall back to fetcher().
-//   apply?      — (state, value) => void. Default: state.speaker[name] = value
-//                 Slider fields (volume/bass/balance) delegate to the slider
-//                 controller, which owns the apply-merge + confirm in one place.
+//   name         — key in state.speaker
+//   fetcher      — () => Promise<value>
+//   eventTag?    — child tag inside <updates> that carries this field's event
+//   parseInline  — (el) => value | null. Null means hint-only: fall back to fetcher().
+//   apply?       — (state, value) => void. Default: state.speaker[name] = value
+//                  Slider fields (volume/bass/balance) delegate to the slider
+//                  controller, which owns the apply-merge + confirm in one place.
+//   ledgerKind?  — kind string used by actions/ledger.js for toast attribution.
+//                  Defaults to `name`. Set explicitly when the ledger vocabulary
+//                  diverges from the field name (e.g. sources → 'source').
 export const FIELDS = [
   {
     name: 'info',
@@ -85,6 +88,7 @@ export const FIELDS = [
     name: 'sources',
     fetcher: getSources,
     eventTag: 'sourcesUpdated',
+    ledgerKind: 'source',
     // Hint-only on Bo's firmware — no inline sources list.
     parseInline(el) {
       const lists = el.getElementsByTagName('sources');
@@ -141,6 +145,25 @@ export const FIELDS = [
 
 // Build a lookup map from eventTag → entry for dispatch().
 const BY_TAG = new Map(FIELDS.filter((f) => f.eventTag).map((f) => [f.eventTag, f]));
+
+const BY_NAME = new Map(FIELDS.map((f) => [f.name, f]));
+
+function kindOf(entry) {
+  return entry.ledgerKind || entry.name;
+}
+
+// Returns null when no entry matches — callers fall back to an explicit
+// literal for ledger kinds that don't correspond to a single speaker field
+// ('preset', 'transport', 'settings').
+export function ledgerKindForField(name) {
+  const entry = BY_NAME.get(name);
+  return entry ? kindOf(entry) : null;
+}
+
+export function ledgerKindForEventTag(tag) {
+  const entry = BY_TAG.get(tag);
+  return entry ? kindOf(entry) : null;
+}
 
 // Apply a value to state using the entry's custom apply or the default.
 function applyEntry(entry, state, value) {
