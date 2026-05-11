@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<info deviceID="3415139ABD77">
+  <name>Bo</name>
+  <type>SoundTouch 10</type>
+  <margeAccountUUID>123456</margeAccountUUID>
+  <components>
+    <component>
+      <componentCategory>SCM</componentCategory>
+      <softwareVersion>27.0.6.29798 epdbuild hepdswbld04 (Sep 20 2016 12:19:09)</softwareVersion>
+      <serialNumber>075306P52221234AE</serialNumber>
+    </component>
+    <component>
+      <componentCategory>PackagedProduct</componentCategory>
+      <softwareVersion>27.0.6.29798</softwareVersion>
+      <serialNumber>075306P52221234AE</serialNumber>
+    </component>
+  </components>
+  <margeURL>https://streaming.bose.com</margeURL>
+  <networkInfo type="SCM">
+    <macAddress>0CB2B709F837</macAddress>
+    <ipAddress>192.168.178.36</ipAddress>
+  </networkInfo>
+  <moduleType>sm2</moduleType>
+  <variant>spotty</variant>
+  <variantMode>noaux</variantMode>
+  <countryCode>GB</countryCode>
+  <regionCode>GB</regionCode>
+</info>
