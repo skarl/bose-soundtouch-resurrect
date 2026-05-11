@@ -1,3 +1,20 @@
+// Slider merge contract. A slider field is a value the speaker owns
+// (actualXxx) and a target the user is dragging toward (targetXxx). The
+// controller mediates between three event streams without yanking the
+// thumb:
+//   - set(level)            — local drag. Writes targetXxx optimistically,
+//                             POSTs leading + trailing-coalesced.
+//   - applyIncoming(state, value) — WS-derived value. When a POST is
+//                             pending, keep our local targetXxx (the
+//                             speaker's view is stale); otherwise accept
+//                             the value verbatim. Either way, confirm
+//                             actualXxx so a matching follow-up set() is
+//                             a no-op.
+//   - confirm(actualValue)  — gate against re-POSTing the level we are
+//                             already at.
+// hasPending() is the source of truth for "user is mid-drag" — every
+// transitional state (in-flight POST, queued trailing edge) reports true.
+
 import { store } from './state.js';
 import { postVolume, postBass, postBalance } from './api.js';
 import { recordOutgoing } from './actions/ledger.js';
