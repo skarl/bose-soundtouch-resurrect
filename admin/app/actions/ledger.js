@@ -2,7 +2,10 @@
 // incoming WS state-change events can be attributed either to a hardware
 // button on the speaker or to the admin's own request (suppress toast).
 //
-// kind ∈ 'preset' | 'volume' | 'transport' | 'source'.
+// kind is the ledger vocabulary. Field-backed kinds are owned by FIELDS in
+// speaker-state.js (look up via ledgerKindForField). Non-field kinds —
+// 'preset', 'transport', 'settings' — are emitted as literals by their
+// action wrappers because they don't correspond to a single speaker field.
 // detail is optional (e.g. preset slot number).
 
 const ledger = new Map();
