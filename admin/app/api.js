@@ -47,6 +47,33 @@ import {
 
 export const apiBase = '/cgi-bin/api/v1';
 
+// --- transport helpers ---------------------------------------------
+//
+// xmlGet / xmlPost are the single seam every speaker fetcher routes
+// through. URL composition, XML headers, no-store caching, and HTTP
+// error mapping live here once; per-endpoint functions become a
+// one-line binding of `path` + `parser`.
+
+async function xmlGet(path, parser) {
+  const res = await fetch(`${apiBase}${path}`, {
+    method: 'GET',
+    headers: { Accept: 'application/xml, text/xml' },
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`${path} failed: HTTP ${res.status}`);
+  return parser(await res.text());
+}
+
+async function xmlPost(path, body) {
+  const res = await fetch(`${apiBase}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/xml' },
+    body,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error(`${path} failed: HTTP ${res.status}`);
+}
+
 // --- TuneIn forwarder -----------------------------------------------
 //
 // All four methods return the raw TuneIn JSON body, verbatim. No
@@ -95,17 +122,8 @@ export function tuneinProbe(sid, opts) {
 
 // --- speaker proxy --------------------------------------------------
 
-export async function speakerNowPlaying() {
-  const res = await fetch(`${apiBase}/speaker/now_playing`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) {
-    throw new Error(`speakerNowPlaying: HTTP ${res.status}`);
-  }
-  const text = await res.text();
-  return parseNowPlayingXml(text);
+export function speakerNowPlaying() {
+  return xmlGet('/speaker/now_playing', parseNowPlayingXml);
 }
 
 // getNowPlaying is the canonical name; speakerNowPlaying is kept as an
@@ -156,201 +174,100 @@ export async function previewStream(payload) {
 // POST /speaker/key — hardware key event. Used to send POWER for
 // "stop preview" (the speaker treats POWER as standby).
 export async function speakerKey(name, state) {
-  const xml = `<key state="${state}" sender="Gabbo">${name}</key>`;
-  const res = await fetch(`${apiBase}/speaker/key`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: xml,
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`speakerKey: HTTP ${res.status}`);
+  await xmlPost('/speaker/key', `<key state="${state}" sender="Gabbo">${name}</key>`);
   return true;
 }
 
 // GET /cgi-bin/api/v1/speaker/info → parsed info object.
 // Fields: deviceID, name, type, firmwareVersion (plus any others present).
-export async function getSpeakerInfo() {
-  const res = await fetch(`${apiBase}/speaker/info`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getSpeakerInfo: HTTP ${res.status}`);
-  const text = await res.text();
-  return parseInfoXml(text);
+export function getSpeakerInfo() {
+  return xmlGet('/speaker/info', parseInfoXml);
 }
 
 // --- volume ---------------------------------------------------------
 
 // GET /cgi-bin/api/v1/speaker/volume
-export async function getVolume() {
-  const res = await fetch(`${apiBase}/speaker/volume`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getVolume: HTTP ${res.status}`);
-  const text = await res.text();
-  return parseVolumeXml(text);
+export function getVolume() {
+  return xmlGet('/speaker/volume', parseVolumeXml);
 }
 
 // POST /cgi-bin/api/v1/speaker/volume with body <volume>NN</volume>.
 // Throws on non-2xx.
-export async function postVolume(level) {
-  const res = await fetch(`${apiBase}/speaker/volume`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: `<volume>${Math.round(level)}</volume>`,
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postVolume: HTTP ${res.status}`);
+export function postVolume(level) {
+  return xmlPost('/speaker/volume', `<volume>${Math.round(level)}</volume>`);
 }
 
 // --- bass -----------------------------------------------------------
 
 // GET /cgi-bin/api/v1/speaker/bass
-export async function getBass() {
-  const res = await fetch(`${apiBase}/speaker/bass`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getBass: HTTP ${res.status}`);
-  const text = await res.text();
-  return parseBassXml(text);
+export function getBass() {
+  return xmlGet('/speaker/bass', parseBassXml);
 }
 
 // POST /cgi-bin/api/v1/speaker/bass with body <bass>NN</bass>.
-export async function postBass(level) {
-  const res = await fetch(`${apiBase}/speaker/bass`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: `<bass>${Math.round(level)}</bass>`,
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postBass: HTTP ${res.status}`);
+export function postBass(level) {
+  return xmlPost('/speaker/bass', `<bass>${Math.round(level)}</bass>`);
 }
 
 // GET /cgi-bin/api/v1/speaker/bassCapabilities
-export async function getBassCapabilities() {
-  const res = await fetch(`${apiBase}/speaker/bassCapabilities`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getBassCapabilities: HTTP ${res.status}`);
-  const text = await res.text();
-  return parseBassCapabilitiesXml(text);
+export function getBassCapabilities() {
+  return xmlGet('/speaker/bassCapabilities', parseBassCapabilitiesXml);
 }
 
 // --- balance --------------------------------------------------------
 
 // GET /cgi-bin/api/v1/speaker/balance
-export async function getBalance() {
-  const res = await fetch(`${apiBase}/speaker/balance`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getBalance: HTTP ${res.status}`);
-  const text = await res.text();
-  return parseBalanceXml(text);
+export function getBalance() {
+  return xmlGet('/speaker/balance', parseBalanceXml);
 }
 
 // POST /cgi-bin/api/v1/speaker/balance with body <balance>NN</balance>.
-export async function postBalance(level) {
-  const res = await fetch(`${apiBase}/speaker/balance`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: `<balance>${Math.round(level)}</balance>`,
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postBalance: HTTP ${res.status}`);
+export function postBalance(level) {
+  return xmlPost('/speaker/balance', `<balance>${Math.round(level)}</balance>`);
 }
 
 // GET /cgi-bin/api/v1/speaker/balanceCapabilities
-export async function getBalanceCapabilities() {
-  const res = await fetch(`${apiBase}/speaker/balanceCapabilities`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getBalanceCapabilities: HTTP ${res.status}`);
-  const text = await res.text();
-  return parseBalanceCapabilitiesXml(text);
+export function getBalanceCapabilities() {
+  return xmlGet('/speaker/balanceCapabilities', parseBalanceCapabilitiesXml);
 }
 
 // --- DSP mono/stereo ------------------------------------------------
 
 // GET /cgi-bin/api/v1/speaker/DSPMonoStereo
-export async function getDSPMonoStereo() {
-  const res = await fetch(`${apiBase}/speaker/DSPMonoStereo`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getDSPMonoStereo: HTTP ${res.status}`);
-  const text = await res.text();
-  return parseDSPMonoStereoXml(text);
+export function getDSPMonoStereo() {
+  return xmlGet('/speaker/DSPMonoStereo', parseDSPMonoStereoXml);
 }
 
 // POST /cgi-bin/api/v1/speaker/DSPMonoStereo with body
 // <DSPMonoStereo><mono enabled="true|false"/></DSPMonoStereo>.
 // mode ∈ 'mono' | 'stereo'.
-export async function postDSPMonoStereo(mode) {
+export function postDSPMonoStereo(mode) {
   const enabled = mode === 'mono' ? 'true' : 'false';
-  const xml = `<DSPMonoStereo><mono enabled="${enabled}"/></DSPMonoStereo>`;
-  const res = await fetch(`${apiBase}/speaker/DSPMonoStereo`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: xml,
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postDSPMonoStereo: HTTP ${res.status}`);
+  return xmlPost('/speaker/DSPMonoStereo', `<DSPMonoStereo><mono enabled="${enabled}"/></DSPMonoStereo>`);
 }
 
 // --- sources --------------------------------------------------------
 
 // GET /cgi-bin/api/v1/speaker/sources → array of source objects.
 // Shape per element: { source, sourceAccount, status, isLocal, displayName }
-export async function getSources() {
-  const res = await fetch(`${apiBase}/speaker/sources`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getSources: HTTP ${res.status}`);
-  const text = await res.text();
-  return parseSourcesXml(text);
+export function getSources() {
+  return xmlGet('/speaker/sources', parseSourcesXml);
 }
 
 // POST /cgi-bin/api/v1/speaker/select — switch to a streaming source.
 // contentItem: { source, sourceAccount, type?, location? }
 // Sends a minimal <ContentItem> that resumes the speaker's last-known
 // position for that source. Station-level deep-link is a future improvement.
-export async function postSelect(contentItem) {
+export function postSelect(contentItem) {
   const { source, sourceAccount = '', type = '', location = '' } = contentItem;
   const xml = `<ContentItem source="${source}" sourceAccount="${sourceAccount}" type="${type}" location="${location}"/>`;
-  const res = await fetch(`${apiBase}/speaker/select`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: xml,
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postSelect: HTTP ${res.status}`);
+  return xmlPost('/speaker/select', xml);
 }
 
 // POST /cgi-bin/api/v1/speaker/selectLocalSource — switch to a local
 // source (AUX, BLUETOOTH). Names follow Bose convention: 'AUX', 'BLUETOOTH'.
-export async function postSelectLocalSource(name) {
-  const xml = `<selectLocalSource>${name}</selectLocalSource>`;
-  const res = await fetch(`${apiBase}/speaker/selectLocalSource`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: xml,
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postSelectLocalSource: HTTP ${res.status}`);
+export function postSelectLocalSource(name) {
+  return xmlPost('/speaker/selectLocalSource', `<selectLocalSource>${name}</selectLocalSource>`);
 }
 
 // --- network info ---------------------------------------------------
@@ -363,15 +280,8 @@ export async function postSelectLocalSource(name) {
 // surface the first one that's connected (has an ipAddress); falling
 // back to the first interface so disconnected speakers still expose
 // their MAC.
-export async function getNetworkInfo() {
-  const res = await fetch(`${apiBase}/speaker/networkInfo`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getNetworkInfo: HTTP ${res.status}`);
-  const text = await res.text();
-  return parseNetworkInfoXml(text);
+export function getNetworkInfo() {
+  return xmlGet('/speaker/networkInfo', parseNetworkInfoXml);
 }
 
 // --- capabilities ---------------------------------------------------
@@ -379,15 +289,8 @@ export async function getNetworkInfo() {
 // GET /cgi-bin/api/v1/speaker/capabilities → parsed capabilities object.
 // Surface used by the System settings section: bullet summary of feature
 // flags and the named <capability/> entries.
-export async function getCapabilities() {
-  const res = await fetch(`${apiBase}/speaker/capabilities`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getCapabilities: HTTP ${res.status}`);
-  const text = await res.text();
-  return parseCapabilitiesXml(text);
+export function getCapabilities() {
+  return xmlGet('/speaker/capabilities', parseCapabilitiesXml);
 }
 
 // --- recents --------------------------------------------------------
@@ -396,15 +299,8 @@ export async function getCapabilities() {
 // Each entry:
 //   { utcTime, source, sourceAccount, type, location, itemName, containerArt }
 // Returned in the order the firmware emits them (newest first on Bo).
-export async function getRecents() {
-  const res = await fetch(`${apiBase}/speaker/recents`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getRecents: HTTP ${res.status}`);
-  const text = await res.text();
-  return parseRecentsXml(text);
+export function getRecents() {
+  return xmlGet('/speaker/recents', parseRecentsXml);
 }
 
 // --- speaker name / sleep timer / low-power / power -----------------
@@ -421,49 +317,27 @@ function xmlEscape(s) {
     .replace(/'/g, '&apos;');
 }
 
-export async function getName() {
-  const res = await fetch(`${apiBase}/speaker/name`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getName: HTTP ${res.status}`);
-  return parseNameXml(await res.text());
+export function getName() {
+  return xmlGet('/speaker/name', parseNameXml);
 }
 
-export async function postName(name) {
-  const res = await fetch(`${apiBase}/speaker/name`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: `<name>${xmlEscape(name)}</name>`,
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postName: HTTP ${res.status}`);
+export function postName(name) {
+  return xmlPost('/speaker/name', `<name>${xmlEscape(name)}</name>`);
 }
 
-export async function getSystemTimeout() {
-  const res = await fetch(`${apiBase}/speaker/systemtimeout`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getSystemTimeout: HTTP ${res.status}`);
-  return parseSystemTimeoutXml(await res.text());
+export function getSystemTimeout() {
+  return xmlGet('/speaker/systemtimeout', parseSystemTimeoutXml);
 }
 
 // `minutes=0` is the firmware's "never" sentinel; we send enabled=false
 // with minutes=0 so /systemtimeout reflects the off-state on read-back.
-export async function postSystemTimeout(minutes) {
+export function postSystemTimeout(minutes) {
   const m = Math.max(0, Math.round(Number(minutes) || 0));
   const enabled = m > 0;
-  const xml = `<systemtimeout><enabled>${enabled}</enabled><minutes>${m}</minutes></systemtimeout>`;
-  const res = await fetch(`${apiBase}/speaker/systemtimeout`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: xml,
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postSystemTimeout: HTTP ${res.status}`);
+  return xmlPost(
+    '/speaker/systemtimeout',
+    `<systemtimeout><enabled>${enabled}</enabled><minutes>${m}</minutes></systemtimeout>`,
+  );
 }
 
 // --- bluetooth ------------------------------------------------------
@@ -472,52 +346,27 @@ export async function postSystemTimeout(minutes) {
 // The speaker reports its paired-devices list; pairing-mode state is not in
 // this payload (no reliable WS event observed either), so the view uses a
 // transient client-side hint after enterBluetoothPairing().
-export async function getBluetoothInfo() {
-  const res = await fetch(`${apiBase}/speaker/bluetoothInfo`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getBluetoothInfo: HTTP ${res.status}`);
-  const text = await res.text();
-  return parseBluetoothInfoXml(text);
+export function getBluetoothInfo() {
+  return xmlGet('/speaker/bluetoothInfo', parseBluetoothInfoXml);
 }
 
 // POST /cgi-bin/api/v1/speaker/enterBluetoothPairing — one-shot. Bo's
 // firmware accepts an empty body; the proxy just forwards it.
-export async function postEnterBluetoothPairing() {
-  const res = await fetch(`${apiBase}/speaker/enterBluetoothPairing`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: '',
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postEnterBluetoothPairing: HTTP ${res.status}`);
+export function postEnterBluetoothPairing() {
+  return xmlPost('/speaker/enterBluetoothPairing', '');
 }
 
 // POST /cgi-bin/api/v1/speaker/clearBluetoothPaired — one-shot. Empty body.
-export async function postClearBluetoothPaired() {
-  const res = await fetch(`${apiBase}/speaker/clearBluetoothPaired`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body: '',
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postClearBluetoothPaired: HTTP ${res.status}`);
+export function postClearBluetoothPaired() {
+  return xmlPost('/speaker/clearBluetoothPaired', '');
 }
 
 // --- multi-room zone -----------------------------------------------
 
 // GET /cgi-bin/api/v1/speaker/getZone → parsed zone object.
 // Bose firmware accepts only GET on /getZone (POST returns 400).
-export async function getZone() {
-  const res = await fetch(`${apiBase}/speaker/getZone`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getZone: HTTP ${res.status}`);
-  return parseZoneXml(await res.text());
+export function getZone() {
+  return xmlGet('/speaker/getZone', parseZoneXml);
 }
 
 // POST /cgi-bin/api/v1/speaker/setZone — replace the current zone.
@@ -527,43 +376,22 @@ export async function getZone() {
 //   </zone>
 //
 // `zone` arg: { master, senderIPAddress?, members: [{deviceID, ipAddress}, ...] }.
-export async function postSetZone(zone) {
-  const body = buildZoneXml(zone, { includeSenderIP: true });
-  const res = await fetch(`${apiBase}/speaker/setZone`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body,
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postSetZone: HTTP ${res.status}`);
+export function postSetZone(zone) {
+  return xmlPost('/speaker/setZone', buildZoneXml(zone, { includeSenderIP: true }));
 }
 
 // POST /cgi-bin/api/v1/speaker/addZoneSlave — extend an existing zone.
 // libsoundtouch omits `senderIPAddress` here (only `master`).
-export async function postAddZoneSlave(zone) {
-  const body = buildZoneXml(zone, { includeSenderIP: false });
-  const res = await fetch(`${apiBase}/speaker/addZoneSlave`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body,
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postAddZoneSlave: HTTP ${res.status}`);
+export function postAddZoneSlave(zone) {
+  return xmlPost('/speaker/addZoneSlave', buildZoneXml(zone, { includeSenderIP: false }));
 }
 
 // POST /cgi-bin/api/v1/speaker/removeZoneSlave — drop slaves from a zone.
 // Same body shape as addZoneSlave. Per libsoundtouch: removing the last
 // slave dissolves the zone; from the slave's side, the documented "leave"
 // is the master invoking removeZoneSlave on that member.
-export async function postRemoveZoneSlave(zone) {
-  const body = buildZoneXml(zone, { includeSenderIP: false });
-  const res = await fetch(`${apiBase}/speaker/removeZoneSlave`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body,
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`postRemoveZoneSlave: HTTP ${res.status}`);
+export function postRemoveZoneSlave(zone) {
+  return xmlPost('/speaker/removeZoneSlave', buildZoneXml(zone, { includeSenderIP: false }));
 }
 
 function buildZoneXml(zone, { includeSenderIP }) {
@@ -589,14 +417,8 @@ function buildZoneXml(zone, { includeSenderIP }) {
 // entries so the multi-room picker doesn't show the user's FRITZ!Box.
 //
 // Returns [] on no peers, null on parse failure.
-export async function getListMediaServers() {
-  const res = await fetch(`${apiBase}/speaker/listMediaServers`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  });
-  if (!res.ok) throw new Error(`getListMediaServers: HTTP ${res.status}`);
-  return parseListMediaServersXml(await res.text());
+export function getListMediaServers() {
+  return xmlGet('/speaker/listMediaServers', parseListMediaServersXml);
 }
 
 // POST /presets/:slot with {id, slot, name, kind, json}.
