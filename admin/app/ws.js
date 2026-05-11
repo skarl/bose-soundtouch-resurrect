@@ -2,18 +2,59 @@
 // Owns the WebSocket lifecycle, backoff, polling fallback, and top-level
 // XML routing. Per-field fetch/parse/apply logic lives in speaker-state.js.
 // See admin/PLAN.md § Live updates and § State management.
+//
+// Connection state machine:
+//
+//     +-------------+   open + hello   +-----------+
+//     | connecting  | ---------------> | connected |
+//     +-------------+                  +-----------+
+//            ^                               |
+//            |                               | close
+//            | backoff timer                 v
+//     +-------------+    next close    +-----------+
+//     | reconnecting| <--------------- |  polling  |
+//     +-------------+   (still down)   +-----------+
+//
+// Edges:
+//   connecting  -> connected     SoundTouchSdkInfo hello frame received
+//   connected   -> reconnecting  socket close (first consecutive fail)
+//   reconnecting-> connecting    backoff timer fires
+//   reconnecting-> polling       second+ consecutive close
+//   polling     -> connected     hello frame on a later reconnect attempt
 
 import { reconcile, dispatch as speakerDispatch } from './speaker-state.js';
 import { showToast } from './toast.js';
 import { wasRecent } from './actions/index.js';
 
-let socket = null;
-let userInitiatedClose = false;
-
-// Throttle "Presets changed" toasts — the firmware can emit several
-// presetsUpdated events in quick succession when reordering slots.
-let lastPresetsToastAt = 0;
 const PRESETS_TOAST_GAP_MS = 1500;
+const VOL_TOAST_COOLDOWN   = 1500;
+
+function makeConnectionState() {
+  return {
+    socket:             null,
+    userInitiatedClose: false,
+    attempt:            0,
+    consecutiveFails:   0,
+    reconnectTimer:     null,
+    pollInterval:       null,
+    storeRef:           null,
+    visibilityBound:    false,
+    speakerWatchBound:  false,
+  };
+}
+
+function makeButtonWatch() {
+  return {
+    prevPlayStatus:     null,
+    prevSource:         null,
+    prevVolume:         null,
+    volToastTs:         0,
+    lastPresetsToastAt: 0,
+  };
+}
+
+let conn  = makeConnectionState();
+let watch = makeButtonWatch();
 
 // --- Backoff sequencer ----------------------------------------------
 
@@ -25,28 +66,6 @@ export function backoff(attempt) {
   return Math.random() * baseline;
 }
 
-// --- Module-scoped reconnect state ----------------------------------
-
-let attempt      = 0;   // reconnect attempt counter; reset to 0 on successful hello
-let consecutiveFails = 0; // consecutive close events without a successful hello
-let reconnectTimer = null;
-let pollInterval   = null;
-let storeRef       = null;    // set on first connect() call
-let visibilityBound = false;
-
-// --- Speaker-button attribution (Option B) --------------------------
-//
-// We can't rely on <keyEvent> firing on physical button presses — the
-// spike showed nowPlayingUpdated/volumeUpdated DO fire reliably but
-// keyEvent does not. Instead, watch state changes and attribute them to
-// hardware buttons when no outgoing API call was recorded in the last 2s.
-
-let prevPlayStatus = null;    // last known playStatus value
-let prevSource     = null;    // last known nowPlaying source/item combo
-let prevVolume     = null;    // last known actualVolume
-let volToastTs     = 0;       // timestamp of last volume toast (throttle)
-const VOL_TOAST_COOLDOWN = 1500;
-
 function watchSpeakerButtons(store) {
   store.subscribe('speaker', (state) => {
     const np  = state.speaker.nowPlaying;
@@ -54,13 +73,13 @@ function watchSpeakerButtons(store) {
 
     // --- play/pause change ---
     const ps = np && np.playStatus;
-    if (ps !== prevPlayStatus) {
-      if (prevPlayStatus !== null && (ps === 'PLAY_STATE' || ps === 'PAUSE_STATE')) {
+    if (ps !== watch.prevPlayStatus) {
+      if (watch.prevPlayStatus !== null && (ps === 'PLAY_STATE' || ps === 'PAUSE_STATE')) {
         if (!wasRecent('transport')) {
           showToast('Play/Pause pressed on speaker');
         }
       }
-      prevPlayStatus = ps;
+      watch.prevPlayStatus = ps;
     }
 
     // --- source / selection change ---
@@ -68,29 +87,29 @@ function watchSpeakerButtons(store) {
     const sourceKey = np && np.source && np.source !== 'STANDBY'
       ? `${np.source}:${(np.item && np.item.location) || ''}`
       : null;
-    if (sourceKey !== null && sourceKey !== prevSource) {
-      if (prevSource !== null && !wasRecent('source') && !wasRecent('preset')) {
+    if (sourceKey !== null && sourceKey !== watch.prevSource) {
+      if (watch.prevSource !== null && !wasRecent('source') && !wasRecent('preset')) {
         showToast('Source switched on speaker');
       }
-      prevSource = sourceKey;
+      watch.prevSource = sourceKey;
     } else if (sourceKey !== null) {
-      prevSource = sourceKey;
+      watch.prevSource = sourceKey;
     }
 
     // --- volume change ---
     const av = vol && vol.actualVolume;
-    if (typeof av === 'number' && av !== prevVolume) {
-      if (prevVolume !== null && !wasRecent('volume')) {
-        const delta = Math.abs(av - prevVolume);
+    if (typeof av === 'number' && av !== watch.prevVolume) {
+      if (watch.prevVolume !== null && !wasRecent('volume')) {
+        const delta = Math.abs(av - watch.prevVolume);
         if (delta > 1) {
           const now = Date.now();
-          if (now - volToastTs > VOL_TOAST_COOLDOWN) {
+          if (now - watch.volToastTs > VOL_TOAST_COOLDOWN) {
             showToast('Volume changed on speaker');
-            volToastTs = now;
+            watch.volToastTs = now;
           }
         }
       }
-      prevVolume = av;
+      watch.prevVolume = av;
     }
   });
 }
@@ -98,14 +117,14 @@ function watchSpeakerButtons(store) {
 // --- Polling fallback -----------------------------------------------
 
 function startPolling() {
-  if (pollInterval != null) return;
-  pollInterval = setInterval(() => reconcile(storeRef), 2000);
+  if (conn.pollInterval != null) return;
+  conn.pollInterval = setInterval(() => reconcile(conn.storeRef), 2000);
 }
 
 function stopPolling() {
-  if (pollInterval == null) return;
-  clearInterval(pollInterval);
-  pollInterval = null;
+  if (conn.pollInterval == null) return;
+  clearInterval(conn.pollInterval);
+  conn.pollInterval = null;
 }
 
 // --- XML dispatch ---------------------------------------------------
@@ -154,8 +173,8 @@ export function dispatch(xmlText, store) {
   if (tag === 'SoundTouchSdkInfo') {
     // Hello frame received — WS is live. Reset reconnect counters,
     // stop polling, and refetch state the speaker didn't replay.
-    attempt = 0;
-    consecutiveFails = 0;
+    conn.attempt = 0;
+    conn.consecutiveFails = 0;
     stopPolling();
     store.state.ws.connected = true;
     store.state.ws.mode = 'ws';
@@ -188,8 +207,8 @@ export function dispatch(xmlText, store) {
 
       if (child.tagName === 'presetsUpdated') {
         const now = Date.now();
-        if (now - lastPresetsToastAt >= PRESETS_TOAST_GAP_MS) {
-          lastPresetsToastAt = now;
+        if (now - watch.lastPresetsToastAt >= PRESETS_TOAST_GAP_MS) {
+          watch.lastPresetsToastAt = now;
           showToast('Presets changed');
         }
       }
@@ -227,75 +246,73 @@ function onVisibilityChange() {
   if (document.hidden) {
     // Cancel pending reconnect and REST polling while hidden.
     // Don't close a live socket — it may still deliver events on resume.
-    if (reconnectTimer != null) {
-      clearTimeout(reconnectTimer);
-      reconnectTimer = null;
+    if (conn.reconnectTimer != null) {
+      clearTimeout(conn.reconnectTimer);
+      conn.reconnectTimer = null;
     }
     stopPolling();
   } else {
     // Tab became visible again.
-    if (storeRef && storeRef.state.ws.connected) {
+    if (conn.storeRef && conn.storeRef.state.ws.connected) {
       // WS is still alive — events resume automatically.
     } else {
       // WS dropped while hidden (or never connected). Retry immediately.
-      attempt = 0;
-      connect(storeRef);
+      conn.attempt = 0;
+      connect(conn.storeRef);
     }
   }
 }
 
 function bindVisibility() {
-  if (visibilityBound) return;
+  if (conn.visibilityBound) return;
   if (typeof document === 'undefined') return;
   document.addEventListener('visibilitychange', onVisibilityChange);
-  visibilityBound = true;
+  conn.visibilityBound = true;
 }
 
 function unbindVisibility() {
-  if (!visibilityBound) return;
+  if (!conn.visibilityBound) return;
   if (typeof document === 'undefined') return;
   document.removeEventListener('visibilitychange', onVisibilityChange);
-  visibilityBound = false;
+  conn.visibilityBound = false;
 }
 
 // --- Socket lifecycle -----------------------------------------------
 
-let speakerWatchBound = false;
-
 export function connect(store) {
-  if (socket) return;
+  if (conn.socket) return;
   if (!store) return;
 
-  storeRef = store;
-  if (!speakerWatchBound) {
+  conn.storeRef = store;
+  if (!conn.speakerWatchBound) {
     watchSpeakerButtons(store);
-    speakerWatchBound = true;
+    conn.speakerWatchBound = true;
   }
   bindVisibility();
 
   const url = `ws://${location.hostname}:8080/`;
-  socket = new WebSocket(url, 'gabbo');
+  conn.socket = new WebSocket(url, 'gabbo');
 
   store.state.ws.connected = false;
   store.state.ws.mode = 'connecting';
   store.touch('ws');
 
-  socket.addEventListener('message', (evt) => {
+  conn.socket.addEventListener('message', (evt) => {
     dispatch(evt.data, store);
   });
 
-  socket.addEventListener('close', () => {
-    socket = null;
-    if (userInitiatedClose) {
-      userInitiatedClose = false;
+  conn.socket.addEventListener('close', () => {
+    conn.socket = null;
+    if (conn.userInitiatedClose) {
+      conn.userInitiatedClose = false;
       return;
     }
 
     store.state.ws.connected = false;
-    consecutiveFails += 1;
+    conn.consecutiveFails += 1;
 
     // First close → reconnecting; subsequent → polling (with continued polling).
-    if (consecutiveFails === 1) {
+    if (conn.consecutiveFails === 1) {
       store.state.ws.mode = 'reconnecting';
     } else {
       store.state.ws.mode = 'polling';
@@ -309,36 +326,30 @@ export function connect(store) {
 
     // Schedule reconnect unless the tab is hidden.
     if (typeof document === 'undefined' || !document.hidden) {
-      const delay = backoff(attempt);
-      attempt += 1;
-      reconnectTimer = setTimeout(() => {
-        reconnectTimer = null;
+      const delay = backoff(conn.attempt);
+      conn.attempt += 1;
+      conn.reconnectTimer = setTimeout(() => {
+        conn.reconnectTimer = null;
         connect(store);
       }, delay);
     }
   });
 
-  socket.addEventListener('error', () => {
+  conn.socket.addEventListener('error', () => {
     // 'error' is always followed by 'close', which drives reconnect logic.
   });
 }
 
 export function disconnect() {
-  if (reconnectTimer != null) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
+  if (conn.reconnectTimer != null) {
+    clearTimeout(conn.reconnectTimer);
   }
   stopPolling();
   unbindVisibility();
-  attempt = 0;
-  consecutiveFails = 0;
-  speakerWatchBound = false;
-  prevPlayStatus = null;
-  prevSource     = null;
-  prevVolume     = null;
-  volToastTs     = 0;
+  const socket = conn.socket;
+  conn  = makeConnectionState();
+  watch = makeButtonWatch();
   if (!socket) return;
-  userInitiatedClose = true;
+  conn.userInitiatedClose = true;
   socket.close();
-  socket = null;
 }
