@@ -91,10 +91,22 @@ async function getJson(path, opts) {
   return res.json();
 }
 
+// tuneinSearch(q, opts) — TuneIn's Search.ashx, no upstream filter by
+// default so the response interleaves stations (`s`), shows (`p`),
+// topics (`t`), and artists (`m`). The 0.4.2 search reframe makes the
+// search surface the universal "find anything Bo can play" view — see
+// docs/tunein-api.md and issue #80.
+//
+//   opts.stationsOnly = true   → re-apply filter=s:popular (the old
+//                                pre-0.4.2 behaviour, kept for power
+//                                users who want the stations-only list).
+//
+// TuneIn's Search.ashx expects `query=`; sending `q=` returns
+// {head: {status: 400, fault: "Empty Query specified"}} with no body.
 export function tuneinSearch(q, opts) {
-  // TuneIn's Search.ashx expects `query=`; sending `q=` returns
-  // {head: {status: 400, fault: "Empty Query specified"}} with no body.
-  const qs = new URLSearchParams({ query: q, type: 'station' }).toString();
+  const params = { query: q };
+  if (opts && opts.stationsOnly) params.filter = 's:popular';
+  const qs = new URLSearchParams(params).toString();
   return getJson(`/tunein/search?${qs}`, opts);
 }
 
