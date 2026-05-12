@@ -475,8 +475,15 @@ export function renderOutline(body, json) {
     return 0;
   }
 
-  // Tombstone check (single text-only entry): § 6.2.
-  if (items.length === 1 && classifyOutline(items[0]) === 'tombstone') {
+  // Tombstone check (single text-only entry): § 6.2. A section
+  // container (anything with children) is not a tombstone even if
+  // classifyOutline tags it that way — the fallback in tunein-outline
+  // returns 'tombstone' for any type-less typeless URL-less guide-less
+  // outline, which also matches a bare section header.
+  const onlyEntryIsTombstone = items.length === 1
+    && classifyOutline(items[0]) === 'tombstone'
+    && !(Array.isArray(items[0].children) && items[0].children.length > 0);
+  if (onlyEntryIsTombstone) {
     body.appendChild(emptyNode(items[0].text || 'Nothing here.'));
     return 0;
   }

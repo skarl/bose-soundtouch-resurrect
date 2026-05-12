@@ -1038,3 +1038,229 @@ test('renderEntry: station with show_id renders "Now airing: <track>" link drill
   assert.match(href, /c=pbrowse/);
   assert.match(href, /id=p12345/);
 });
+
+// --- Slice #81: c=pbrowse show drill (liveShow + topics) ------------
+//
+// The `c=pbrowse&id=p<N>` response is a section-keyed payload with
+// some combination of `liveShow`, `topics`, and `stations`. The
+// renderOutline pipeline must:
+//   - mount the `liveShow` row inside a top section card with an
+//     inline Play icon (stationRow auto-attaches Play for p-prefix
+//     guide_ids from #78);
+//   - mount each `topics` row with a Play icon (t-prefix auto-attach)
+//     plus the formatted `topic_duration` on the meta line;
+//   - render `stations` sections through the existing pipeline;
+//   - never emit a preset-assign affordance on p- or t-prefix rows.
+
+test('renderOutline (#81): p17 liveShow+topics fixture renders liveShow card on top + topics list', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const fixture = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/p17-pbrowse.tunein.json'), 'utf8'),
+  );
+
+  const body = doc.createElement('div');
+  const total = renderOutline(body, fixture);
+
+  const sections = findAllBy(body, (el) => el.getAttribute('data-section') != null);
+  assert.deepEqual(
+    sections.map((s) => s.getAttribute('data-section')),
+    ['liveShow', 'topics'],
+    'liveShow first, topics second',
+  );
+
+  // liveShow renders 1 row, topics renders 4. Total visible row count = 5.
+  assert.equal(total, 5, `expected 5 rows total, got ${total}`);
+
+  // liveShow has a single p-prefix row.
+  const liveShowSection = sections[0];
+  const liveShowRows = findAllBy(liveShowSection, (el) => hasClass(el, 'station-row'));
+  assert.equal(liveShowRows.length, 1, 'liveShow renders exactly one row');
+  assert.equal(liveShowRows[0].getAttribute('data-sid'), 'p17');
+
+  // The liveShow row has a Play icon (auto-attached by stationRow for p-prefix).
+  const liveShowPlay = findFirstByClass(liveShowRows[0], 'station-row__play');
+  assert.ok(liveShowPlay, 'liveShow row has a Play icon (p-prefix)');
+  assert.equal(liveShowPlay.getAttribute('role'), 'button');
+
+  // topics renders 4 t-prefix rows, each with a Play icon.
+  const topicsSection = sections[1];
+  const topicRows = findAllBy(topicsSection, (el) => hasClass(el, 'station-row'));
+  assert.equal(topicRows.length, 4, 'four episode rows');
+  for (const row of topicRows) {
+    const sid = row.getAttribute('data-sid') || '';
+    assert.match(sid, /^t\d+$/, `topic row data-sid is a t-prefix: ${sid}`);
+    const play = findFirstByClass(row, 'station-row__play');
+    assert.ok(play, `topic row ${sid} has a Play icon`);
+  }
+});
+
+test('renderOutline (#81): p17 topics rows surface topic_duration formatted on the meta line', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const fixture = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/p17-pbrowse.tunein.json'), 'utf8'),
+  );
+
+  const body = doc.createElement('div');
+  renderOutline(body, fixture);
+
+  const sections = findAllBy(body, (el) => el.getAttribute('data-section') === 'topics');
+  const topicRows = findAllBy(sections[0], (el) => hasClass(el, 'station-row'));
+
+  // First episode in fixture: topic_duration "3600" (exactly 1h) → "1:00:00".
+  // Second episode: topic_duration "3540" (59 min) → "59:00" — sub-hour
+  // case takes the M:SS shorthand.
+  // Third episode: topic_duration "3620" (1h 0m 20s) → "1:00:20".
+  const firstLoc = findFirstByClass(topicRows[0], 'station-row__loc');
+  assert.ok(firstLoc, 'first topic row has a location/meta chunk');
+  assert.equal(firstLoc.textContent, '1:00:00');
+
+  const secondLoc = findFirstByClass(topicRows[1], 'station-row__loc');
+  assert.ok(secondLoc);
+  assert.equal(secondLoc.textContent, '59:00');
+
+  const thirdLoc = findFirstByClass(topicRows[2], 'station-row__loc');
+  assert.ok(thirdLoc);
+  assert.equal(thirdLoc.textContent, '1:00:20');
+});
+
+test('renderOutline (#81): p17 show-drill rows carry no preset-assign affordance', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const fixture = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/p17-pbrowse.tunein.json'), 'utf8'),
+  );
+
+  const body = doc.createElement('div');
+  renderOutline(body, fixture);
+
+  // Walk every p- or t-prefix row in the body and assert no descendant
+  // carries a data-action="assign" attribute (or any preset-assign
+  // marker class).
+  const allRows = findAllBy(body, (el) => hasClass(el, 'station-row'));
+  assert.ok(allRows.length > 0, 'rows rendered');
+  for (const row of allRows) {
+    const sid = row.getAttribute('data-sid') || '';
+    assert.ok(/^[pt]\d+/.test(sid), `row is p/t-prefixed: ${sid}`);
+    const assignNodes = findAllBy(row, (el) => {
+      if (!el.getAttribute) return false;
+      if (el.getAttribute('data-action') === 'assign') return true;
+      const cls = el.getAttribute('class') || '';
+      return /\b(?:preset-assign|assign-btn|station-row__assign)\b/.test(cls);
+    });
+    assert.equal(assignNodes.length, 0,
+      `row ${sid} carries no preset-assign affordance`);
+  }
+});
+
+test('renderOutline (#81): p4727070 stations+topics fixture renders stations normally + topics list', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const fixture = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/p4727070-pbrowse.tunein.json'), 'utf8'),
+  );
+
+  const body = doc.createElement('div');
+  const total = renderOutline(body, fixture);
+
+  const sections = findAllBy(body, (el) => el.getAttribute('data-section') != null);
+  assert.deepEqual(
+    sections.map((s) => s.getAttribute('data-section')),
+    ['stations', 'topics'],
+    'stations first, topics second',
+  );
+  assert.equal(total, 4, `expected 4 rows (2 stations + 2 topics), got ${total}`);
+
+  // stations section: existing pipeline. Both rows are s-prefix with
+  // Play icons (audio leaves).
+  const stationsRows = findAllBy(sections[0], (el) => hasClass(el, 'station-row'));
+  assert.equal(stationsRows.length, 2);
+  for (const row of stationsRows) {
+    const sid = row.getAttribute('data-sid') || '';
+    assert.match(sid, /^s\d+$/);
+    assert.ok(findFirstByClass(row, 'station-row__play'), `${sid} has Play icon`);
+  }
+
+  // topics section: t-prefix rows with Play icon + duration.
+  const topicRows = findAllBy(sections[1], (el) => hasClass(el, 'station-row'));
+  assert.equal(topicRows.length, 2);
+  for (const row of topicRows) {
+    const sid = row.getAttribute('data-sid') || '';
+    assert.match(sid, /^t\d+$/);
+    assert.ok(findFirstByClass(row, 'station-row__play'), `${sid} has Play icon`);
+    const loc = findFirstByClass(row, 'station-row__loc');
+    assert.ok(loc, `${sid} has a meta chunk for duration`);
+    // 7200s → 2:00:00.
+    assert.equal(loc.textContent, '2:00:00');
+  }
+});
+
+test('renderOutline (#81): missing liveShow section renders gracefully (no top card)', async () => {
+  // Hand-craft a c=pbrowse response that lacks the liveShow section —
+  // the show isn't airing right now. Renders as topics-only.
+  const fixture = {
+    head: { title: 'Off-Air Show', status: '200' },
+    body: [
+      {
+        element: 'outline',
+        text: 'Episodes',
+        key: 'topics',
+        children: [
+          {
+            element: 'outline',
+            type: 'link',
+            text: 'Episode One',
+            URL: 'http://opml.radiotime.com/Tune.ashx?id=t100000001',
+            guide_id: 't100000001',
+            item: 'topic',
+            topic_duration: '1800',
+          },
+        ],
+      },
+    ],
+  };
+
+  const body = doc.createElement('div');
+  const total = renderOutline(body, fixture);
+
+  const sections = findAllBy(body, (el) => el.getAttribute('data-section') != null);
+  assert.equal(sections.length, 1);
+  assert.equal(sections[0].getAttribute('data-section'), 'topics');
+  assert.equal(total, 1);
+
+  // No liveShow section anywhere.
+  const liveShowSections = findAllBy(body, (el) => el.getAttribute('data-section') === 'liveShow');
+  assert.equal(liveShowSections.length, 0);
+});
+
+test('renderOutline (#81): topics row without topic_duration falls back to subtext on the meta line', () => {
+  const fixture = {
+    head: { title: 'Show', status: '200' },
+    body: [
+      {
+        element: 'outline',
+        text: 'Episodes',
+        key: 'topics',
+        children: [
+          {
+            element: 'outline',
+            type: 'link',
+            text: 'No-duration Episode',
+            URL: 'http://opml.radiotime.com/Tune.ashx?id=t200000001',
+            guide_id: 't200000001',
+            item: 'topic',
+            subtext: 'A description with no duration.',
+          },
+        ],
+      },
+    ],
+  };
+  const body = doc.createElement('div');
+  renderOutline(body, fixture);
+  const rows = findAllBy(body, (el) => hasClass(el, 'station-row'));
+  assert.equal(rows.length, 1);
+  const loc = findFirstByClass(rows[0], 'station-row__loc');
+  // Falls back to the subtext when topic_duration is absent.
+  assert.equal(loc.textContent, 'A description with no duration.');
+});
