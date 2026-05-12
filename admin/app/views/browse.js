@@ -731,9 +731,21 @@ function mountLoadMoreButton(section, footer, pager) {
 // Append every pager row not yet represented in the section card. The
 // pager exposes its accumulated rows array; track the count in the
 // section dataset so subsequent loadMore calls only append the delta.
+//
+// Sections whose page-0 had only the cursor (e.g. Top 40 & Pop's
+// "stations" key: 1 child, just nextStations) start with no
+// .browse-card at all — renderSection only creates one when visible
+// rows exist. We create the card lazily here, inserting it before the
+// footer so layout stays consistent with page-0-populated sections.
 function appendNewRows(section, pager) {
-  const card = findCardIn(section);
-  if (!card) return;
+  let card = findCardIn(section);
+  if (!card) {
+    card = document.createElement('div');
+    card.className = 'browse-card';
+    const footer = findFooterIn(section);
+    if (footer) section.insertBefore(card, footer);
+    else section.appendChild(card);
+  }
   const alreadyMounted = Number(section.getAttribute('data-pager-mounted') || '0');
   const rows = pager.rows;
   // Strip the `is-last` marker from the current last child so the new

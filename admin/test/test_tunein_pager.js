@@ -586,6 +586,49 @@ test('mountLoadMoreButtons: pageCap override removes the button after the cap is
   assert.equal(n, 2, 'exactly 2 fetches happened (cap halted the third)');
 });
 
+test('mountLoadMoreButtons: cursor-only section (no page-0 rows) lazily creates a card on first click', async () => {
+  // Verified live on Bo: Top 40 & Pop's "stations" section has zero
+  // visible rows on page 0 — its only child is the nextStations
+  // cursor. renderSection skips creating the .browse-card in that
+  // case (no visibleChildren). The pager must still be able to
+  // append page-1 rows somewhere, so appendNewRows creates the card
+  // lazily on first click.
+
+  // Build a minimal cursor-only section the way renderSection would.
+  const body = _doc.createElement('div');
+  const section = _doc.createElement('section');
+  section.setAttribute('data-section', 'stations');
+  section.setAttribute('class', 'browse-section');
+  section.setAttribute('data-cursor-url',
+    'http://opml.radiotime.com/Browse.ashx?offset=0&id=c57943&filter=s');
+  const h = _doc.createElement('h2');
+  section.appendChild(h);
+  const footer = _doc.createElement('div');
+  footer.setAttribute('class', 'browse-section__footer');
+  section.appendChild(footer);
+  body.appendChild(section);
+
+  const page1 = makePage(['s1', 's2', 's3'], null);
+  const fetcher = scriptedFetch(page1);
+  mountLoadMoreButtons(body, { fetcher });
+
+  // No .browse-card exists yet.
+  assert.equal(findFirstByClass(section, 'browse-card'), null);
+
+  const btn = findFirstByClass(section, 'browse-load-more');
+  assert.ok(btn);
+
+  btn.click();
+  await drain();
+
+  // After click: card was created and three rows appended.
+  const card = findFirstByClass(section, 'browse-card');
+  assert.ok(card, 'card was lazily created on first Load-more click');
+  const sids = findAllBy(section, (el) => el.getAttribute('data-sid') != null)
+    .map((el) => el.getAttribute('data-sid'));
+  assert.deepEqual(sids.sort(), ['s1', 's2', 's3']);
+});
+
 test('browse css: .browse-load-more is a pill-shaped button matching the pivot chips', async () => {
   const fs = await import('node:fs');
   const pathMod = await import('node:path');
