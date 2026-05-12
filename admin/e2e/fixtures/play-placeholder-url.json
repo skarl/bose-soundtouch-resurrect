@@ -1,0 +1,6 @@
+{
+  "ok": false,
+  "error": "placeholder_url",
+  "detail": "TuneIn returned a placeholder/preview URL that the speaker cannot stream. Pick another station or try again later.",
+  "url": "http://placeholder.tunein.com/preview/0000"
+}
