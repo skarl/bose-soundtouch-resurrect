@@ -155,15 +155,23 @@ function secondaryLineFor(entry) {
   return subtext;
 }
 
-// Bucket a `reliability` score (the service emits 0–100) into one
-// of three tiers. The renderer paints each tier with its own colour
-// class. Out-of-range values + non-numbers return null so the badge
-// is simply omitted.
+// Bucket a `reliability` score (the service emits 0–100, sometimes
+// as a number, sometimes as a numeric string) into one of three
+// tiers. The renderer paints each tier with its own colour class.
+// Out-of-range values + non-numbers return null so the badge is
+// simply omitted.
 function reliabilityTier(value) {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-  if (value < 0 || value > 100) return null;
-  if (value >= 90) return 'green';
-  if (value >= 50) return 'amber';
+  let n;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    n = value;
+  } else if (typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value)) {
+    n = Number(value);
+  } else {
+    return null;
+  }
+  if (n < 0 || n > 100) return null;
+  if (n >= 90) return 'green';
+  if (n >= 50) return 'amber';
   return 'red';
 }
 
@@ -201,9 +209,13 @@ export function normaliseRow(entry, opts) {
     : '';
 
   const badges = [];
-  const tier = reliabilityTier(entry && entry.reliability);
+  const rawReliability = entry && entry.reliability;
+  const tier = reliabilityTier(rawReliability);
   if (tier) {
-    badges.push({ kind: 'reliability', tier, value: entry.reliability });
+    const value = typeof rawReliability === 'number'
+      ? rawReliability
+      : Number(rawReliability);
+    badges.push({ kind: 'reliability', tier, value });
   }
 
   const chips = [];

@@ -338,8 +338,19 @@ test('normaliseRow: reliability boundary values (90 → green, 50 → amber, 0 �
   }
 });
 
+test('normaliseRow: reliability as a numeric string (the wire format) is parsed and bucketed', () => {
+  // The OPML response wraps `reliability` in quotes ("96", "29"); the
+  // normaliser tolerates that so the renderer doesn't have to coerce.
+  const row = normaliseRow({
+    type: 'audio', text: 'X', guide_id: 's1',
+    reliability: '47',
+  });
+  assert.equal(row.badges[0].tier, 'red');
+  assert.equal(row.badges[0].value, 47);
+});
+
 test('normaliseRow: reliability of non-numeric, out-of-range, or missing → no badge', () => {
-  for (const v of [undefined, null, '92', NaN, -1, 101]) {
+  for (const v of [undefined, null, 'high', NaN, -1, 101]) {
     const row = normaliseRow({
       type: 'audio', text: 'X', guide_id: 's1',
       reliability: v,
