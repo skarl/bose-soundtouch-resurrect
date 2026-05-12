@@ -76,7 +76,11 @@ export function classifyOutline(entry) {
     return 'tombstone';
   }
   if (type === 'audio') return 'station';
-  if (type === 'link') {
+  if (type === 'link' || type === '') {
+    // Containers (section headers) and most drill-into-child rows
+    // are `type:"link"`; some hand-rolled or legacy entries omit
+    // `type` entirely. Both shapes resolve via `item` / `key` /
+    // presence-of-URL.
     const item = typeof entry.item === 'string' ? entry.item : '';
     if (item === 'station') return 'station';
     if (item === 'show')    return 'show';
@@ -86,6 +90,11 @@ export function classifyOutline(entry) {
     // and they're not drill nodes either — they jump into a curated
     // sibling list. Render as a chip alongside pivots.
     if (key === 'popular' || key === 'localCountry') return 'nav';
+    // Typeless + URL-less + guide_id-less = no rendering signal at
+    // all. Treat as tombstone so callers render a disabled label.
+    const hasUrl = typeof entry.URL === 'string' && entry.URL !== '';
+    const hasGid = typeof entry.guide_id === 'string' && entry.guide_id !== '';
+    if (type === '' && !hasUrl && !hasGid) return 'tombstone';
     return 'drill';
   }
   // `object` (Describe-only) and `search` (head-only) don't appear

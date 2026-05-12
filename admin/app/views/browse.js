@@ -25,6 +25,11 @@ import { stationRow } from '../components.js';
 import { icon } from '../icons.js';
 import { canonicaliseBrowseUrl, extractDrillKey } from '../tunein-url.js';
 import { cache, TTL_LABEL } from '../tunein-cache.js';
+import {
+  classifyOutline,
+  normaliseRow,
+  extractPivots,
+} from '../tunein-outline.js';
 
 // Top-level tab → Browse.ashx parameter. Verified against the TuneIn
 // API reference (docs/tunein-api.md § Categories worth knowing):
@@ -388,59 +393,166 @@ function errorNode(err) {
   return p;
 }
 
-// Render a TuneIn outline tree. When the body is a single section with
-// children, hoist its children to the top level so the user lands on
-// the actual rows (not a section heading + nested rows). Returns the
-// rendered row count for the caller's section header.
-function renderOutline(body, json) {
-  let items = Array.isArray(json && json.body) ? json.body : [];
-  // Hoist a single wrapping section so the rows live in one card.
-  if (items.length === 1 && Array.isArray(items[0].children) && items[0].children.length > 0) {
-    items = items[0].children;
-  }
+// Render a TuneIn outline tree. The pipeline is now classifier-led:
+// each top-level body entry either contains its own `children` (a
+// section — e.g. `local`/`stations`/`shows`/`related` on page 0) or
+// is a row directly under the document root (a flat paginated page).
+//
+// Multi-section payload → each section becomes its own labelled
+// card (header taken verbatim from the API's `text`, e.g.
+// "Local Stations (2)", "Stations", "Shows", "Explore Folk").
+// Flat payload → one card with no section header.
+// Tombstone payload → empty-state message.
+//
+// Returns the total visible row count (cursors + pivots are excluded
+// — they're meta, not rows the user reads through).
+export function renderOutline(body, json) {
+  const items = Array.isArray(json && json.body) ? json.body : [];
+
   if (items.length === 0) {
-    const p = document.createElement('p');
-    p.className = 'browse-empty';
-    p.textContent = 'Nothing here.';
-    body.appendChild(p);
+    body.appendChild(emptyNode('Nothing here.'));
     return 0;
   }
 
-  // Split into multi-section view vs single-card view. A multi-section
-  // payload (each top entry has children) renders each section as its
-  // own card; otherwise everything goes into one card.
-  const sections = items.filter((e) => Array.isArray(e.children) && e.children.length > 0);
-  const flats    = items.filter((e) => !Array.isArray(e.children) || e.children.length === 0);
+  // Tombstone check (single text-only entry): § 6.2.
+  if (items.length === 1 && classifyOutline(items[0]) === 'tombstone') {
+    body.appendChild(emptyNode(items[0].text || 'Nothing here.'));
+    return 0;
+  }
 
-  let count = 0;
-  if (sections.length > 0) {
-    for (const sec of sections) {
-      count += sec.children.length;
-      body.appendChild(renderSection(sec));
+  let total = 0;
+
+  // Multi-section: every top entry that has children is its own
+  // section. Children directly at the top level (no `.children`) are
+  // a flat page — group them into one unlabelled card.
+  const flatRows = [];
+  for (const entry of items) {
+    if (Array.isArray(entry.children) && entry.children.length > 0) {
+      const rendered = renderSection(entry);
+      if (rendered != null) {
+        total += rendered.visibleCount;
+        body.appendChild(rendered.element);
+      }
+    } else {
+      flatRows.push(entry);
     }
   }
-  if (flats.length > 0) {
-    body.appendChild(renderCard(flats));
-    count += flats.length;
+  if (flatRows.length > 0) {
+    const rendered = renderFlatSection(flatRows);
+    total += rendered.visibleCount;
+    body.appendChild(rendered.element);
   }
-  return count;
+  return total;
 }
 
-function renderSection(entry) {
-  const section = document.createElement('section');
-  section.className = 'browse-section';
+function emptyNode(message) {
+  const p = document.createElement('p');
+  p.className = 'browse-empty';
+  p.textContent = message;
+  return p;
+}
+
+// Render one API-emitted section as its own card. The section header
+// reads the API's `text` verbatim (e.g. "Local Stations (2)" already
+// includes a count, "Stations" does not — we don't second-guess the
+// service). Pivot children (related section's `pivot*` rows) render
+// as inline chips below the row list; cursor children (`next*`) are
+// stripped — the cursor URL is captured for #76's pagination but
+// nothing visible mounts in this slice.
+//
+// The section element carries `data-section` so the live-verification
+// assertion (`document.querySelectorAll('[data-section]').length`)
+// has a stable selector.
+//
+// Returns { element, visibleCount }. visibleCount counts rows the
+// user sees — pivots and the cursor don't count.
+function renderSection(section) {
+  const sectionKey = typeof section.key === 'string' ? section.key : '';
+  const headerText = typeof section.text === 'string' ? section.text : '';
+
+  const wrap = document.createElement('section');
+  wrap.className = 'browse-section';
+  wrap.setAttribute('data-section', sectionKey || 'unnamed');
+
   const h = document.createElement('h2');
   h.className = 'section-h section-h--inline';
   const title = document.createElement('span');
-  title.textContent = entry.text || '';
-  const meta = document.createElement('span');
-  meta.className = 'section-h__meta';
-  meta.textContent = `${entry.children.length.toLocaleString()} ${pluralize(entry.children.length)}`;
+  title.className = 'section-h__title';
+  title.textContent = headerText;
   h.appendChild(title);
-  h.appendChild(meta);
-  section.appendChild(h);
-  section.appendChild(renderCard(entry.children));
-  return section;
+
+  // Tail count meta — only emitted when the API hasn't already inlined
+  // the count into the header text (e.g. "Local Stations (2)" already
+  // has it; "Stations" doesn't).
+  const visibleChildren = (section.children || []).filter((c) => {
+    const t = classifyOutline(c);
+    return t !== 'cursor' && t !== 'pivot' && t !== 'tombstone';
+  });
+  if (visibleChildren.length > 0 && !/\(\d+\)\s*$/.test(headerText)) {
+    const meta = document.createElement('span');
+    meta.className = 'section-h__meta';
+    meta.textContent = `${visibleChildren.length.toLocaleString()} ${pluralize(visibleChildren.length)}`;
+    h.appendChild(meta);
+  }
+  wrap.appendChild(h);
+
+  // Row card.
+  if (visibleChildren.length > 0) {
+    wrap.appendChild(renderCard(visibleChildren));
+  }
+
+  // Pivot chips (related section in practice — but we don't filter by
+  // section name; anywhere the API emits `pivot*` children gets chips).
+  const pivots = extractPivots(section);
+  if (pivots.length > 0) {
+    wrap.appendChild(renderPivotChips(pivots));
+  }
+
+  // Footer placeholder for #76's "Load more" button. The cursor URL
+  // is parked on the section node as a dataset attribute so #76 can
+  // wire the button without a second classify pass.
+  const cursorChild = (section.children || []).find((c) => classifyOutline(c) === 'cursor');
+  const footer = document.createElement('div');
+  footer.className = 'browse-section__footer';
+  footer.setAttribute('data-section-footer', sectionKey || 'unnamed');
+  if (cursorChild && typeof cursorChild.URL === 'string') {
+    wrap.setAttribute('data-cursor-url', cursorChild.URL);
+  }
+  wrap.appendChild(footer);
+
+  return { element: wrap, visibleCount: visibleChildren.length };
+}
+
+// Flat section — no header. Wraps the rows in a `.browse-section`
+// for layout parity with the multi-section path so a paginated page
+// 2 lays out identically to page 1 inside a section card. The
+// `data-section="flat"` marker keeps the live-verification selector
+// honest in the flat case too.
+function renderFlatSection(entries) {
+  const visible = entries.filter((c) => {
+    const t = classifyOutline(c);
+    return t !== 'cursor' && t !== 'pivot' && t !== 'tombstone';
+  });
+  const wrap = document.createElement('section');
+  wrap.className = 'browse-section';
+  wrap.setAttribute('data-section', 'flat');
+
+  if (visible.length > 0) {
+    wrap.appendChild(renderCard(visible));
+  }
+
+  const footer = document.createElement('div');
+  footer.className = 'browse-section__footer';
+  footer.setAttribute('data-section-footer', 'flat');
+  wrap.appendChild(footer);
+
+  // Capture the cursor URL on the section, same as the multi-section
+  // path — #76 wires Load-more from this attribute.
+  const cursorChild = entries.find((c) => classifyOutline(c) === 'cursor');
+  if (cursorChild && typeof cursorChild.URL === 'string') {
+    wrap.setAttribute('data-cursor-url', cursorChild.URL);
+  }
+  return { element: wrap, visibleCount: visible.length };
 }
 
 function renderCard(entries) {
@@ -454,26 +566,128 @@ function renderCard(entries) {
   return card;
 }
 
-// Public for tests. Each call returns ONE row element (.station-row for
-// audio leaves, .browse-row for everything else).
+// Pivot chips render inline below the related section. Each chip is
+// an anchor whose href goes through canonicaliseBrowseUrl so the
+// language-tree rewrite (§ 7.3) and magic-param strip (§ 7.4) happen
+// once at the seam.
+function renderPivotChips(pivots) {
+  const wrap = document.createElement('div');
+  wrap.className = 'browse-pivots';
+  for (const pivot of pivots) {
+    const parts = drillPartsForUrl(pivot.url);
+    const chip = document.createElement(parts ? 'a' : 'span');
+    chip.className = parts ? 'browse-pivot' : 'browse-pivot is-disabled';
+    if (parts) chip.setAttribute('href', drillHashFor(parts));
+    chip.textContent = pivot.label || `pivot=${pivot.axis}`;
+    chip.setAttribute('data-pivot-axis', pivot.axis);
+    wrap.appendChild(chip);
+  }
+  return wrap;
+}
+
+// Public for tests. Returns ONE row element shaped by the entry's
+// classification:
+//
+//   station / topic — .station-row (full art + meta + chevron)
+//   show           — .station-row (same shape — shows are playable)
+//   drill          — .browse-row (id badge + label + chevron)
+//   pivot          — .browse-pivot (rendered separately as chips,
+//                    but the helper is reachable for completeness)
+//   nav            — .browse-row (acts like a drill — a curated
+//                    sibling jump)
+//   cursor / tombstone — disabled label (these should be filtered
+//                    out before renderEntry is called; we still
+//                    render something sensible if a caller passes
+//                    one in)
 export function renderEntry(entry) {
-  // Audio leaves: full station card with art + meta + chevron.
-  if (entry && entry.type === 'audio' && entry.guide_id) {
+  const kind = classifyOutline(entry);
+  const norm = normaliseRow(entry);
+
+  if (kind === 'station' || kind === 'topic') {
     return stationRow({
-      sid:      entry.guide_id,
-      name:     entry.text,
-      art:      entry.image,
-      location: entry.subtext,
-      bitrate:  entry.bitrate,
-      codec:    entry.formats,
+      sid:      norm.id || entry.guide_id || '',
+      name:     norm.primary,
+      art:      norm.image,
+      location: norm.secondary,
+      bitrate:  entry && entry.bitrate,
+      codec:    entry && entry.formats,
     });
   }
 
-  // Drillable section / link → .browse-row with id badge + label +
-  // chevron. Non-resolvable entries become a disabled row. URL goes
-  // through canonicaliseBrowseUrl so the language-tree rewrite
-  // (§ 7.3) and the magic-param strip (§ 7.4) happen once, here, at
-  // the seam where API-emitted URLs cross into client-emitted URLs.
+  if (kind === 'show') {
+    // Shows are drill-into-detail, not direct play. Reuse stationRow
+    // for layout parity but the URL goes through the drill hash.
+    return showRow(entry, norm);
+  }
+
+  if (kind === 'tombstone') {
+    return disabledRow(norm.primary || '(unavailable)');
+  }
+
+  // drill / pivot / nav / cursor all fall through to the
+  // browse-row shape. Pivot/cursor entries shouldn't reach here in
+  // the multi-section path (they're stripped or chip-rendered) but
+  // we keep the fallback honest.
+  return drillRow(entry, norm, kind);
+}
+
+// Show rows reuse the station-row layout (art + name + secondary line
+// + chevron) but route to a browse-drill hash, since shows are an
+// `id=p<NNN>` browse target rather than a direct stream.
+function showRow(entry, norm) {
+  const id = norm.id || (entry && entry.guide_id) || '';
+  const row = document.createElement('a');
+  row.className = 'station-row';
+  // Shows live under Browse.ashx — drill, don't tune.
+  const parts = drillPartsFor(entry) || (id ? { id } : null);
+  row.setAttribute('href', parts ? drillHashFor(parts) : '#');
+  if (id) row.setAttribute('data-sid', id);
+
+  // Inline the station-row internals so we don't pull in stationRow's
+  // tuning-anchor assumption. Reuses the same CSS classes for visual
+  // parity with station rows.
+  const art = document.createElement('span');
+  art.className = 'station-art';
+  art.setAttribute('style', 'width:40px;height:40px');
+  if (norm.image) {
+    const img = document.createElement('img');
+    img.className = 'station-art__img';
+    img.setAttribute('loading', 'lazy');
+    img.setAttribute('src', norm.image);
+    img.setAttribute('alt', norm.primary || id || '');
+    art.appendChild(img);
+  }
+  row.appendChild(art);
+
+  const body = document.createElement('span');
+  body.className = 'station-row__body';
+  const nameEl = document.createElement('span');
+  nameEl.className = 'station-row__name';
+  nameEl.textContent = norm.primary || id || '';
+  body.appendChild(nameEl);
+  if (norm.secondary) {
+    const meta = document.createElement('span');
+    meta.className = 'station-row__meta';
+    const loc = document.createElement('span');
+    loc.className = 'station-row__loc';
+    loc.textContent = norm.secondary;
+    meta.appendChild(loc);
+    body.appendChild(meta);
+  }
+  row.appendChild(body);
+
+  const chev = document.createElement('span');
+  chev.className = 'station-row__chev';
+  chev.appendChild(icon('arrow', 14));
+  row.appendChild(chev);
+  return row;
+}
+
+// Drill row: id badge + label + optional count + chevron. URL goes
+// through canonicaliseBrowseUrl so the language-tree rewrite
+// (§ 7.3) and magic-param strip (§ 7.4) happen once, at the seam
+// where API-emitted URLs cross into client-emitted URLs.
+function drillRow(entry, norm, _kind) {
   const drillParts = drillPartsFor(entry);
   const drillable = drillParts != null;
   const row = document.createElement(drillable ? 'a' : 'span');
@@ -491,11 +705,11 @@ export function renderEntry(entry) {
 
   const label = document.createElement('span');
   label.className = 'browse-row__label';
-  label.textContent = (entry && entry.text) || badgeText || '(unnamed)';
+  label.textContent = norm.primary || badgeText || '(unnamed)';
   row.appendChild(label);
 
-  // Some Browse.ashx entries surface a count via current_track or
-  // similar — leave it blank when absent rather than showing "0".
+  // Some Browse.ashx entries surface a child count via station_count /
+  // count / item_count.
   const count = countOf(entry);
   if (count != null) {
     const c = document.createElement('span');
@@ -510,8 +724,17 @@ export function renderEntry(entry) {
     chev.appendChild(icon('arrow', 14));
     row.appendChild(chev);
   }
-
   return row;
+}
+
+function disabledRow(text) {
+  const span = document.createElement('span');
+  span.className = 'browse-row is-disabled';
+  const label = document.createElement('span');
+  label.className = 'browse-row__label';
+  label.textContent = text;
+  span.appendChild(label);
+  return span;
 }
 
 // Pick the drill parts for a link entry: prefer the canonicalised URL
@@ -520,18 +743,25 @@ export function renderEntry(entry) {
 // usable — the caller renders a disabled row.
 function drillPartsFor(entry) {
   if (!entry) return null;
-  if (typeof entry.URL === 'string' && entry.URL !== '') {
-    try {
-      const canonical = canonicaliseBrowseUrl(entry.URL);
-      const parts = extractDrillKey(canonical);
-      if (parts.id || parts.c) return parts;
-    } catch (_err) {
-      // URL was malformed (e.g. colon-form lcode that the service
-      // shouldn't even emit). Fall through and try guide_id.
-    }
-  }
+  const urlParts = drillPartsForUrl(entry.URL);
+  if (urlParts) return urlParts;
   if (typeof entry.guide_id === 'string' && entry.guide_id !== '') {
     return { id: entry.guide_id };
+  }
+  return null;
+}
+
+// drillPartsForUrl — same logic as drillPartsFor's URL branch, but
+// for callers that only hold a URL string (pivot chips). Returns
+// null when the URL is empty, malformed, or yields no drill keys.
+function drillPartsForUrl(rawUrl) {
+  if (typeof rawUrl !== 'string' || rawUrl === '') return null;
+  try {
+    const canonical = canonicaliseBrowseUrl(rawUrl);
+    const parts = extractDrillKey(canonical);
+    if (parts.id || parts.c) return parts;
+  } catch (_err) {
+    // Fall through.
   }
   return null;
 }

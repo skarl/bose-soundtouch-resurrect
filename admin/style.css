@@ -2598,6 +2598,57 @@ select.settings-input {
   flex-shrink: 0;
 }
 
+/* Pivot chips — inline cross-cut shortcuts at the tail of the
+   related section. Rendered as a horizontal wrap of small pill
+   anchors (`pivotName`, `pivotGenre`, `pivotLocation`). */
+.browse-pivots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0 0;
+}
+
+.browse-pivot {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.browse-pivot:hover,
+.browse-pivot:focus-visible {
+  background: var(--surface-hi);
+}
+
+.browse-pivot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.browse-pivot.is-disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+/* Per-section footer slot. Slice #76 mounts a "Load more" button
+   here when the section has a cursor. The slot is always present
+   so the section card's bottom edge stays stable across pagination. */
+.browse-section__footer:empty {
+  display: none;
+}
+
+.browse-section__footer {
+  padding: 8px 0 0;
+}
+
 /* Drill-mode breadcrumb header bits. */
 .browse-crumb {
   font-family: 'Geist Mono', ui-monospace, monospace;

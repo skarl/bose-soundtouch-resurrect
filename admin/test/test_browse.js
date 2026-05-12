@@ -98,7 +98,7 @@ if (!Object.getOwnPropertyDescriptor(ElementProto, 'dataset')) {
   });
 }
 
-const { renderEntry } = await import('../app/views/browse.js');
+const { renderEntry, renderOutline } = await import('../app/views/browse.js');
 
 function classOf(el) { return el.getAttribute('class') || ''; }
 
@@ -113,6 +113,24 @@ function findFirstByClass(root, cls) {
     }
   }
   return null;
+}
+
+// Walk an element subtree collecting every element matching the
+// predicate. The xmldom shim doesn't ship querySelectorAll, so the
+// stacked-section tests use this helper.
+function findAllBy(root, predicate) {
+  const out = [];
+  function walk(node) {
+    if (!node) return;
+    if (node.nodeType === 1 && predicate(node)) out.push(node);
+    for (const c of node.childNodes || []) walk(c);
+  }
+  walk(root);
+  return out;
+}
+
+function hasClass(el, cls) {
+  return classOf(el).split(/\s+/).includes(cls);
 }
 
 // --- audio-leaf rendering -------------------------------------------
@@ -238,6 +256,109 @@ test('renderEntry: entry without a usable id falls back to a non-clickable label
   assert.equal(node.tagName, 'span');
   assert.ok(classOf(node).includes('browse-row'));
   assert.ok(classOf(node).includes('is-disabled'));
+});
+
+// --- stacked sections: renderOutline against the Folk fixture ------
+
+test('renderOutline: Folk fixture produces four distinct section cards in order', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const folk = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/c100000948-page0.tunein.json'), 'utf8'),
+  );
+
+  const body = doc.createElement('div');
+  const total = renderOutline(body, folk);
+
+  // Four sections, distinguishable by data-section attribute.
+  const sections = findAllBy(body, (el) => el.getAttribute('data-section') != null);
+  const keys = sections.map((s) => s.getAttribute('data-section'));
+  assert.deepEqual(keys, ['local', 'stations', 'shows', 'related'],
+    `expected four sections in order, got: ${keys.join(', ')}`);
+
+  // Each section's header (h2) is the API's section text verbatim.
+  const headerTexts = sections.map((s) => {
+    const title = findFirstByClass(s, 'section-h__title');
+    return title ? title.textContent : '';
+  });
+  assert.deepEqual(headerTexts,
+    ['Local Stations (2)', 'Stations', 'Shows', 'Explore Folk']);
+
+  // The sections whose header text doesn't already inline the count
+  // (Stations / Shows / Explore Folk) carry a section-h__meta with
+  // "<N> entries". "Local Stations (2)" already has "(2)" in the
+  // title, so it does NOT get a meta count (avoids "(2) … 2 entries").
+  // Counts in section meta are the *visible* row count — cursors
+  // and pivots are stripped. Stations: 24 children include 1
+  // nextStations cursor → 23 visible. Shows: 7 children include 1
+  // nextShows cursor → 6 visible.
+  const stationsMeta = findFirstByClass(sections[1], 'section-h__meta');
+  assert.ok(stationsMeta, 'Stations section has a count meta');
+  assert.match(stationsMeta.textContent, /\b23\b/, `expected 23 in Stations meta, got: ${stationsMeta.textContent}`);
+
+  const showsMeta = findFirstByClass(sections[2], 'section-h__meta');
+  assert.ok(showsMeta);
+  assert.match(showsMeta.textContent, /\b6\b/);
+
+  // "Local Stations (2)" embeds the count; no separate meta.
+  const localMeta = findFirstByClass(sections[0], 'section-h__meta');
+  assert.equal(localMeta, null, 'Local section reuses the inline (2) count');
+
+  // Total returned counts visible rows only (cursors + pivots
+  // excluded). Folk page-0: 2 local + 23 stations + 6 shows + 1
+  // "Most Popular" nav in related = 32. pivotLocation is a chip.
+  assert.equal(total, 32, `expected 32 visible rows, got ${total}`);
+
+  // Pivots in the related section render as inline chips.
+  const relatedSection = sections[3];
+  const chips = findAllBy(relatedSection, (el) => hasClass(el, 'browse-pivot'));
+  assert.ok(chips.length >= 1, 'related section has at least one pivot chip');
+
+  // Every section has a footer slot for Slice #76's Load-more button.
+  for (const section of sections) {
+    const footer = findFirstByClass(section, 'browse-section__footer');
+    assert.ok(footer, `section ${section.getAttribute('data-section')} has a footer slot`);
+  }
+
+  // Sections with cursors carry data-cursor-url for #76.
+  assert.ok(sections[1].getAttribute('data-cursor-url'),
+    'stations section captured the nextStations cursor URL');
+  assert.ok(sections[2].getAttribute('data-cursor-url'),
+    'shows section captured the nextShows cursor URL');
+});
+
+test('renderOutline: paginated page (flat list) renders one section card with cursor parked on it', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const page1 = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/c100000948-page1.tunein.json'), 'utf8'),
+  );
+
+  const body = doc.createElement('div');
+  renderOutline(body, page1);
+
+  const sections = findAllBy(body, (el) => el.getAttribute('data-section') != null);
+  assert.equal(sections.length, 1, 'flat page renders as one section');
+  assert.equal(sections[0].getAttribute('data-section'), 'flat');
+});
+
+test('renderOutline: tombstone response renders an empty-state message', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const tomb = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/c424724-l117-tombstone.tunein.json'), 'utf8'),
+  );
+
+  const body = doc.createElement('div');
+  const total = renderOutline(body, tomb);
+
+  assert.equal(total, 0);
+  const empty = findFirstByClass(body, 'browse-empty');
+  assert.ok(empty, 'tombstone produces a .browse-empty message node');
+  assert.equal(empty.textContent, 'No stations or shows available');
+  // No section cards.
+  const sections = findAllBy(body, (el) => el.getAttribute('data-section') != null);
+  assert.equal(sections.length, 0);
 });
 
 // --- segmented control: CSS contract -------------------------------
