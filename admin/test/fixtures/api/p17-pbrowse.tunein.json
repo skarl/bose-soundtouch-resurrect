@@ -1,0 +1,81 @@
+{
+  "head": {
+    "title": "This American Life",
+    "status": "200"
+  },
+  "body": [
+    {
+      "element": "outline",
+      "text": "Now Airing",
+      "key": "liveShow",
+      "children": [
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "This American Life",
+          "URL": "http://opml.radiotime.com/Tune.ashx?id=p17",
+          "guide_id": "p17",
+          "subtext": "Ira Glass",
+          "image": "http://cdn-profiles.tunein.com/p17/images/logoq.jpg?t=1",
+          "item": "show",
+          "preset_id": "p17"
+        }
+      ]
+    },
+    {
+      "element": "outline",
+      "text": "Episodes",
+      "key": "topics",
+      "children": [
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "#812: How to Make It in America",
+          "URL": "http://opml.radiotime.com/Tune.ashx?id=t823456001",
+          "guide_id": "t823456001",
+          "subtext": "Stories of building things from scratch.",
+          "image": "http://cdn-profiles.tunein.com/p17/images/logoq.jpg?t=1",
+          "item": "topic",
+          "topic_duration": "3600",
+          "show_id": "p17"
+        },
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "#811: My Year of Saying Yes",
+          "URL": "http://opml.radiotime.com/Tune.ashx?id=t823456002",
+          "guide_id": "t823456002",
+          "subtext": "Stories from people who said yes when they should have said no.",
+          "image": "http://cdn-profiles.tunein.com/p17/images/logoq.jpg?t=1",
+          "item": "topic",
+          "topic_duration": "3540",
+          "show_id": "p17"
+        },
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "#810: The Show of Delights",
+          "URL": "http://opml.radiotime.com/Tune.ashx?id=t823456003",
+          "guide_id": "t823456003",
+          "subtext": "Things that delight us in 2024.",
+          "image": "http://cdn-profiles.tunein.com/p17/images/logoq.jpg?t=1",
+          "item": "topic",
+          "topic_duration": "3620",
+          "show_id": "p17"
+        },
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "#809: One Last Thing Before I Go",
+          "URL": "http://opml.radiotime.com/Tune.ashx?id=t823456004",
+          "guide_id": "t823456004",
+          "subtext": "Stories about goodbyes.",
+          "image": "http://cdn-profiles.tunein.com/p17/images/logoq.jpg?t=1",
+          "item": "topic",
+          "topic_duration": "3500",
+          "show_id": "p17"
+        }
+      ]
+    }
+  ]
+}
