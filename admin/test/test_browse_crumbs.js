@@ -1,0 +1,303 @@
+// Tests for the URL crumb stack helpers and the trail renderer in
+// admin/app/views/browse.js. The mounted-view paths (renderDrill /
+// renderRoot) need a real DOM; tests focus on the pure helpers that
+// own URL composition and on the cache-driven trail render.
+//
+// Run: node --test admin/test
+
+import { test, beforeEach } from 'node:test';
+import { strict as assert } from 'node:assert';
+
+import { DOMImplementation } from '@xmldom/xmldom';
+
+// --- DOM + classList + dataset shim (lifted from test_browse.js) ----
+
+const doc = new DOMImplementation().createDocument(null, null, null);
+if (!doc.querySelector) doc.querySelector = () => null;
+if (!doc.documentElement) {
+  const htmlEl = doc.createElement('html');
+  doc.appendChild(htmlEl);
+}
+if (!doc.documentElement.dataset) doc.documentElement.dataset = {};
+globalThis.document = doc;
+
+const _sample = doc.createElement('span');
+const ElementProto = Object.getPrototypeOf(_sample);
+
+if (!ElementProto.classList) {
+  Object.defineProperty(ElementProto, 'classList', {
+    get() {
+      const el = this;
+      return {
+        add(...names) {
+          const cur = (el.getAttribute('class') || '').split(/\s+/).filter(Boolean);
+          for (const n of names) if (!cur.includes(n)) cur.push(n);
+          el.setAttribute('class', cur.join(' '));
+        },
+        remove(...names) {
+          const cur = (el.getAttribute('class') || '').split(/\s+/).filter(Boolean);
+          el.setAttribute('class', cur.filter((c) => !names.includes(c)).join(' '));
+        },
+        contains(name) {
+          return (el.getAttribute('class') || '').split(/\s+/).includes(name);
+        },
+        toggle(name, force) {
+          const has = this.contains(name);
+          const want = force == null ? !has : !!force;
+          if (want && !has) this.add(name);
+          else if (!want && has) this.remove(name);
+          return want;
+        },
+      };
+    },
+  });
+}
+
+if (!ElementProto.addEventListener) {
+  ElementProto.addEventListener = function () {};
+}
+
+if (!Object.getOwnPropertyDescriptor(ElementProto, 'className')) {
+  Object.defineProperty(ElementProto, 'className', {
+    get() { return this.getAttribute('class') || ''; },
+    set(v) { this.setAttribute('class', String(v == null ? '' : v)); },
+  });
+}
+for (const attr of ['href', 'src', 'alt']) {
+  if (!Object.getOwnPropertyDescriptor(ElementProto, attr)) {
+    Object.defineProperty(ElementProto, attr, {
+      get() { return this.getAttribute(attr) || ''; },
+      set(v) { this.setAttribute(attr, String(v == null ? '' : v)); },
+    });
+  }
+}
+if (!Object.getOwnPropertyDescriptor(ElementProto, 'dataset')) {
+  Object.defineProperty(ElementProto, 'dataset', {
+    get() {
+      const el = this;
+      return new Proxy({}, {
+        get(_t, key) {
+          if (typeof key !== 'string') return undefined;
+          const attr = 'data-' + key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+          const v = el.getAttribute(attr);
+          return v == null ? undefined : v;
+        },
+        set(_t, key, value) {
+          if (typeof key !== 'string') return true;
+          const attr = 'data-' + key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+          el.setAttribute(attr, String(value));
+          return true;
+        },
+      });
+    },
+  });
+}
+
+// --- sessionStorage shim --------------------------------------------
+
+const ssStore = new Map();
+globalThis.sessionStorage = {
+  getItem(key)        { return ssStore.has(key) ? ssStore.get(key) : null; },
+  setItem(key, value) { ssStore.set(key, String(value)); },
+  removeItem(key)     { ssStore.delete(key); },
+  clear()             { ssStore.clear(); },
+};
+
+const {
+  parseCrumbs,
+  stringifyCrumbs,
+  crumbTokenFor,
+  partsFromCrumb,
+  renderCrumbTrail,
+  renderEntry,
+  backHrefFor,
+  _setChildCrumbsForTest,
+} = await import('../app/views/browse.js');
+
+const { cache, TTL_LABEL } = await import('../app/tunein-cache.js');
+
+beforeEach(() => {
+  ssStore.clear();
+});
+
+// --- parseCrumbs / stringifyCrumbs ----------------------------------
+
+test('parseCrumbs splits a comma-separated string into trimmed tokens', () => {
+  assert.deepEqual(parseCrumbs('c100000948,g79,music'), ['c100000948', 'g79', 'music']);
+});
+
+test('parseCrumbs returns [] for empty / non-string input', () => {
+  assert.deepEqual(parseCrumbs(''), []);
+  assert.deepEqual(parseCrumbs(null), []);
+  assert.deepEqual(parseCrumbs(undefined), []);
+});
+
+test('parseCrumbs drops empty segments', () => {
+  assert.deepEqual(parseCrumbs('a,,b,'), ['a', 'b']);
+});
+
+test('parseCrumbs caps the stack at 8 entries, keeping the tail', () => {
+  const raw = 'a,b,c,d,e,f,g,h,i,j';
+  const parsed = parseCrumbs(raw);
+  assert.equal(parsed.length, 8, 'cap to MAX_CRUMBS');
+  // The last crumb is the most recent — preserved.
+  assert.equal(parsed[parsed.length - 1], 'j');
+  // The first two are dropped (the oldest).
+  assert.equal(parsed[0], 'c');
+});
+
+test('stringifyCrumbs joins with comma and returns empty for empty', () => {
+  assert.equal(stringifyCrumbs(['a', 'b', 'c']), 'a,b,c');
+  assert.equal(stringifyCrumbs([]), '');
+  assert.equal(stringifyCrumbs(null), '');
+  assert.equal(stringifyCrumbs(undefined), '');
+});
+
+test('stringifyCrumbs then parseCrumbs round-trip preserves token order', () => {
+  const original = ['c100000948', 'g79', 'music'];
+  assert.deepEqual(parseCrumbs(stringifyCrumbs(original)), original);
+});
+
+// --- crumbTokenFor / partsFromCrumb ---------------------------------
+
+test('crumbTokenFor prefers id over c', () => {
+  assert.equal(crumbTokenFor({ id: 'g79' }), 'g79');
+  assert.equal(crumbTokenFor({ c: 'music' }), 'music');
+  assert.equal(crumbTokenFor({ id: 'g79', c: 'music' }), 'g79');
+});
+
+test('crumbTokenFor returns null when neither anchor is set', () => {
+  assert.equal(crumbTokenFor({}), null);
+  assert.equal(crumbTokenFor({ filter: 'l109' }), null);
+  assert.equal(crumbTokenFor(null), null);
+});
+
+test('partsFromCrumb maps lowercase-letter-then-digit tokens to id', () => {
+  assert.deepEqual(partsFromCrumb('g79'),       { id: 'g79' });
+  assert.deepEqual(partsFromCrumb('c100000948'), { id: 'c100000948' });
+  assert.deepEqual(partsFromCrumb('p38913'),     { id: 'p38913' });
+  assert.deepEqual(partsFromCrumb('s12345'),     { id: 's12345' });
+});
+
+test('partsFromCrumb maps letters-only tokens to c=', () => {
+  assert.deepEqual(partsFromCrumb('music'),  { c: 'music' });
+  assert.deepEqual(partsFromCrumb('talk'),   { c: 'talk' });
+  assert.deepEqual(partsFromCrumb('sports'), { c: 'sports' });
+  assert.deepEqual(partsFromCrumb('lang'),   { c: 'lang' });
+});
+
+test('partsFromCrumb returns null for empty / non-string', () => {
+  assert.equal(partsFromCrumb(''), null);
+  assert.equal(partsFromCrumb(null), null);
+  assert.equal(partsFromCrumb(123), null);
+});
+
+// --- renderCrumbTrail ------------------------------------------------
+
+function findChildrenByClass(root, cls) {
+  const out = [];
+  for (let i = 0; i < (root.childNodes || []).length; i++) {
+    const n = root.childNodes[i];
+    if (n && n.nodeType === 1) {
+      if ((n.getAttribute('class') || '').split(/\s+/).includes(cls)) out.push(n);
+    }
+  }
+  return out;
+}
+
+test('renderCrumbTrail emits one anchor per crumb in stack order', () => {
+  const trail = renderCrumbTrail(['c100000948', 'g79', 'music']);
+  assert.equal(trail.tagName, 'nav');
+  assert.ok((trail.getAttribute('class') || '').includes('browse-trail'));
+  const crumbs = findChildrenByClass(trail, 'browse-trail__crumb');
+  assert.equal(crumbs.length, 3);
+  assert.equal(crumbs[0].dataset.crumbToken, 'c100000948');
+  assert.equal(crumbs[1].dataset.crumbToken, 'g79');
+  assert.equal(crumbs[2].dataset.crumbToken, 'music');
+});
+
+test('renderCrumbTrail uses cached labels when present', () => {
+  cache.set('tunein.label.c100000948', 'Folk', TTL_LABEL);
+  cache.set('tunein.label.g79',        'Acoustic', TTL_LABEL);
+  // music intentionally not cached — should fall back to the raw token.
+  const trail = renderCrumbTrail(['c100000948', 'g79', 'music']);
+  const crumbs = findChildrenByClass(trail, 'browse-trail__crumb');
+  assert.equal(crumbs[0].textContent, 'Folk');
+  assert.equal(crumbs[1].textContent, 'Acoustic');
+  assert.equal(crumbs[2].textContent, 'music', 'falls back to raw token when cache misses');
+});
+
+test('renderCrumbTrail href on a crumb embeds the prefix up to (not including) itself', () => {
+  const trail = renderCrumbTrail(['c100000948', 'g79', 'music']);
+  const crumbs = findChildrenByClass(trail, 'browse-trail__crumb');
+  // First crumb: no ancestors, so no `from=`.
+  const h0 = crumbs[0].getAttribute('href');
+  assert.match(h0, /^#\/browse\?id=c100000948$/, `first crumb href: ${h0}`);
+  // Second crumb: ancestors = [c100000948].
+  const h1 = crumbs[1].getAttribute('href');
+  assert.match(h1, /^#\/browse\?id=g79&from=c100000948$/, `second crumb href: ${h1}`);
+  // Third crumb: ancestors = [c100000948, g79].
+  const h2 = crumbs[2].getAttribute('href');
+  assert.match(h2, /^#\/browse\?c=music&from=c100000948%2Cg79$/, `third crumb href: ${h2}`);
+});
+
+test('renderCrumbTrail returns an empty nav for an empty stack', () => {
+  const trail = renderCrumbTrail([]);
+  assert.equal(trail.tagName, 'nav');
+  const crumbs = findChildrenByClass(trail, 'browse-trail__crumb');
+  assert.equal(crumbs.length, 0);
+});
+
+// --- renderEntry picks up the module-level child crumb stack --------
+
+test('renderEntry: child row href embeds the parent crumb stack as from=', () => {
+  // Simulate the user being on `?c=music&from=lang` — the next click
+  // should produce `from=lang,music` (parent stack + current node).
+  _setChildCrumbsForTest(['lang', 'music']);
+  try {
+    const row = renderEntry({
+      text: 'Folk',
+      URL:  'http://opml.radiotime.com/Browse.ashx?id=g79',
+    });
+    const href = row.getAttribute('href');
+    assert.match(href, /^#\/browse\?/);
+    assert.match(href, /id=g79/);
+    assert.match(href, /from=lang%2Cmusic/, `expected from=lang,music in ${href}`);
+  } finally {
+    _setChildCrumbsForTest([]);
+  }
+});
+
+test('renderEntry: with empty child crumb stack, href has no from= param', () => {
+  _setChildCrumbsForTest([]);
+  const row = renderEntry({
+    text: 'Genre',
+    URL:  'http://opml.radiotime.com/Browse.ashx?id=g22',
+  });
+  const href = row.getAttribute('href');
+  assert.equal(href, '#/browse?id=g22', `no from= for root-level child: ${href}`);
+});
+
+// --- backHrefFor: pop the rightmost crumb --------------------------
+
+test('backHrefFor with empty stack lands at the root tabs view', () => {
+  assert.equal(backHrefFor([]), '#/browse');
+  assert.equal(backHrefFor(null), '#/browse');
+  assert.equal(backHrefFor(undefined), '#/browse');
+});
+
+test('backHrefFor with one crumb lands at that crumb with no further from=', () => {
+  // Stack [music] → pop → land on c=music with empty from=.
+  assert.equal(backHrefFor(['music']), '#/browse?c=music');
+});
+
+test('backHrefFor with multiple crumbs pops the rightmost and carries the rest as from=', () => {
+  // Stack [music, g79] → pop → land on id=g79 with from=music.
+  assert.equal(backHrefFor(['music', 'g79']), '#/browse?id=g79&from=music');
+  // Stack [c100000948, g79, music] → pop → land on c=music with from=c100000948,g79.
+  // URLSearchParams encodes commas as %2C.
+  assert.equal(
+    backHrefFor(['c100000948', 'g79', 'music']),
+    '#/browse?c=music&from=c100000948%2Cg79',
+  );
+});

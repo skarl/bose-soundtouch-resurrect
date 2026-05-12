@@ -2603,10 +2603,49 @@ select.settings-input {
   font-family: 'Geist Mono', ui-monospace, monospace;
   text-transform: none;
   letter-spacing: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.browse-crumb__title {
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-weight: 600;
+  color: var(--text, inherit);
 }
 
 .browse-crumb__id {
   color: var(--text-dim, var(--fg-muted));
+  font-size: 0.85em;
+}
+
+/* Crumb trail (ancestor chain, between Back and section header). */
+.browse-trail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 4px 0 6px;
+  font-size: 13px;
+  color: var(--text-dim, var(--fg-muted));
+}
+
+.browse-trail__crumb {
+  text-decoration: none;
+  color: var(--accent);
+}
+
+.browse-trail__crumb:hover { text-decoration: underline; }
+
+.browse-trail__crumb + .browse-trail__crumb::before {
+  content: '›';
+  margin: 0 6px 0 0;
+  color: var(--text-dim, var(--fg-muted));
+}
+
+.browse-trail__crumb.is-disabled {
+  color: var(--text-dim, var(--fg-muted));
+  cursor: default;
+  pointer-events: none;
 }
 
 .browse-back {
