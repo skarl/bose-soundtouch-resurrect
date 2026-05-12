@@ -3,7 +3,7 @@
 // Covers the new layout:
 //   - 3×2 preset grid (6 cells) replaces the inline 6-button row
 //   - cells show slot number, occupant name, optional genre tag
-//   - full-width gradient Test play CTA replaces the per-stream audition
+//   - full-width gradient Play CTA replaces the per-stream audition
 //     buttons; preserves the existing previewStream callsite
 //   - probe-state branching (playable / gated / dark) untouched
 //   - no debug strings ("/mnt/nv/resolver/", "writes to") leak into the DOM
@@ -464,7 +464,7 @@ const PROBE_PLAYABLE = {
     ],
   },
   // Real Tune.ashx fixture so reshape() returns a Bose payload, which
-  // is what the Test play CTA test asserts on.
+  // is what the Play CTA test asserts on.
   tuneinJson: TUNEIN_FIXTURE,
   expires: Date.now() + 600000,
 };
@@ -575,7 +575,7 @@ test('station: cell holding the current station gets the .is-current accent', as
 
 // --- test-play CTA --------------------------------------------------
 
-test('station: full-width Test play CTA appears on playable verdict', async () => {
+test('station: full-width Play CTA appears on playable verdict', async () => {
   const root = makeRoot();
   const destroy = await mountWith(root, 's12345', PROBE_PLAYABLE);
 
@@ -591,7 +591,18 @@ test('station: full-width Test play CTA appears on playable verdict', async () =
   destroy();
 });
 
-test('station: clicking Test play calls previewStream with the chosen ContentItem', async () => {
+test('station: Play CTA label reads exactly "Play" (issue #82 rename)', async () => {
+  const root = makeRoot();
+  const destroy = await mountWith(root, 's12345', PROBE_PLAYABLE);
+
+  const labelEl = root.querySelector('.station-test-play__label');
+  assert.ok(labelEl, 'CTA label slot present');
+  assert.equal(labelEl.textContent, 'Play',
+    'station-detail audition button label is the verb "Play"');
+  destroy();
+});
+
+test('station: clicking Play calls previewStream with the chosen ContentItem', async () => {
   // Replace the api.previewStream call by intercepting via fetch — the
   // test-play handler eventually awaits previewStream({...}) which calls
   // fetch('/api/v1/preview'). Capture the body to assert the callsite.

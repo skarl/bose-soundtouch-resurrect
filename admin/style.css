@@ -2276,7 +2276,7 @@ select.settings-input {
 /* --- station detail v2 -------------------------------------------- */
 /* Three-up preset grid replaces the inline 6-button assign row; each
    cell shows slot number, current occupant, and a small genre tag.
-   Long names truncate. The full-width gradient Test play CTA sits
+   Long names truncate. The full-width gradient Play CTA sits
    between the stream chooser and the assign grid. */
 
 .station-presets-grid {
@@ -2357,7 +2357,7 @@ select.settings-input {
   opacity: 0.6;
 }
 
-/* Full-width gradient Test play CTA. Background gradient is set per
+/* Full-width gradient Play CTA. Background gradient is set per
    station via inline style (stationGradient(name) → linear-gradient).
    White text + soft shadow read on every theme; subtitle is a softer
    line beneath the main label. */

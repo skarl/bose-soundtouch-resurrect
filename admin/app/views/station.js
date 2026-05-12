@@ -194,7 +194,7 @@ function buildTestPlayButton(name) {
 
   const label = document.createElement('span');
   label.className = 'station-test-play__label';
-  label.textContent = 'Test play';
+  label.textContent = 'Play';
 
   const sub = document.createElement('span');
   sub.className = 'station-test-play__sub';
@@ -267,7 +267,7 @@ export default defineView({
     renderSkeleton(root, sid);
     repaintPresetCells();
 
-    // Audition + assign closure state. Test play streams to the speaker,
+    // Play + assign closure state. The Play CTA streams to the speaker,
     // not in the browser. Bo stays tuned until the user picks
     // something else — no auto-stop on toggle-click or navigation.
     let chosenStreamUrl = '';
@@ -293,12 +293,12 @@ export default defineView({
         const envelope = await previewStream({ id: actx.sid, name: liveName, json: bose });
         if (!envelope || envelope.ok !== true) {
           const code = envelope && envelope.error && envelope.error.code;
-          showToast(`Audition failed${code ? ': ' + code : ''}`);
+          showToast(`Playback failed${code ? ': ' + code : ''}`);
           return;
         }
         showToast(`Playing on Bo: ${liveName}`);
       } catch (err) {
-        showToast(`Audition failed: ${err.message || 'transport error'}`);
+        showToast(`Playback failed: ${err.message || 'transport error'}`);
       }
     }
 
@@ -386,7 +386,7 @@ export default defineView({
           anchor = list;
         }
 
-        // Test play CTA goes between the stream chooser and the assign
+        // Play CTA goes between the stream chooser and the assign
         // grid. Reuses chosenStreamUrl from the chooser; preserves the
         // existing previewStream callsite (auditionStream → previewStream).
         const cta = buildTestPlayButton(actx && actx.getName ? actx.getName() : sid);

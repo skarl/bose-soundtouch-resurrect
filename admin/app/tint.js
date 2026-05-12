@@ -66,7 +66,7 @@ export function hashHue(s) {
 }
 
 // CSS linear-gradient string keyed off hashHue(name). Used by the
-// station-detail Test play CTA so each station's gradient is stable
+// station-detail Play CTA so each station's gradient is stable
 // across reloads. Two stops, fixed saturation/lightness — anything
 // fancier should land in tint.js so it stays themeable from one place.
 export function stationGradient(name) {

@@ -558,7 +558,7 @@ and "Popular" (from `/Browse.ashx?c=local`).
 │                                                         │
 │              4 streams · best: 168 kbps AAC · 99% ✓     │
 │                                                         │
-│              [▶ Test play]  [Cancel test]               │
+│              [▶ Play]  [Cancel test]                    │
 │                                                         │
 │  Set as preset:                                         │
 │  [ 1 ]  [ 2 ]  [ 3 ]  [ 4 ]  [ 5 ]  [ 6 ]               │
