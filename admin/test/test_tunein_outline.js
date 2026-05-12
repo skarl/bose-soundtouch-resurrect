@@ -193,9 +193,216 @@ test('normaliseRow: missing image returns empty string', () => {
   assert.equal(row.image, '');
 });
 
-test('normaliseRow: badges starts empty (Slice #79 will populate)', () => {
+test('normaliseRow: badges starts empty when no reliability is present', () => {
   const row = normaliseRow({ type: 'audio', text: 'X' });
   assert.deepEqual(row.badges, []);
+});
+
+// --- normaliseRow: image-suffix opts.size (q for list, d for detail) -
+
+test('normaliseRow: opts.size "d" picks the 600px detail variant', () => {
+  const row = normaliseRow({
+    type:  'audio',
+    text:  'X',
+    image: 'http://cdn-profiles.tunein.com/s12345/images/logo.jpg',
+  }, { size: 'd' });
+  assert.equal(row.image, 'http://cdn-profiles.tunein.com/s12345/images/logod.jpg');
+});
+
+test('normaliseRow: default opts.size keeps the q.jpg list variant', () => {
+  const row = normaliseRow({
+    type:  'audio',
+    text:  'X',
+    image: 'http://cdn-profiles.tunein.com/s12345/images/logo.jpg',
+  }, {});
+  assert.equal(row.image, 'http://cdn-profiles.tunein.com/s12345/images/logoq.jpg');
+});
+
+// --- normaliseRow: tertiary dedup rule (six-combination matrix) ------
+//
+// The two-line subtitle dedup rule applies independently to the
+// secondary line (playing || subtext) and the tertiary line
+// (current_track if non-empty AND distinct from secondary). Six
+// cases exercise every combination of {playing, subtext, current_track}
+// presence + the equality short-circuit.
+
+test('normaliseRow dedup: playing only — secondary=playing, tertiary=""', () => {
+  const row = normaliseRow({
+    type: 'audio', text: 'X', guide_id: 's1',
+    playing: 'Track A',
+  });
+  assert.equal(row.secondary, 'Track A');
+  assert.equal(row.tertiary, '');
+});
+
+test('normaliseRow dedup: subtext only — secondary=subtext, tertiary=""', () => {
+  const row = normaliseRow({
+    type: 'audio', text: 'X', guide_id: 's1',
+    subtext: 'A description',
+  });
+  assert.equal(row.secondary, 'A description');
+  assert.equal(row.tertiary, '');
+});
+
+test('normaliseRow dedup: playing and subtext both present, equal — secondary=playing once', () => {
+  const row = normaliseRow({
+    type: 'audio', text: 'X', guide_id: 's1',
+    playing: 'Same line',
+    subtext: 'Same line',
+  });
+  assert.equal(row.secondary, 'Same line');
+  assert.equal(row.tertiary, '');
+});
+
+test('normaliseRow dedup: playing and subtext both present, different — secondary=playing wins', () => {
+  const row = normaliseRow({
+    type: 'audio', text: 'X', guide_id: 's1',
+    playing: 'Now playing',
+    subtext: 'Description',
+  });
+  assert.equal(row.secondary, 'Now playing');
+  // current_track absent → no third line.
+  assert.equal(row.tertiary, '');
+});
+
+test('normaliseRow dedup: all three present, current_track distinct — tertiary=current_track', () => {
+  const row = normaliseRow({
+    type: 'audio', text: 'X', guide_id: 's1',
+    playing:       'Show name',
+    subtext:       'Description',
+    current_track: 'Artist - Title',
+  });
+  assert.equal(row.secondary, 'Show name');
+  assert.equal(row.tertiary, 'Artist - Title');
+});
+
+test('normaliseRow dedup: none of playing/subtext/current_track present — both blank', () => {
+  const row = normaliseRow({
+    type: 'audio', text: 'X', guide_id: 's1',
+  });
+  assert.equal(row.secondary, '');
+  assert.equal(row.tertiary, '');
+});
+
+test('normaliseRow dedup: current_track equal to secondary collapses to one line', () => {
+  // Belt-and-braces: when subtext == current_track and playing is
+  // absent, the tertiary slot stays empty so the render never repeats
+  // the same string twice.
+  const row = normaliseRow({
+    type: 'audio', text: 'X', guide_id: 's1',
+    subtext:       'Same string',
+    current_track: 'Same string',
+  });
+  assert.equal(row.secondary, 'Same string');
+  assert.equal(row.tertiary, '');
+});
+
+// --- normaliseRow: reliability badge classification ------------------
+
+test('normaliseRow: reliability=92 → green badge', () => {
+  const row = normaliseRow({
+    type: 'audio', text: 'X', guide_id: 's1',
+    reliability: 92,
+  });
+  assert.equal(row.badges.length, 1);
+  assert.equal(row.badges[0].kind, 'reliability');
+  assert.equal(row.badges[0].tier, 'green');
+  assert.equal(row.badges[0].value, 92);
+});
+
+test('normaliseRow: reliability=88 → amber badge', () => {
+  const row = normaliseRow({
+    type: 'audio', text: 'X', guide_id: 's1',
+    reliability: 88,
+  });
+  assert.equal(row.badges.length, 1);
+  assert.equal(row.badges[0].tier, 'amber');
+});
+
+test('normaliseRow: reliability=47 → red badge', () => {
+  const row = normaliseRow({
+    type: 'audio', text: 'X', guide_id: 's1',
+    reliability: 47,
+  });
+  assert.equal(row.badges.length, 1);
+  assert.equal(row.badges[0].tier, 'red');
+});
+
+test('normaliseRow: reliability boundary values (90 → green, 50 → amber, 0 → red, 100 → green)', () => {
+  for (const [v, tier] of [[90, 'green'], [50, 'amber'], [49, 'red'], [0, 'red'], [100, 'green']]) {
+    const row = normaliseRow({
+      type: 'audio', text: 'X', guide_id: 's1',
+      reliability: v,
+    });
+    assert.equal(row.badges[0].tier, tier, `reliability=${v} should be ${tier}`);
+  }
+});
+
+test('normaliseRow: reliability of non-numeric, out-of-range, or missing → no badge', () => {
+  for (const v of [undefined, null, '92', NaN, -1, 101]) {
+    const row = normaliseRow({
+      type: 'audio', text: 'X', guide_id: 's1',
+      reliability: v,
+    });
+    assert.deepEqual(row.badges, [], `reliability=${String(v)} should not emit a badge`);
+  }
+});
+
+// --- normaliseRow: genre chip ----------------------------------------
+
+test('normaliseRow: genre_id present produces a genre chip spec', () => {
+  const row = normaliseRow({
+    type: 'audio', text: 'X', guide_id: 's1',
+    genre_id: 'g79',
+  });
+  const chip = row.chips.find((c) => c.kind === 'genre');
+  assert.ok(chip, 'genre chip emitted');
+  assert.equal(chip.id, 'g79');
+});
+
+test('normaliseRow: missing or empty genre_id emits no genre chip', () => {
+  const row = normaliseRow({ type: 'audio', text: 'X', guide_id: 's1' });
+  assert.equal(row.chips.find((c) => c.kind === 'genre'), undefined);
+  const empty = normaliseRow({ type: 'audio', text: 'X', guide_id: 's1', genre_id: '' });
+  assert.equal(empty.chips.find((c) => c.kind === 'genre'), undefined);
+});
+
+// --- normaliseRow: show_id → tertiary link spec + chips entry --------
+
+test('normaliseRow: show_id with current_track distinct from secondary produces a show-airing tertiary spec', () => {
+  const row = normaliseRow({
+    type: 'audio', text: 'WXYZ FM', guide_id: 's1',
+    subtext:       'Morning',
+    current_track: 'Morning Show with Jane',
+    show_id:       'p12345',
+  });
+  assert.ok(row.tertiary, 'tertiary populated');
+  assert.equal(typeof row.tertiary, 'object');
+  assert.equal(row.tertiary.kind, 'show-airing');
+  assert.equal(row.tertiary.id, 'p12345');
+  assert.equal(row.tertiary.label, 'Morning Show with Jane');
+  // Also surfaces in chips so a chip-based renderer can grab it.
+  const showChip = row.chips.find((c) => c.kind === 'show-airing');
+  assert.ok(showChip, 'show-airing chip surfaces as well');
+  assert.equal(showChip.id, 'p12345');
+});
+
+test('normaliseRow: show_id without current_track produces no chip and no tertiary', () => {
+  const row = normaliseRow({
+    type: 'audio', text: 'X', guide_id: 's1',
+    show_id: 'p99',
+  });
+  assert.equal(row.tertiary, '');
+  assert.equal(row.chips.find((c) => c.kind === 'show-airing'), undefined);
+});
+
+test('normaliseRow: current_track without show_id keeps tertiary as a plain string', () => {
+  const row = normaliseRow({
+    type: 'audio', text: 'X', guide_id: 's1',
+    subtext:       'Country',
+    current_track: 'Artist - Title',
+  });
+  assert.equal(row.tertiary, 'Artist - Title');
 });
 
 // --- extractCursor / extractPivots ----------------------------------

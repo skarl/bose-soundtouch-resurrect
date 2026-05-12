@@ -33,17 +33,34 @@
 //                     ("No stations or shows available"). § 6.2.
 //
 //   normaliseRow(entry, opts) → { id, type, primary, secondary,
-//                                 image, badges }
-//     The basic shape every renderer can lean on. Slice #79 will
-//     extend it with reliability / bitrate / now-playing dedup. For
-//     this slice:
+//                                 tertiary, image, badges, chips }
+//     The basic shape every renderer can lean on:
 //       - id        = guide_id
 //       - type      = classifyOutline(entry)
 //       - primary   = entry.text
 //       - secondary = playing || subtext   (prefer `playing` if both)
-//       - image     = entry.image, suffixed to the 145px logo
-//                     (§ 10 — `…q.jpg`)
-//       - badges    = []   (Slice #79 fills this)
+//       - tertiary  = entry.current_track, only when non-empty AND
+//                     not equal to `secondary`. Renders as the third
+//                     subtitle line. When the entry also carries
+//                     `show_id`, tertiary is a link spec
+//                     ({ kind: "show-airing", id, label }) the
+//                     renderer turns into "Now airing: <label>".
+//       - image     = entry.image, suffixed for the requested size
+//                     (§ 10 of docs/tunein-api.md). `opts.size = "d"`
+//                     selects the 600px detail variant; the default
+//                     is `q` (145px) for list use. The function never
+//                     reads `playing_image` — that's a detail-view
+//                     field (§ 2.4).
+//       - badges    = array of badge specs. Currently only a
+//                     reliability badge ({ kind: "reliability",
+//                     tier: "green" | "amber" | "red", value }) when
+//                     `reliability` is a number 0–100.
+//       - chips     = array of chip specs the renderer turns into a
+//                     chips row. Currently:
+//                       { kind: "genre", id: genre_id } when present
+//                       { kind: "show-airing", id: show_id,
+//                         label: current_track } when show_id is set
+//                       (also surfaces via `tertiary`)
 //
 //   extractCursor(section) → { url, key } | null
 //     Returns the first child of a section whose `key` starts
@@ -104,14 +121,18 @@ export function classifyOutline(entry) {
 }
 
 // Suffix-rewrite for TuneIn art URLs. The service emits a base URL
-// that resolves to the original; appending `q.jpg` before the
-// extension yields the 145×145 variant used everywhere in the
-// admin. See § 10 of docs/tunein-api.md.
+// that resolves to the original; appending a size suffix before the
+// extension picks a variant. `q` (145×145) is used everywhere in the
+// admin list views; `d` (600px) is the detail-view variant. See § 10
+// of docs/tunein-api.md.
 //
 // Idempotent — if the URL already ends in a size suffix, leave it
-// alone.
-function logoUrl(raw) {
+// alone (callers asking for a different size on an already-sized URL
+// are deliberately out of scope; the seam is the API → client
+// boundary where suffixes are stamped exactly once).
+function logoUrl(raw, size) {
   if (typeof raw !== 'string' || raw === '') return '';
+  const suffix = size === 'd' ? 'd.jpg' : 'q.jpg';
   const qIdx = raw.indexOf('?');
   const head = qIdx < 0 ? raw : raw.slice(0, qIdx);
   const tail = qIdx < 0 ? '' : raw.slice(qIdx);
@@ -121,7 +142,7 @@ function logoUrl(raw) {
   if (/[tqdg]\.(?:jpg|png|webp)$/i.test(head)) return raw;
   const dot = head.lastIndexOf('.');
   if (dot < 0) return raw;
-  return `${head.slice(0, dot)}q.jpg${tail}`;
+  return `${head.slice(0, dot)}${suffix}${tail}`;
 }
 
 // Pick the better of {playing, subtext} for the secondary line. The
@@ -134,16 +155,67 @@ function secondaryLineFor(entry) {
   return subtext;
 }
 
+// Bucket a `reliability` score (the service emits 0–100) into one
+// of three tiers. The renderer paints each tier with its own colour
+// class. Out-of-range values + non-numbers return null so the badge
+// is simply omitted.
+function reliabilityTier(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  if (value < 0 || value > 100) return null;
+  if (value >= 90) return 'green';
+  if (value >= 50) return 'amber';
+  return 'red';
+}
+
 // normaliseRow — fold an outline into the shape the renderer wants.
-// `opts` is reserved for the polish-slice (#79); accepted-but-unused
-// today so the call sites can be locked in now.
-export function normaliseRow(entry, _opts) {
+// `opts.size` ("q" by default; "d" for detail view) picks the image
+// variant. `opts` defaults to {} for callers that just want the
+// list shape.
+export function normaliseRow(entry, opts) {
+  const o = (opts && typeof opts === 'object') ? opts : {};
   const id = entry && typeof entry.guide_id === 'string' ? entry.guide_id : '';
   const type = classifyOutline(entry);
   const primary = entry && typeof entry.text === 'string' ? entry.text : '';
   const secondary = secondaryLineFor(entry);
-  const image = entry && typeof entry.image === 'string' ? logoUrl(entry.image) : '';
-  return { id, type, primary, secondary, image, badges: [] };
+
+  // tertiary: current_track only if it's non-empty AND distinct from
+  // secondary. When show_id is also present, emit a link spec instead
+  // of a plain string so the renderer wires "Now airing: <track>" as a
+  // clickable phrase. The chips row carries the same spec too, so a
+  // renderer that prefers a chip layout still has access to it.
+  let tertiary = '';
+  const currentTrack = entry && typeof entry.current_track === 'string'
+    ? entry.current_track
+    : '';
+  const showId = entry && typeof entry.show_id === 'string' && entry.show_id !== ''
+    ? entry.show_id
+    : '';
+  if (currentTrack && currentTrack !== secondary) {
+    tertiary = showId
+      ? { kind: 'show-airing', id: showId, label: currentTrack }
+      : currentTrack;
+  }
+
+  const image = entry && typeof entry.image === 'string'
+    ? logoUrl(entry.image, o.size)
+    : '';
+
+  const badges = [];
+  const tier = reliabilityTier(entry && entry.reliability);
+  if (tier) {
+    badges.push({ kind: 'reliability', tier, value: entry.reliability });
+  }
+
+  const chips = [];
+  const genreId = entry && typeof entry.genre_id === 'string' && entry.genre_id !== ''
+    ? entry.genre_id
+    : '';
+  if (genreId) chips.push({ kind: 'genre', id: genreId });
+  if (showId && currentTrack) {
+    chips.push({ kind: 'show-airing', id: showId, label: currentTrack });
+  }
+
+  return { id, type, primary, secondary, tertiary, image, badges, chips };
 }
 
 // extractCursor — find the `next*` child within a section. Returns
