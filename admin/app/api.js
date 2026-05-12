@@ -112,6 +112,17 @@ export function tuneinBrowse(arg, opts) {
   return getJson(`/tunein/browse${qs}`, opts);
 }
 
+// tuneinDescribe({ c: 'languages' }) → Describe.ashx?c=languages.
+// Used at app load to populate the lcode allow-list (see § 7.5).
+// Accepts the same shape as tuneinBrowse for symmetry.
+export function tuneinDescribe(arg, opts) {
+  let qs = '';
+  if (arg && typeof arg === 'object') {
+    qs = '?' + new URLSearchParams(arg).toString();
+  }
+  return getJson(`/tunein/describe${qs}`, opts);
+}
+
 export function tuneinStation(sid, opts) {
   return getJson(`/tunein/station/${encodeURIComponent(sid)}`, opts);
 }

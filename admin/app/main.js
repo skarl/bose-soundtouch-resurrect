@@ -13,10 +13,11 @@ import preset     from './views/preset.js';
 import settings   from './views/settings.js';
 
 import { installVersionDriftCheck } from './version.js';
-import { getSpeakerInfo } from './api.js';
+import { getSpeakerInfo, tuneinDescribe } from './api.js';
 import { mountShell } from './shell.js';
 import * as ws from './ws.js';
 import * as theme from './theme.js';
+import { cacheLcodesFromDescribe, LCODE_CACHE_KEY } from './tunein-url.js';
 
 theme.init();
 
@@ -63,6 +64,26 @@ function boot() {
   }).catch(() => {
     // Non-fatal — header name stays blank; speaker still works.
   });
+
+  // Populate the lcode allow-list once per session. § 7.5 of the
+  // TuneIn working guide: the service fails open on bogus language
+  // codes, so the client validates every emitted lcode against the
+  // 102-entry catalogue from Describe.ashx?c=languages. The cache
+  // lives in sessionStorage (see admin/app/tunein-url.js); skip the
+  // fetch if a previous boot already populated it.
+  try {
+    const already = (typeof sessionStorage !== 'undefined')
+      ? sessionStorage.getItem(LCODE_CACHE_KEY)
+      : null;
+    if (!already) {
+      tuneinDescribe({ c: 'languages' })
+        .then((json) => cacheLcodesFromDescribe(json))
+        .catch(() => { /* non-fatal — isValidLcode fails closed */ });
+    }
+  } catch (_err) {
+    // sessionStorage unavailable (private mode / quota); the SPA
+    // still works — lcode validation just always returns false.
+  }
 
   ws.connect(store);
 
