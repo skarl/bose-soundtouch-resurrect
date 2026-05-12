@@ -114,7 +114,16 @@ if (!Object.getOwnPropertyDescriptor(ElementProto, 'dataset')) {
   });
 }
 
-const { renderEntry, renderOutline } = await import('../app/views/browse.js');
+const {
+  renderEntry,
+  renderOutline,
+  filterRowEntries,
+  _setActivePagersForTest,
+  _setFilterInputForTest,
+  _resetBrowseStateForTest,
+  _ensureCoordinatorForTest,
+  _applyDomFilterForTest,
+} = await import('../app/views/browse.js');
 
 function classOf(el) { return el.getAttribute('class') || ''; }
 
@@ -670,3 +679,264 @@ test('stationRow: clicking the Play button does not navigate the row link', asyn
   const tc = doc.getElementById('toast-container');
   if (tc && tc.parentNode) tc.parentNode.removeChild(tc);
 });
+
+// --- Issue #77: filter input + eager-serial auto-crawl + strap ------
+//
+// The view exposes a 3-line filter helper (`filterRowEntries`) and a
+// module-local crawl coordinator. These tests pin the contract on
+// both — they're added at the end of the file so the diff stays
+// local to issue #77.
+
+// Build a minimal drill-view DOM tree: section[data-view="browse"
+// data-mode="drill"] wrapping a filter input + browse body. The body
+// hosts however many `.browse-section` cards the caller asks for.
+function buildDrillTree({ sections } = { sections: [] }) {
+  const root = doc.createElement('section');
+  root.setAttribute('data-view', 'browse');
+  root.setAttribute('data-mode', 'drill');
+
+  // Filter input — a real <input> the coordinator can read `value`
+  // from. xmldom doesn't expose the `value` property natively, but
+  // browse.js falls back to getAttribute('value') so we're covered.
+  const input = doc.createElement('input');
+  input.setAttribute('type', 'search');
+  root.appendChild(input);
+
+  const body = doc.createElement('div');
+  body.className = 'browse-body';
+  for (const key of sections) {
+    const sec = doc.createElement('section');
+    sec.className = 'browse-section';
+    sec.setAttribute('data-section', key);
+    const footer = doc.createElement('div');
+    footer.className = 'browse-section__footer';
+    sec.appendChild(footer);
+    body.appendChild(sec);
+  }
+  root.appendChild(body);
+  return { root, input, body };
+}
+
+// Build a synthetic outline page (visible audio rows + optional next
+// cursor) the pager can consume verbatim.
+function makePagerPage(ids, cursorUrl) {
+  const body = ids.map((id) => ({
+    element: 'outline',
+    type: 'audio',
+    text: `Station ${id}`,
+    guide_id: id,
+    URL: `http://opml.radiotime.com/Tune.ashx?id=${id}`,
+    item: 'station',
+  }));
+  if (cursorUrl) {
+    body.push({
+      element: 'outline',
+      type: 'link',
+      text: 'More',
+      URL: cursorUrl,
+      key: 'nextStations',
+    });
+  }
+  return { head: { title: 'X', status: '200' }, body };
+}
+
+// --- 1: filterRowEntries — the 3-line filter rule -------------------
+
+test('filterRowEntries: matches case-insensitively across text/subtext/playing/current_track', () => {
+  const rows = [
+    { text: 'BBC Radio 6', subtext: 'London',  playing: 'Now Playing X', current_track: '' },
+    { text: 'KEXP',        subtext: 'Seattle', playing: 'bbc segment',   current_track: '' },
+    { text: 'NPR',         subtext: 'Boston',  playing: 'Track Z',       current_track: 'BBC News' },
+    { text: 'France Inter',subtext: 'Paris',   playing: 'Le Show',       current_track: 'Pop Hit' },
+  ];
+  const matched = filterRowEntries(rows, 'bbc');
+  // First three hit on different fields; France Inter has no `bbc`
+  // anywhere and is excluded. Confirms the four-field coverage.
+  const ids = matched.map((r) => r.text);
+  assert.deepEqual(ids.sort(), ['BBC Radio 6', 'KEXP', 'NPR']);
+});
+
+test('filterRowEntries: empty query returns every row (full passthrough)', () => {
+  const rows = [{ text: 'A' }, { text: 'B' }, { text: 'C' }];
+  assert.deepEqual(filterRowEntries(rows, '').map((r) => r.text), ['A', 'B', 'C']);
+});
+
+test('filterRowEntries: rows with absent/non-string fields do not throw and do not match', () => {
+  const rows = [
+    { text: 'BBC' },
+    { text: 'No match' },
+    { text: null, subtext: undefined, playing: 42, current_track: { not: 'a string' } },
+  ];
+  const matched = filterRowEntries(rows, 'bbc');
+  assert.equal(matched.length, 1);
+  assert.equal(matched[0].text, 'BBC');
+});
+
+test('filterRowEntries: query trims and lowercases', () => {
+  const rows = [{ text: 'Radio Paradise' }, { text: 'KEXP' }];
+  assert.deepEqual(filterRowEntries(rows, '  RADIO  ').map((r) => r.text), ['Radio Paradise']);
+});
+
+// --- 2: DOM filter toggles `is-filtered-out` ------------------------
+
+test('DOM filter: applies is-filtered-out to non-matching rows; clearing restores', () => {
+  _resetBrowseStateForTest();
+  const { root, input } = buildDrillTree({ sections: ['stations'] });
+  const body = findFirstByClass(root, 'browse-body');
+  const section = findAllBy(root, (el) => el.getAttribute('data-section') === 'stations')[0];
+  // Build a card with three rows; renderEntry stashes _outline.
+  const card = doc.createElement('div');
+  card.className = 'browse-card';
+  const rowsData = [
+    { type: 'audio', guide_id: 's1', text: 'BBC One',  subtext: 'UK' },
+    { type: 'audio', guide_id: 's2', text: 'NPR',      subtext: 'US' },
+    { type: 'audio', guide_id: 's3', text: 'BBC Two',  subtext: 'UK' },
+  ];
+  const rowEls = rowsData.map((d) => {
+    const el = renderEntry(d);
+    card.appendChild(el);
+    return el;
+  });
+  section.insertBefore(card, findFirstByClass(section, 'browse-section__footer'));
+
+  _setFilterInputForTest(input);
+
+  // Type "bbc" — only s1 and s3 survive.
+  input.setAttribute('value', 'bbc');
+  _applyDomFilterForTest(root);
+  assert.equal(hasClass(rowEls[0], 'is-filtered-out'), false);
+  assert.equal(hasClass(rowEls[1], 'is-filtered-out'), true, 'NPR is hidden under bbc filter');
+  assert.equal(hasClass(rowEls[2], 'is-filtered-out'), false);
+
+  // Clear the filter — every row visible again.
+  input.setAttribute('value', '');
+  _applyDomFilterForTest(root);
+  for (const el of rowEls) assert.equal(hasClass(el, 'is-filtered-out'), false);
+
+  _resetBrowseStateForTest();
+  // Detach the tree we built so subsequent tests start clean.
+  if (root.parentNode) root.parentNode.removeChild(root);
+  void body;
+});
+
+// --- 3: Eager-serial coordinator section ordering -------------------
+
+test('coordinator: walks sections serially — section 2 does not start until section 1 exhausts', async () => {
+  _resetBrowseStateForTest();
+  const { root, input, body } = buildDrillTree({ sections: ['local', 'stations'] });
+  doc.documentElement.appendChild(root);
+
+  // Track call order across the two pagers' loadMore calls.
+  const callLog = [];
+
+  // Section 1 ('local') — two pages, then exhausts.
+  let localPages = 0;
+  const localPager = makeStubPager('local', async () => {
+    callLog.push(`local-${localPages + 1}`);
+    localPages++;
+    if (localPages === 1) {
+      return { added: 2, exhausted: false };
+    }
+    return { added: 2, exhausted: true };
+  });
+
+  // Section 2 ('stations') — one page, then exhausts.
+  let stationsPages = 0;
+  const stationsPager = makeStubPager('stations', async () => {
+    callLog.push(`stations-${stationsPages + 1}`);
+    // Before the call, local must already have reported exhausted.
+    assert.equal(localPager.exhausted, true,
+      `stations.loadMore called before local exhausted; callLog=${callLog.join(',')}`);
+    stationsPages++;
+    return { added: 1, exhausted: true };
+  });
+
+  _setActivePagersForTest([localPager, stationsPager]);
+  _setFilterInputForTest(input);
+  input.setAttribute('value', 'bbc');
+
+  await _ensureCoordinatorForTest();
+
+  // Section 1 first (twice), then section 2 (once). No interleaving.
+  assert.deepEqual(callLog, ['local-1', 'local-2', 'stations-1'],
+    `serial ordering: ${callLog.join(', ')}`);
+
+  _resetBrowseStateForTest();
+  if (root.parentNode) root.parentNode.removeChild(root);
+  void body;
+});
+
+// --- 4: Progress strap lifecycle ------------------------------------
+
+test('strap: mounts on crawl start, unmounts when the section exhausts', async () => {
+  _resetBrowseStateForTest();
+  const { root, input, body } = buildDrillTree({ sections: ['local'] });
+  doc.documentElement.appendChild(root);
+
+  let pages = 0;
+  let strapDuringFetch = null;
+  const pager = makeStubPager('local', async () => {
+    // Snapshot the strap state mid-fetch — it should be mounted by now.
+    strapDuringFetch = findFirstByClass(body, 'browse-strap');
+    pages++;
+    return pages === 1
+      ? { added: 1, exhausted: false }
+      : { added: 1, exhausted: true };
+  });
+
+  _setActivePagersForTest([pager]);
+  _setFilterInputForTest(input);
+  input.setAttribute('value', 'bbc');
+
+  await _ensureCoordinatorForTest();
+
+  // Strap mounted at least once during the crawl.
+  assert.ok(strapDuringFetch, 'strap mounts at the top of browse-body during the crawl');
+  assert.ok(hasClass(strapDuringFetch, 'browse-strap'),
+    'mounted element carries the .browse-strap class');
+
+  // Strap removed once the section exhausted and there are no more
+  // sections to crawl.
+  const strapAfter = findFirstByClass(body, 'browse-strap');
+  assert.equal(strapAfter, null, 'strap unmounts when the coordinator drains');
+
+  _resetBrowseStateForTest();
+  if (root.parentNode) root.parentNode.removeChild(root);
+});
+
+// Build a stub pager with the minimal surface the coordinator reads:
+// status (with section + sectionCap), exhausted, pagesFetched, rows,
+// loadMore(), dispose(). `step` is the user-supplied async function
+// that decides what each loadMore returns; the wrapper flips
+// `exhausted` and bumps `pagesFetched` based on the step's return.
+function makeStubPager(section, step) {
+  const state = {
+    rows: [],
+    exhausted: false,
+    pagesFetched: 0,
+    section,
+    sectionCap: 50,
+  };
+  const pager = {
+    get rows() { return state.rows; },
+    get exhausted() { return state.exhausted; },
+    get pagesFetched() { return state.pagesFetched; },
+    get status() {
+      return {
+        section: state.section,
+        scanned: state.pagesFetched,
+        sectionCap: state.sectionCap,
+        exhausted: state.exhausted,
+      };
+    },
+    async loadMore() {
+      if (state.exhausted) return { added: 0, exhausted: true };
+      const r = await step();
+      state.pagesFetched++;
+      if (r && r.exhausted) state.exhausted = true;
+      return r;
+    },
+    dispose() { state.exhausted = true; },
+  };
+  return pager;
+}
