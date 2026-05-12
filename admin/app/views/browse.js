@@ -32,6 +32,15 @@ import {
 } from '../tunein-outline.js';
 import { createPager } from '../tunein-pager.js';
 
+// Section keys that the c=pbrowse show-drill response uses. The
+// `liveShow` container holds the currently-airing show as a single
+// playable p-prefix row; `topics` holds recent episodes as t-prefix
+// rows with `topic_duration` metadata. The classifier + renderEntry
+// pipeline already handles stations/shows/related/local; only these
+// two need specialised dispatch (a p row carrying a Play icon for
+// liveShow, a duration-formatted meta line for topics).
+const PBROWSE_SECTION_KEYS = new Set(['liveShow', 'topics']);
+
 // Top-level tab → Browse.ashx parameter. Verified against the TuneIn
 // API reference (docs/tunein-api.md § Categories worth knowing):
 //   - Music genres live under `?c=music`
@@ -548,9 +557,18 @@ function renderSection(section) {
   }
   wrap.appendChild(h);
 
-  // Row card.
+  // Row card. Show-drill sections (liveShow / topics) take a
+  // specialised renderer: a liveShow's single p-prefix child needs the
+  // Play icon (stationRow auto-attaches it for p/s/t guide_ids), and
+  // topic rows need their duration formatted into the meta line.
   if (visibleChildren.length > 0) {
-    wrap.appendChild(renderCard(visibleChildren));
+    if (sectionKey === 'liveShow') {
+      wrap.appendChild(renderLiveShowCard(visibleChildren));
+    } else if (sectionKey === 'topics') {
+      wrap.appendChild(renderTopicsCard(visibleChildren));
+    } else {
+      wrap.appendChild(renderCard(visibleChildren));
+    }
   }
 
   // Pivot chips (related section in practice — but we don't filter by
@@ -616,6 +634,112 @@ function renderCard(entries) {
     card.appendChild(row);
   }
   return card;
+}
+
+// ---- c=pbrowse show-drill renderers --------------------------------
+//
+// renderLiveShowCard — the `liveShow` section's single p-prefix child
+// is the currently-airing show. Default renderEntry classifies a
+// p-prefix link as 'show' and routes through showRow (no Play). For
+// the show drill we want a play-on-tap row, so route the child through
+// stationRow directly — its auto-attach Play icon (#78) lights up on
+// p/s/t guide_ids.
+//
+// The section's `text` ("Now Airing") is the card label; the row body
+// carries the show's name + optional subtext (host / description).
+function renderLiveShowCard(entries) {
+  const card = document.createElement('div');
+  card.className = 'browse-card';
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const row = renderLiveShowRow(entry);
+    if (i === entries.length - 1) row.classList.add('is-last');
+    row._outline = entry;
+    card.appendChild(row);
+  }
+  return card;
+}
+
+function renderLiveShowRow(entry) {
+  const id = (entry && typeof entry.guide_id === 'string') ? entry.guide_id : '';
+  const norm = normaliseRow(entry);
+  // stationRow auto-mounts a Play icon for s/p/t prefixes (components.js
+  // § isPlayableSid). The href routes to #/station/<sid> by default;
+  // for a live-show row that's not ideal but the Play icon is the
+  // primary affordance, and the issue explicitly forbids us from
+  // touching components.js for #81. No preset-assign affordance is
+  // added — the issue forbids it and stationRow does not emit one.
+  return stationRow({
+    sid:      id,
+    name:     norm.primary || id,
+    art:      norm.image,
+    location: norm.secondary,
+  });
+}
+
+// renderTopicsCard — episode list. Each `t`-prefix child is rendered
+// via stationRow (which auto-attaches the Play icon for t-prefix
+// guide_ids). topic_duration, when present, is formatted as MM:SS or
+// H:MM:SS and threaded into the meta line via stationRow's `location`
+// slot — the only stationRow field that surfaces non-numeric text on
+// the secondary line without requiring a components.js change.
+function renderTopicsCard(entries) {
+  const card = document.createElement('div');
+  card.className = 'browse-card';
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const row = renderTopicRow(entry);
+    if (i === entries.length - 1) row.classList.add('is-last');
+    row._outline = entry;
+    card.appendChild(row);
+  }
+  return card;
+}
+
+function renderTopicRow(entry) {
+  const id = (entry && typeof entry.guide_id === 'string') ? entry.guide_id : '';
+  const norm = normaliseRow(entry);
+  // Surface topic_duration in the meta slot when present. The location
+  // chunk is the only one stationRow renders for a row with no
+  // bitrate/codec/reliability, so we thread duration there. When
+  // duration is missing we fall back to the description (subtext) via
+  // normaliseRow's secondary line.
+  const duration = formatTopicDuration(entry && entry.topic_duration);
+  // Tertiary line gets the description when we used duration as the
+  // primary meta. Otherwise the description rides on the secondary
+  // slot via norm.secondary.
+  const tertiary = duration ? norm.secondary : '';
+  return stationRow({
+    sid:      id,
+    name:     norm.primary || id,
+    art:      norm.image,
+    location: duration || norm.secondary,
+    tertiary,
+  });
+}
+
+// formatTopicDuration — TuneIn's `topic_duration` is a seconds value
+// (numeric or numeric string). Returns "M:SS" for sub-hour episodes
+// and "H:MM:SS" for longer ones. Returns '' on unparseable input.
+function formatTopicDuration(raw) {
+  let seconds;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    seconds = Math.max(0, Math.floor(raw));
+  } else if (typeof raw === 'string' && /^\d+$/.test(raw)) {
+    seconds = Math.max(0, parseInt(raw, 10));
+  } else {
+    return '';
+  }
+  if (seconds === 0) return '';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const ss = String(s).padStart(2, '0');
+  if (h > 0) {
+    const mm = String(m).padStart(2, '0');
+    return `${h}:${mm}:${ss}`;
+  }
+  return `${m}:${ss}`;
 }
 
 // ---- per-section pagination (#76) ----------------------------------
