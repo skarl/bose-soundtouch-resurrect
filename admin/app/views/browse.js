@@ -869,6 +869,9 @@ export function renderEntry(entry) {
       location: norm.secondary,
       bitrate:  entry && entry.bitrate,
       codec:    entry && entry.formats,
+      tertiary: norm.tertiary,
+      badges:   norm.badges,
+      chips:    norm.chips,
     });
   } else if (kind === 'show') {
     // Shows are drill-into-detail, not direct play. Reuse stationRow

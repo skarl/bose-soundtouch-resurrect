@@ -8,6 +8,7 @@
 import { setArt } from './art.js';
 import { icon } from './icons.js';
 import * as theme from './theme.js';
+import { canonicaliseBrowseUrl } from './tunein-url.js';
 import { playGuideId } from './api.js';
 import { cache, TTL_STREAM } from './tunein-cache.js';
 import { showToast } from './toast.js';
@@ -416,14 +417,31 @@ export function stationCard({ sid, name, art, location, format }) {
   return card;
 }
 
-// stationRow({ sid, name, art, location, bitrate, codec }) — the shared
-// list row used by browse-drill, search results, and search empty
-// state. Layout matches admin/design-mockup/app/views-browse-search.jsx
-// StationCard:
+// stationRow({ sid, name, art, location, bitrate, codec, tertiary,
+//              badges, chips }) — the shared list row used by
+// browse-drill, search results, and search empty state. Layout
+// matches admin/design-mockup/app/views-browse-search.jsx
+// StationCard, with the polish-slice extensions (#79):
 //   [stationArt 40] name (semibold, ellipsis)
-//                   location · NNk CODEC      [▶ Play] [chevron]
-// All metadata fields are optional; the meta line still renders if any
-// piece is present so the row height stays stable across mixed lists.
+//                   location · NNk CODEC · [reliability ●] · [genre]
+//                   [tertiary line — current_track or "Now airing: …"]
+//                                                      [▶ Play] [chev]
+//
+// All metadata fields are optional; the meta line still renders if
+// any piece is present so the row height stays stable across mixed
+// lists. The tertiary line is the ceiling — three subtitle lines +
+// chips + logo is the densest the card can ever be.
+//
+//   - tertiary: either a plain string ("Artist - Title") or a
+//     { kind: "show-airing", id, label } spec, which renders as a
+//     clickable "Now airing: <label>" anchor that drills to the
+//     show via Browse.ashx?id=<id>.
+//   - badges:   array of badge specs from normaliseRow. Currently
+//     just { kind: "reliability", tier: "green"|"amber"|"red" }.
+//   - chips:    array of chip specs from normaliseRow. Currently
+//     { kind: "genre", id } drills into the genre via
+//     canonicaliseBrowseUrl; { kind: "show-airing", id, label } is
+//     consumed by the tertiary-line path and skipped here.
 //
 // When `sid` carries an `s`, `p`, or `t` prefix the row gets an inline
 // Play button between the body and the chevron. Tapping the Play
@@ -440,6 +458,9 @@ export function stationRow({
   location = '',
   bitrate,
   codec = '',
+  tertiary = '',
+  badges,
+  chips,
 } = {}) {
   const row = document.createElement('a');
   row.className = 'station-row';
@@ -456,6 +477,8 @@ export function stationRow({
   nameEl.textContent = name || sid;
   body.appendChild(nameEl);
 
+  // --- secondary meta line (location · bitrate · chips · reliability) -
+
   const meta = document.createElement('span');
   meta.className = 'station-row__meta';
 
@@ -469,12 +492,7 @@ export function stationRow({
   const kbps = Number(bitrate);
   const haveKbps = Number.isFinite(kbps) && kbps > 0;
   if (haveKbps || codec) {
-    if (location) {
-      const sep = document.createElement('span');
-      sep.className = 'station-row__sep';
-      sep.textContent = '·';
-      meta.appendChild(sep);
-    }
+    if (location) appendMetaSeparator(meta);
     const codecText = codec ? String(codec).toUpperCase() : '';
     const fmt = document.createElement('span');
     fmt.className = 'station-row__fmt';
@@ -484,7 +502,38 @@ export function stationRow({
     meta.appendChild(fmt);
   }
 
+  // Reliability badge sits on the chips row, alongside bitrate/codec.
+  // It's stamped after the format chunk so it reads as the rightmost
+  // status on the line.
+  const reliability = Array.isArray(badges)
+    ? badges.find((b) => b && b.kind === 'reliability')
+    : null;
+  if (reliability) {
+    if (meta.childNodes.length > 0) appendMetaSeparator(meta);
+    meta.appendChild(reliabilityBadge(reliability));
+    // The row itself carries the tier as a data attribute so CSS /
+    // tests can target rows by reliability without walking the chips.
+    row.setAttribute('data-reliability-tier', reliability.tier);
+  }
+
+  // Genre chip on the meta line — clickable; the renderer composes
+  // the drill URL via canonicaliseBrowseUrl so the hash anchor stays
+  // canonical.
+  const genreChip = Array.isArray(chips)
+    ? chips.find((c) => c && c.kind === 'genre')
+    : null;
+  if (genreChip) {
+    if (meta.childNodes.length > 0) appendMetaSeparator(meta);
+    meta.appendChild(genreChipEl(genreChip));
+  }
+
   if (meta.childNodes.length > 0) body.appendChild(meta);
+
+  // --- tertiary line (current_track or "Now airing: <label>") ---------
+
+  if (tertiary != null && tertiary !== '') {
+    body.appendChild(tertiaryLine(tertiary));
+  }
 
   row.appendChild(body);
 
@@ -498,6 +547,132 @@ export function stationRow({
   row.appendChild(chev);
 
   return row;
+}
+
+// Append a "·" dot to a meta line. Used between each segment of the
+// chip-and-meta row so location/bitrate/reliability/genre never collide
+// when they line up.
+function appendMetaSeparator(meta) {
+  const sep = document.createElement('span');
+  sep.className = 'station-row__sep';
+  sep.textContent = '·';
+  meta.appendChild(sep);
+}
+
+// reliabilityBadge — small coloured dot + percentage label. CSS
+// drives the tier colour via `data-tier`; the rendered text is the
+// numeric reliability for readers who want the underlying value.
+function reliabilityBadge(spec) {
+  const el = document.createElement('span');
+  el.className = 'station-row__reliability';
+  el.setAttribute('data-tier', spec.tier);
+  // ARIA-friendly hint so screen readers don't read a bare percentage.
+  const pct = Number.isFinite(spec.value) ? Math.round(spec.value) : null;
+  if (pct != null) {
+    el.setAttribute('aria-label', `Reliability ${pct}%`);
+  } else {
+    el.setAttribute('aria-label', `Reliability ${spec.tier}`);
+  }
+  const dot = document.createElement('span');
+  dot.className = 'station-row__reliability-dot';
+  dot.setAttribute('aria-hidden', 'true');
+  el.appendChild(dot);
+  if (pct != null) {
+    const text = document.createElement('span');
+    text.className = 'station-row__reliability-text';
+    text.textContent = `${pct}%`;
+    el.appendChild(text);
+  }
+  return el;
+}
+
+// genreChipEl — small clickable pill that drills into the genre.
+// The href is composed via canonicaliseBrowseUrl so the URL passes
+// through the language-tree rewrite and the magic-param strip; the
+// resulting `Browse.ashx?id=g<NN>&render=json` is then translated
+// into the SPA hash form (#/browse?id=g<NN>).
+function genreChipEl(chip) {
+  const id = chip && typeof chip.id === 'string' ? chip.id : '';
+  if (!id) {
+    const stub = document.createElement('span');
+    stub.className = 'station-row__chip station-row__chip--genre is-disabled';
+    return stub;
+  }
+  // Compose a Browse URL from the bare id and canonicalise it, then
+  // strip the host/path/render so we land on a #/browse?... hash.
+  let drillHash;
+  try {
+    const browseUrl = canonicaliseBrowseUrl(`Browse.ashx?id=${encodeURIComponent(id)}`);
+    drillHash = browseUrlToHash(browseUrl);
+  } catch (_err) {
+    drillHash = `#/browse?id=${encodeURIComponent(id)}`;
+  }
+  const a = document.createElement('a');
+  a.className = 'station-row__chip station-row__chip--genre';
+  a.setAttribute('href', drillHash);
+  a.setAttribute('data-chip-kind', 'genre');
+  a.setAttribute('data-genre-id', id);
+  a.textContent = id;
+  // The chip is its own click target inside the row anchor; the row
+  // itself drills to the station's detail view, the chip drills to
+  // the genre. Stop the click bubbling so the row's href doesn't fire.
+  a.addEventListener('click', (evt) => {
+    if (evt && typeof evt.stopPropagation === 'function') evt.stopPropagation();
+  });
+  return a;
+}
+
+// Convert a canonical `Browse.ashx?...&render=json` URL into the SPA
+// hash form. Drops the path + render param; preserves drill keys.
+function browseUrlToHash(canonical) {
+  const qIdx = canonical.indexOf('?');
+  if (qIdx < 0) return '#/browse';
+  const qs = new URLSearchParams(canonical.slice(qIdx + 1));
+  qs.delete('render');
+  const out = qs.toString();
+  return out ? `#/browse?${out}` : '#/browse';
+}
+
+// tertiaryLine — the third subtitle slot. `spec` is either a plain
+// string ("Artist - Title") or a { kind: "show-airing", id, label }
+// link spec, in which case the line renders as a clickable
+// "Now airing: <label>" anchor.
+function tertiaryLine(spec) {
+  const el = document.createElement('span');
+  el.className = 'station-row__tertiary';
+  if (typeof spec === 'string') {
+    el.textContent = spec;
+    return el;
+  }
+  if (spec && spec.kind === 'show-airing' && typeof spec.id === 'string') {
+    const prefix = document.createElement('span');
+    prefix.className = 'station-row__tertiary-prefix';
+    prefix.textContent = 'Now airing: ';
+    el.appendChild(prefix);
+    let drillHash;
+    try {
+      const browseUrl = canonicaliseBrowseUrl(
+        `Browse.ashx?c=pbrowse&id=${encodeURIComponent(spec.id)}`,
+      );
+      drillHash = browseUrlToHash(browseUrl);
+    } catch (_err) {
+      drillHash = `#/browse?c=pbrowse&id=${encodeURIComponent(spec.id)}`;
+    }
+    const a = document.createElement('a');
+    a.className = 'station-row__show-link';
+    a.setAttribute('href', drillHash);
+    a.setAttribute('data-show-id', spec.id);
+    a.textContent = spec.label || spec.id;
+    // The row's outer anchor also has an href; the show link must
+    // win on click without dragging the row along.
+    a.addEventListener('click', (evt) => {
+      if (evt && typeof evt.stopPropagation === 'function') evt.stopPropagation();
+    });
+    el.appendChild(a);
+    return el;
+  }
+  // Unknown spec shape — render an empty span so callers don't crash.
+  return el;
 }
 
 // The Play icon only attaches to rows whose classified type plays

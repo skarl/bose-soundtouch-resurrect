@@ -2519,6 +2519,109 @@ select.settings-input {
   flex-shrink: 0;
 }
 
+/* Slice #79 — chips on the meta line + the tertiary subtitle line.
+ * Three-line subtitle is the ceiling (name + meta + tertiary); the
+ * chips row sits inside .station-row__meta so it shares the
+ * horizontal-flow + gap with location/bitrate. */
+
+.station-row__reliability {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.station-row__reliability-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.station-row__reliability[data-tier="green"] .station-row__reliability-dot {
+  background: var(--ok, #2a7);
+}
+.station-row__reliability[data-tier="amber"] .station-row__reliability-dot {
+  background: var(--warn, #d80);
+}
+.station-row__reliability[data-tier="red"] .station-row__reliability-dot {
+  background: var(--danger, #c33);
+}
+
+.station-row__reliability-text {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+/* Inline meta-line chip — used for the genre drill. Smaller than
+ * .browse-pivot so it sits naturally amid the meta text. */
+.station-row__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+  font-size: 10.5px;
+  line-height: 1.4;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 120ms ease;
+}
+
+.station-row__chip:hover,
+.station-row__chip:focus-visible {
+  background: var(--surface-hi);
+}
+
+.station-row__chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.station-row__chip.is-disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+/* Tertiary subtitle line — current_track or "Now airing: <show>".
+ * Sits below .station-row__meta inside .station-row__body, sharing
+ * the body's column flow. */
+.station-row__tertiary {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.station-row__tertiary-prefix {
+  flex-shrink: 0;
+  color: var(--text-dim, var(--fg-muted));
+}
+
+.station-row__show-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.station-row__show-link:hover,
+.station-row__show-link:focus-visible {
+  color: var(--fg);
+}
+
 /* Inline Play button on station/show/topic rows. 44x44 tap target per
  * the issue (#78). The icon stays small (20px) but the click surface
  * fills the square so it's reachable on touch. Hover lifts the bg

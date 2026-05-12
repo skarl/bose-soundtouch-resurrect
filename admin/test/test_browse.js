@@ -940,3 +940,101 @@ function makeStubPager(section, step) {
   };
   return pager;
 }
+
+// --- Slice #79: row-rendering polish (chips + tertiary + reliability) -
+
+test('renderEntry: station with playing + distinct current_track renders two subtitle lines in the DOM', () => {
+  const node = renderEntry({
+    type:          'audio',
+    guide_id:      's54321',
+    text:          'Morning Wave',
+    playing:       'Morning Wave Show',
+    current_track: 'Artist - Title',
+  });
+  // Secondary line carries the show name (playing wins over subtext).
+  const loc = findFirstByClass(node, 'station-row__loc');
+  assert.ok(loc, 'secondary line present');
+  assert.equal(loc.textContent, 'Morning Wave Show');
+  // Tertiary line carries the current track and is its own element.
+  const tertiary = findFirstByClass(node, 'station-row__tertiary');
+  assert.ok(tertiary, 'tertiary subtitle line present');
+  assert.equal(tertiary.textContent, 'Artist - Title');
+});
+
+test('renderEntry: station where current_track equals secondary renders only one subtitle line', () => {
+  const node = renderEntry({
+    type:          'audio',
+    guide_id:      's54322',
+    text:          'Loop Radio',
+    subtext:       'Same string',
+    current_track: 'Same string',
+  });
+  const tertiary = findFirstByClass(node, 'station-row__tertiary');
+  assert.equal(tertiary, null,
+    'no tertiary line when current_track collapses into secondary');
+});
+
+test('renderEntry: station with reliability:47 carries the red reliability badge', () => {
+  const node = renderEntry({
+    type:        'audio',
+    guide_id:    's11111',
+    text:        'Flaky FM',
+    reliability: 47,
+  });
+  assert.equal(node.getAttribute('data-reliability-tier'), 'red',
+    'row carries the red reliability tier as a data attribute');
+  const badge = findFirstByClass(node, 'station-row__reliability');
+  assert.ok(badge, 'reliability badge mounted');
+  assert.equal(badge.getAttribute('data-tier'), 'red');
+});
+
+test('renderEntry: station with reliability:92 carries the green reliability tier', () => {
+  const node = renderEntry({
+    type:        'audio',
+    guide_id:    's11112',
+    text:        'Solid FM',
+    reliability: 92,
+  });
+  assert.equal(node.getAttribute('data-reliability-tier'), 'green');
+});
+
+test('renderEntry: station with genre_id renders a clickable genre chip drilling into id=g<NN>', () => {
+  const node = renderEntry({
+    type:     'audio',
+    guide_id: 's22222',
+    text:     'Genre Station',
+    genre_id: 'g79',
+  });
+  const chip = findFirstByClass(node, 'station-row__chip--genre');
+  assert.ok(chip, 'genre chip mounted');
+  assert.equal(chip.tagName, 'a');
+  assert.equal(chip.getAttribute('data-genre-id'), 'g79');
+  assert.match(chip.getAttribute('href'), /^#\/browse\?/);
+  assert.match(chip.getAttribute('href'), /id=g79/);
+});
+
+test('renderEntry: station with show_id renders "Now airing: <track>" link drilling into pbrowse', () => {
+  const node = renderEntry({
+    type:          'audio',
+    guide_id:      's33333',
+    text:          'WXYZ FM',
+    current_track: 'Morning Show with Jane',
+    show_id:       'p12345',
+  });
+  const tertiary = findFirstByClass(node, 'station-row__tertiary');
+  assert.ok(tertiary, 'tertiary line mounted');
+  const prefix = findFirstByClass(tertiary, 'station-row__tertiary-prefix');
+  assert.ok(prefix, 'tertiary line has "Now airing: " prefix');
+  assert.match(prefix.textContent, /Now airing:/);
+  const link = findFirstByClass(tertiary, 'station-row__show-link');
+  assert.ok(link, 'show link mounted');
+  assert.equal(link.tagName, 'a');
+  assert.equal(link.getAttribute('data-show-id'), 'p12345');
+  assert.equal(link.textContent, 'Morning Show with Jane');
+  // The drill URL targets Browse.ashx?c=pbrowse&id=<show_id>, encoded
+  // into the SPA hash form. #81 will render this as a real show drill.
+  const href = link.getAttribute('href');
+  assert.match(href, /^#\/browse\?/);
+  assert.match(href, /c=pbrowse/);
+  assert.match(href, /id=p12345/);
+});
