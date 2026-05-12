@@ -4,10 +4,16 @@
 # live stream URL and tells Bo to /select it. Used by the inline Play
 # icon in browse / search lists for ad-hoc "play this on Bo" actions.
 #
-# Body (JSON): { "id": "<guide_id>" }  where guide_id matches s|p|t<digits>.
+# Body (JSON):
+#   { "id": "<guide_id>" }
+#   { "id": "<guide_id>", "url": "<pre-resolved-stream-url>" }
+# guide_id matches s|p|t<digits>. When `url` is supplied (e.g. cached
+# by the client from a recent /play of the same id) the CGI skips its
+# own Tune.ashx roundtrip but still applies the placeholder filter and
+# still POSTs /select.
 #
 # Returns:
-#   { "ok": true }                          on success
+#   { "ok": true, "url": "<resolved-or-supplied-url>" } on success
 #   { "ok": false, "error": "off-air" }     when Tune.ashx returned the
 #                                           nostream placeholder
 #   { "ok": false, "error": "not-available" } when Tune.ashx returned
@@ -62,6 +68,9 @@ emit_error() {
 }
 
 emit_ok() {
+    # Surface the resolved stream URL so the admin can cache it under
+    # tunein.stream.<guide_id> and feed it back on subsequent plays.
+    url_for_envelope=$(json_escape "$1")
     printf 'Status: 200 OK\r\n'
     printf 'Content-Type: application/json; charset=utf-8\r\n'
     printf 'Cache-Control: no-store\r\n'
@@ -69,7 +78,7 @@ emit_ok() {
     printf 'Access-Control-Allow-Methods: POST, OPTIONS\r\n'
     printf 'Access-Control-Allow-Headers: Content-Type\r\n'
     printf '\r\n'
-    printf '{"ok":true}\n'
+    printf '{"ok":true,"url":"%s"}\n' "$url_for_envelope"
     exit 0
 }
 
@@ -130,6 +139,7 @@ else
 fi
 
 body_id=$(json_string_field id <"$body_file")
+body_url=$(json_string_field url <"$body_file")
 
 # Validate id — must be s|p|t-prefixed digits (station / show / topic).
 case "$body_id" in
@@ -137,27 +147,31 @@ case "$body_id" in
     *) emit_error '400 Bad Request' 'invalid-id' ;;
 esac
 
-# Resolve via Tune.ashx directly (not through the `tunein` CGI: we
-# need the body in this CGI's address space for placeholder filtering
-# and URL extraction). The MAGIC_TUNE param set is the one validated
-# in docs/tunein-api.md § 7.4.
-tune_url="$TUNEIN_BASE/Tune.ashx?$MAGIC_TUNE&id=$body_id"
-tune_file="$body_file.tune"
-tune_status=$(/usr/bin/curl -s -o "$tune_file" -w '%{http_code}' \
-    -A "$UA" "$tune_url")
+# Resolve via Tune.ashx unless the caller supplied a cached URL.
+# Skipping the resolve roundtrip is the whole point of the client-side
+# tunein.stream.<guide_id> cache; the placeholder filter still runs
+# below so a stale cached entry can never select a tombstone.
+if [ -n "$body_url" ]; then
+    first_url="$body_url"
+else
+    tune_url="$TUNEIN_BASE/Tune.ashx?$MAGIC_TUNE&id=$body_id"
+    tune_file="$body_file.tune"
+    tune_status=$(/usr/bin/curl -s -o "$tune_file" -w '%{http_code}' \
+        -A "$UA" "$tune_url")
 
-if [ -z "$tune_status" ] || [ "$tune_status" = "000" ] || [ "$tune_status" -ge 400 ] 2>/dev/null; then
-    emit_error '502 Bad Gateway' 'tune-failed'
-fi
+    if [ -z "$tune_status" ] || [ "$tune_status" = "000" ] || [ "$tune_status" -ge 400 ] 2>/dev/null; then
+        emit_error '502 Bad Gateway' 'tune-failed'
+    fi
 
-# Pluck the first `"url": "..."` value. The body is a JSON array of
-# stream entries ordered by reliability; the first usable one wins.
-# busybox has no jq, so hand-roll the parse.
-first_url=$(sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
-    <"$tune_file" | head -n 1)
+    # Pluck the first `"url": "..."` value. The body is a JSON array of
+    # stream entries ordered by reliability; the first usable one wins.
+    # busybox has no jq, so hand-roll the parse.
+    first_url=$(sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        <"$tune_file" | head -n 1)
 
-if [ -z "$first_url" ]; then
-    emit_error '502 Bad Gateway' 'no-stream'
+    if [ -z "$first_url" ]; then
+        emit_error '502 Bad Gateway' 'no-stream'
+    fi
 fi
 
 # Defence-in-depth: filter the two known placeholder URLs at the CGI
@@ -222,4 +236,4 @@ if grep -q '<error' "$sp_resp_file" 2>/dev/null; then
     emit_error '502 Bad Gateway' 'select-rejected'
 fi
 
-emit_ok
+emit_ok "$first_url"
