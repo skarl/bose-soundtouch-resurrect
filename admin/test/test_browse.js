@@ -181,6 +181,8 @@ test('renderEntry: drillable section renders a browse-row with id badge + label 
   });
   assert.equal(node.tagName, 'a');
   assert.ok(classOf(node).includes('browse-row'));
+  // The hash anchor encodes only the drill keys (id/c/filter/...) —
+  // render=json belongs on the network URL, not in the SPA route.
   assert.equal(node.getAttribute('href'), '#/browse?id=g22');
 
   const idBadge = findFirstByClass(node, 'browse-row__id');
@@ -191,6 +193,33 @@ test('renderEntry: drillable section renders a browse-row with id badge + label 
 
   const chev = findFirstByClass(node, 'browse-row__chev');
   assert.ok(chev, 'chevron slot present');
+});
+
+test('renderEntry: language-tree row (Welsh) rewrites the broken-form URL into a c=music drill hash', () => {
+  // The API itself emits `id=c424724&filter=l117` for Welsh in the
+  // c=lang response; that URL returns the tombstone. canonicaliseBrowseUrl
+  // rewrites it into `c=music&filter=l117`, which returns the music hub
+  // (25 drillable genre links). The href must reflect the rewrite.
+  const node = renderEntry({
+    text: 'Welsh',
+    URL:  'http://opml.radiotime.com/Browse.ashx?id=c424724&filter=l117',
+  });
+  assert.equal(node.tagName, 'a');
+  const href = node.getAttribute('href');
+  assert.match(href, /^#\/browse\?/);
+  assert.match(href, /c=music/, `expected c=music in hash: ${href}`);
+  assert.match(href, /filter=l117/, `expected filter=l117 in hash: ${href}`);
+  assert.doesNotMatch(href, /id=c424724/, `expected id=c424724 to be rewritten away: ${href}`);
+});
+
+test('renderEntry: language-tree row preserves filter into the drill hash for Bashkir', () => {
+  const node = renderEntry({
+    text: 'Bashkir',
+    URL:  'http://opml.radiotime.com/Browse.ashx?id=c424724&filter=l216',
+  });
+  const href = node.getAttribute('href');
+  assert.match(href, /c=music/);
+  assert.match(href, /filter=l216/);
 });
 
 test('renderEntry: browse-row count badge renders when station_count is set', () => {

@@ -4,8 +4,13 @@
 //   1. Root view (#/browse): three-tab segmented control (Genre /
 //      Location / Language). Tab click fetches that subtree in-place;
 //      no route change.
-//   2. Drill view (#/browse?id=<id>): fetches Browse.ashx?id=<id>,
-//      renders children + a Back link to the root.
+//   2. Drill view (#/browse?id=<id>, #/browse?c=music&filter=l109,
+//      etc.): fetches Browse.ashx with the matching drill keys, renders
+//      children + a Back link to the root. The hash carries any of
+//      id / c / filter / pivot / offset; the URLs the API itself emits
+//      run through canonicaliseBrowseUrl (tunein-url.js) so the
+//      language-tree rewrite (§ 7.3) happens at the row → href seam,
+//      not at fetch time.
 //
 // Card layout matches admin/design-mockup/app/views-browse-search.jsx:
 //   - non-audio entries → .browse-row inside one .browse-card with mono
@@ -18,6 +23,7 @@ import { html, mount, defineView } from '../dom.js';
 import { tuneinBrowse } from '../api.js';
 import { stationRow } from '../components.js';
 import { icon } from '../icons.js';
+import { canonicaliseBrowseUrl, extractDrillKey } from '../tunein-url.js';
 
 // Top-level tab → Browse.ashx parameter. Verified against the TuneIn
 // API reference (docs/tunein-api.md § Categories worth knowing):
@@ -32,15 +38,56 @@ const TABS = [
 
 export default defineView({
   mount(root, _store, ctx) {
-    const drillId = (ctx && ctx.query && ctx.query.id) || null;
-    if (drillId) {
-      renderDrill(root, drillId);
+    const query = (ctx && ctx.query) || {};
+    const drillParts = pickDrillParts(query);
+    if (drillParts) {
+      renderDrill(root, drillParts);
     } else {
       renderRoot(root);
     }
     return {};
   },
 });
+
+// A drill URL can carry any of {id, c, filter, pivot, offset}. The
+// presence of `id` or `c` is the load-bearing signal; the others
+// modify the drill. Returns null when neither anchor is set (root
+// view).
+function pickDrillParts(query) {
+  if (!query || (typeof query.id !== 'string' && typeof query.c !== 'string')) {
+    return null;
+  }
+  const out = {};
+  for (const key of ['id', 'c', 'filter', 'pivot', 'offset']) {
+    if (typeof query[key] === 'string' && query[key] !== '') out[key] = query[key];
+  }
+  return out;
+}
+
+// Compose the hash anchor for a drill row from its parts. Mirrors
+// composeDrillUrl but emits the SPA-internal hash form. The keys are
+// already plain strings; URLSearchParams handles encoding.
+function drillHashFor(parts) {
+  const qs = new URLSearchParams();
+  if (parts.id)     qs.set('id', parts.id);
+  if (parts.c)      qs.set('c', parts.c);
+  if (parts.filter) qs.set('filter', parts.filter);
+  if (parts.pivot)  qs.set('pivot', parts.pivot);
+  if (parts.offset) qs.set('offset', parts.offset);
+  return `#/browse?${qs.toString()}`;
+}
+
+// Display label for the drill crumb — a compact form of the parts.
+// `c=music&filter=l216` reads more usefully than just `music`.
+function crumbLabelFor(parts) {
+  const segs = [];
+  if (parts.id) segs.push(parts.id);
+  if (parts.c)  segs.push(`c=${parts.c}`);
+  if (parts.filter) segs.push(`filter=${parts.filter}`);
+  if (parts.pivot)  segs.push(`pivot=${parts.pivot}`);
+  if (parts.offset) segs.push(`offset=${parts.offset}`);
+  return segs.join(' · ');
+}
 
 // ---- root view (segmented tabs) -------------------------------------
 
@@ -100,7 +147,7 @@ function selectTab(tab, buttons, body, headerLeft, headerCount) {
 
 // ---- drill view (id=...) --------------------------------------------
 
-function renderDrill(root, id) {
+function renderDrill(root, parts) {
   const back = document.createElement('a');
   back.className = 'browse-back';
   back.href = '#/browse';
@@ -115,7 +162,7 @@ function renderDrill(root, id) {
   headerLeft.className = 'section-h__title browse-crumb';
   const crumbId = document.createElement('span');
   crumbId.className = 'browse-crumb__id';
-  crumbId.textContent = id;
+  crumbId.textContent = crumbLabelFor(parts);
   headerLeft.appendChild(crumbId);
   const headerCount = document.createElement('span');
   headerCount.className = 'section-h__meta';
@@ -134,7 +181,11 @@ function renderDrill(root, id) {
     </section>
   `);
 
-  loadInto(body, tuneinBrowse(id), headerCount);
+  // tuneinBrowse accepts a parts object as the c-style top-level form
+  // (`{c: 'music', filter: 'l216'}`) or a bare id string. The c+filter
+  // shape is the language-tree rewrite output (§ 7.3); pass parts
+  // through verbatim.
+  loadInto(body, tuneinBrowse(parts), headerCount);
 }
 
 // ---- shared loader --------------------------------------------------
@@ -257,20 +308,28 @@ export function renderEntry(entry) {
   }
 
   // Drillable section / link → .browse-row with id badge + label +
-  // chevron. Non-resolvable entries become a disabled row.
-  const id = (entry && entry.guide_id) || extractIdFromUrl(entry && entry.URL);
-  const row = document.createElement(id ? 'a' : 'span');
-  row.className = id ? 'browse-row' : 'browse-row is-disabled';
-  if (id) row.setAttribute('href', `#/browse?id=${encodeURIComponent(id)}`);
+  // chevron. Non-resolvable entries become a disabled row. URL goes
+  // through canonicaliseBrowseUrl so the language-tree rewrite
+  // (§ 7.3) and the magic-param strip (§ 7.4) happen once, here, at
+  // the seam where API-emitted URLs cross into client-emitted URLs.
+  const drillParts = drillPartsFor(entry);
+  const drillable = drillParts != null;
+  const row = document.createElement(drillable ? 'a' : 'span');
+  row.className = drillable ? 'browse-row' : 'browse-row is-disabled';
+  if (drillable) row.setAttribute('href', drillHashFor(drillParts));
+
+  const badgeText = drillParts
+    ? (drillParts.id || (drillParts.c ? `c=${drillParts.c}` : ''))
+    : '';
 
   const idBadge = document.createElement('span');
   idBadge.className = 'browse-row__id';
-  idBadge.textContent = id || '';
+  idBadge.textContent = badgeText;
   row.appendChild(idBadge);
 
   const label = document.createElement('span');
   label.className = 'browse-row__label';
-  label.textContent = (entry && entry.text) || (id || '(unnamed)');
+  label.textContent = (entry && entry.text) || badgeText || '(unnamed)';
   row.appendChild(label);
 
   // Some Browse.ashx entries surface a count via current_track or
@@ -283,7 +342,7 @@ export function renderEntry(entry) {
     row.appendChild(c);
   }
 
-  if (id) {
+  if (drillable) {
     const chev = document.createElement('span');
     chev.className = 'browse-row__chev';
     chev.appendChild(icon('arrow', 14));
@@ -291,6 +350,28 @@ export function renderEntry(entry) {
   }
 
   return row;
+}
+
+// Pick the drill parts for a link entry: prefer the canonicalised URL
+// (which honours the language-tree rewrite); fall back to bare
+// guide_id when the entry has no URL. Returns null if neither is
+// usable — the caller renders a disabled row.
+function drillPartsFor(entry) {
+  if (!entry) return null;
+  if (typeof entry.URL === 'string' && entry.URL !== '') {
+    try {
+      const canonical = canonicaliseBrowseUrl(entry.URL);
+      const parts = extractDrillKey(canonical);
+      if (parts.id || parts.c) return parts;
+    } catch (_err) {
+      // URL was malformed (e.g. colon-form lcode that the service
+      // shouldn't even emit). Fall through and try guide_id.
+    }
+  }
+  if (typeof entry.guide_id === 'string' && entry.guide_id !== '') {
+    return { id: entry.guide_id };
+  }
+  return null;
 }
 
 function countOf(entry) {
@@ -304,8 +385,3 @@ function countOf(entry) {
   return null;
 }
 
-function extractIdFromUrl(url) {
-  if (typeof url !== 'string') return null;
-  const m = url.match(/[?&](?:id|c)=([^&]+)/);
-  return m ? decodeURIComponent(m[1]) : null;
-}
