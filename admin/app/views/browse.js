@@ -580,16 +580,26 @@ export function renderCrumbTrail(stack) {
   return trail;
 }
 
-// For every crumb in `stack` that lacks a cached label, dispatch a
-// Describe.ashx?id=<token> in parallel (cap DESCRIBE_CONCURRENCY)
-// and patch the trail DOM in-place when the title arrives. Concurrency
-// is bounded by waiting for the oldest pending describe to settle
-// before issuing the next one.
+// For every crumb in `stack` that lacks a cached label, fetch its
+// label in parallel (cap DESCRIBE_CONCURRENCY) and patch the trail
+// DOM in-place when the title arrives. Concurrency is bounded by
+// waiting for the oldest pending request to settle before issuing
+// the next one.
 //
-// Describe.ashx only returns useful titles for s/p/t prefixes; for
-// g/c/r/l/m/a/n it returns an empty body. We *try* every token; the
-// ones that come back blank stay rendered as raw IDs (the documented
-// fallback from the issue spec). Same effect as the cached badge.
+// Endpoint choice per token (the API doesn't expose a single "what
+// is this thing called?" call):
+//   - s / p / t prefix → Describe.ashx?id=<X>, title in body[0].
+//     These are real entities; Describe is the entity-detail endpoint.
+//   - everything else (g / c / r / l / m / a / n, plus plain words
+//     like `music` / `talk` / `sports` / `lang`) → Browse.ashx?id=<X>
+//     (or ?c=<X> for the plain-word case), title in head.title.
+//     Describe returns an empty body for these prefixes, so it
+//     can't serve as the label source. The issue text says "Describe",
+//     but the verified-on-Bo behaviour is that Describe head has
+//     {status} only; head.title comes from Browse. Pragmatic split.
+//
+// Tokens whose resolved title is blank stay rendered as raw IDs —
+// the documented final fallback from the issue spec.
 async function hydrateCrumbLabels(stack, trailEl) {
   if (!Array.isArray(stack) || stack.length === 0) return;
   const todo = [];
@@ -606,19 +616,39 @@ async function hydrateCrumbLabels(stack, trailEl) {
       // Wait for any one to finish before issuing the next.
       await Promise.race(inFlight);
     }
-    const p = describeAndApply(token, trailEl).finally(() => inFlight.delete(p));
+    const p = resolveLabelAndApply(token, trailEl).finally(() => inFlight.delete(p));
     inFlight.add(p);
   }
   // Drain the remaining wave so failures surface in dev tools.
   await Promise.allSettled(Array.from(inFlight));
 }
 
-async function describeAndApply(token, trailEl) {
+// Resolve a single crumb token to a human-readable label and patch
+// the trail. Picks the appropriate endpoint per prefix; falls through
+// silently when no label can be discovered.
+async function resolveLabelAndApply(token, trailEl) {
   let title = '';
   try {
-    const json = await tuneinDescribe({ id: token });
-    const t = json && json.head && json.head.title;
-    if (typeof t === 'string' && t !== '') title = t;
+    if (/^[spt]\d+$/.test(token)) {
+      // Entity prefixes — Describe returns the canonical name in
+      // body[0]. Stations use `name`; shows / topics use `title`.
+      const json = await tuneinDescribe({ id: token });
+      const e = json && Array.isArray(json.body) && json.body[0];
+      if (e) {
+        if (typeof e.title === 'string' && e.title !== '') title = e.title;
+        else if (typeof e.name === 'string' && e.name !== '') title = e.name;
+      }
+    } else {
+      // Category prefixes + plain words — Browse returns head.title.
+      // partsFromCrumb routes lowercase-letter+digit tokens through
+      // `id=` and letters-only tokens through `c=`.
+      const parts = partsFromCrumb(token);
+      if (parts) {
+        const json = await tuneinBrowse(parts);
+        const t = json && json.head && json.head.title;
+        if (typeof t === 'string' && t !== '') title = t;
+      }
+    }
   } catch (_err) {
     // Network error / non-200 — give up silently. The trail keeps
     // the raw-token rendering, which is the issue's documented
