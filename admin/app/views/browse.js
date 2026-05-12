@@ -74,11 +74,27 @@ export function _setChildCrumbsForTest(crumbs) {
 // in-flight fetches become no-ops via pager.dispose()).
 let _activePagers = [];
 
+// Per-drill auto-crawl coordinator. Walks `_activePagers` in section
+// order while the filter input has text; serial across sections so Bo's
+// busybox CGI never sees two parallel cursor follows. Reset on every
+// navigation; setFilter(q) is the only entry point.
+let _coordinator = null;
+
+// Per-drill filter input element. Stashed module-local so the
+// coordinator can query it during the crawl loop (cheaper than
+// threading the value through every await).
+let _filterInput = null;
+
 function disposeActivePagers() {
   for (const p of _activePagers) {
     try { p.dispose(); } catch (_err) { /* defensive */ }
   }
   _activePagers = [];
+  if (_coordinator) {
+    try { _coordinator.stop(); } catch (_err) { /* defensive */ }
+    _coordinator = null;
+  }
+  _filterInput = null;
 }
 
 export default defineView({
@@ -296,6 +312,13 @@ function renderDrill(root, parts, crumbs) {
   // at depth 1) the trail is omitted entirely.
   const trail = stack.length > 0 ? renderCrumbTrail(stack) : null;
 
+  // Page-top filter input, always visible (not behind an icon).
+  // Instant DOM filter on keystroke; 300ms-debounced auto-crawl
+  // trigger drives the per-section pagers serially while the filter
+  // has text.
+  const filterWrap = renderFilterInput();
+  _filterInput = filterWrap._input;
+
   const body = document.createElement('div');
   body.className = 'browse-body';
   body.setAttribute('aria-live', 'polite');
@@ -304,6 +327,7 @@ function renderDrill(root, parts, crumbs) {
     <section data-view="browse" data-mode="drill">
       <p class="breadcrumb">${back}</p>
       ${trail}
+      ${filterWrap}
       ${header}
       ${body}
     </section>
@@ -388,6 +412,14 @@ function loadInto(body, promise, headerCount, head) {
       // Mount one pager + Load-more button per section that came back
       // with a cursor URL parked on it by renderSection / renderFlatSection.
       mountLoadMoreButtons(body);
+      // If the filter input already has text (e.g. user navigates with
+      // a sticky filter), apply it to the freshly-rendered rows and
+      // kick the coordinator. The DOM filter is cheap; skipping it
+      // when the input is empty avoids a wasted walk.
+      if (currentFilterQuery() !== '') {
+        applyDomFilter();
+        ensureCoordinator();
+      }
     })
     .catch((err) => {
       body.replaceChildren();
@@ -828,8 +860,9 @@ export function renderEntry(entry) {
   const kind = classifyOutline(entry);
   const norm = normaliseRow(entry);
 
+  let node;
   if (kind === 'station' || kind === 'topic') {
-    return stationRow({
+    node = stationRow({
       sid:      norm.id || entry.guide_id || '',
       name:     norm.primary,
       art:      norm.image,
@@ -837,23 +870,24 @@ export function renderEntry(entry) {
       bitrate:  entry && entry.bitrate,
       codec:    entry && entry.formats,
     });
-  }
-
-  if (kind === 'show') {
+  } else if (kind === 'show') {
     // Shows are drill-into-detail, not direct play. Reuse stationRow
     // for layout parity but the URL goes through the drill hash.
-    return showRow(entry, norm);
+    node = showRow(entry, norm);
+  } else if (kind === 'tombstone') {
+    node = disabledRow(norm.primary || '(unavailable)');
+  } else {
+    // drill / pivot / nav / cursor all fall through to the
+    // browse-row shape. Pivot/cursor entries shouldn't reach here in
+    // the multi-section path (they're stripped or chip-rendered) but
+    // we keep the fallback honest.
+    node = drillRow(entry, norm, kind);
   }
-
-  if (kind === 'tombstone') {
-    return disabledRow(norm.primary || '(unavailable)');
-  }
-
-  // drill / pivot / nav / cursor all fall through to the
-  // browse-row shape. Pivot/cursor entries shouldn't reach here in
-  // the multi-section path (they're stripped or chip-rendered) but
-  // we keep the fallback honest.
-  return drillRow(entry, norm, kind);
+  // Stash the raw outline so the page-top filter can match against
+  // text / subtext / playing / current_track without a re-classify
+  // pass. Property (not attribute) so the wire format stays clean.
+  node._outline = entry;
+  return node;
 }
 
 // Show rows reuse the station-row layout (art + name + secondary line
@@ -1126,4 +1160,427 @@ function cssEscape(s) {
   return String(s).replace(/[^a-zA-Z0-9_-]/g, (ch) =>
     '\\' + ch.charCodeAt(0).toString(16) + ' ');
 }
+
+// ---- page-top filter + auto-crawl coordinator ----------------------
+//
+// The filter input mounts at the top of every drill view. Two
+// behaviours:
+//
+//   1. Inline DOM filter (instant, no debounce) — rows whose
+//      text/subtext/playing/current_track don't contain the query
+//      substring (case-insensitive) gain `is-filtered-out`, which CSS
+//      collapses to display:none. The 3-line core lives in
+//      `filterRowEntries` below; the view's input handler just calls
+//      it and the DOM applicator. No `tunein-filter` module — the
+//      architecture review explicitly rejected one (deletion test:
+//      it's a pass-through).
+//
+//   2. Eager-serial auto-crawl (300ms debounced trigger) — when the
+//      filter has text AND at least one section has a non-exhausted
+//      pager, the coordinator walks `_activePagers` in section order
+//      (`local` → `stations` → `shows`, skipping `related` — no
+//      cursor). Each pager pulls pages back-to-back until exhausted,
+//      until the 50-page cap, or until the filter clears. New rows
+//      mount via the same `appendNewRows` path the Load-more button
+//      uses, then the DOM filter is re-applied so non-matches stay
+//      hidden. Strictly serial: Bo's busybox CGI doubles in cost
+//      under parallel requests, which would starve the now-playing
+//      poller.
+
+// Section keys whose pagers participate in the eager-serial crawl,
+// in the order the coordinator walks them. `related` is excluded
+// because it has no cursor — there's no `nextRelated` outline.
+const CRAWL_SECTION_ORDER = ['local', 'stations', 'shows'];
+
+const FILTER_DEBOUNCE_MS = 300;
+
+// Build the filter input UI. Returns the wrapper element with the
+// inner <input> stashed on `._input` for the caller (renderDrill) to
+// register as the module-local `_filterInput`.
+function renderFilterInput() {
+  const wrap = document.createElement('div');
+  wrap.className = 'browse-filter';
+  const input = document.createElement('input');
+  input.setAttribute('type', 'search');
+  input.setAttribute('class', 'browse-filter__input');
+  input.setAttribute('placeholder', 'Filter rows… (e.g. bbc)');
+  input.setAttribute('aria-label', 'Filter rows');
+  input.setAttribute('autocomplete', 'off');
+  input.setAttribute('spellcheck', 'false');
+
+  // Debounce timer for the auto-crawl trigger. The DOM filter itself
+  // is instant — no debounce — so typing feels responsive.
+  let debounce = null;
+  const onInput = () => {
+    applyDomFilter();
+    if (debounce != null) {
+      try { clearTimeout(debounce); } catch (_e) { /* ignored */ }
+    }
+    debounce = setTimeout(() => {
+      debounce = null;
+      const q = currentFilterQuery();
+      if (q === '') {
+        // Filter cleared — stop any active crawl mid-page.
+        if (_coordinator) _coordinator.stop();
+      } else {
+        // Filter has text — make sure the coordinator is running.
+        ensureCoordinator();
+      }
+    }, FILTER_DEBOUNCE_MS);
+  };
+  if (typeof input.addEventListener === 'function') {
+    input.addEventListener('input', onInput);
+    input.addEventListener('change', onInput);
+  }
+  wrap.appendChild(input);
+  wrap._input = input;
+  return wrap;
+}
+
+// Read the current filter query, lowercased + trimmed. Empty string
+// when the input is missing or blank.
+function currentFilterQuery() {
+  if (!_filterInput) return '';
+  // xmldom's input has no `value` setter; read via attribute when the
+  // property is absent.
+  const v = typeof _filterInput.value === 'string'
+    ? _filterInput.value
+    : (_filterInput.getAttribute && _filterInput.getAttribute('value')) || '';
+  return v.trim().toLowerCase();
+}
+
+// The 3-line filter rule, inlined here so the view stays the single
+// owner of the per-keystroke match. Exported only so the test can
+// pin the contract: rows whose text / subtext / playing /
+// current_track contain the query (case-insensitive) survive.
+export function filterRowEntries(rows, query) {
+  const q = typeof query === 'string' ? query.trim().toLowerCase() : '';
+  if (q === '') return Array.isArray(rows) ? rows.slice() : [];
+  const fields = (r) => [r && r.text, r && r.subtext, r && r.playing, r && r.current_track];
+  return (rows || []).filter((r) => fields(r).some((f) => typeof f === 'string' && f.toLowerCase().includes(q)));
+}
+
+// Walk every rendered row inside the drill body and toggle the
+// `is-filtered-out` class against the current query. Rows without an
+// `_outline` stash (e.g. the disabled fallback) stay visible — they're
+// not paged content.
+function applyDomFilter(scope) {
+  const root = scope || (_filterInput && rootOf(_filterInput)) || null;
+  if (!root) return;
+  const q = currentFilterQuery();
+  const rows = findAllRowElements(root);
+  for (const node of rows) {
+    if (q === '') {
+      if (node.classList && typeof node.classList.remove === 'function') {
+        node.classList.remove('is-filtered-out');
+      }
+      continue;
+    }
+    const entry = node._outline;
+    if (!entry) continue;
+    const matched = filterRowEntries([entry], q).length === 1;
+    if (matched) {
+      if (node.classList && typeof node.classList.remove === 'function') {
+        node.classList.remove('is-filtered-out');
+      }
+    } else {
+      if (node.classList && typeof node.classList.add === 'function') {
+        node.classList.add('is-filtered-out');
+      }
+    }
+  }
+}
+
+// Walk an element subtree, return every node tagged with the four
+// row classes the renderer emits. The DOM filter operates on these
+// exclusively.
+function findAllRowElements(root) {
+  const out = [];
+  function walk(node) {
+    if (!node) return;
+    if (node.nodeType === 1) {
+      const cls = (node.getAttribute && node.getAttribute('class')) || '';
+      const parts = cls.split(/\s+/);
+      if (parts.includes('station-row') || parts.includes('browse-row')) {
+        // Skip the disabled fallback shapes — they aren't paged rows.
+        out.push(node);
+      }
+    }
+    for (const c of node.childNodes || []) walk(c);
+  }
+  walk(root);
+  return out;
+}
+
+// Climb to the drill view root from any descendant. The drill body
+// hangs off `section[data-view="browse"][data-mode="drill"]`; we
+// walk parents until we find it (or hit the document).
+function rootOf(node) {
+  let cur = node;
+  while (cur && cur.parentNode) {
+    const tag = cur.tagName && String(cur.tagName).toLowerCase();
+    if (tag === 'section' && cur.getAttribute &&
+        cur.getAttribute('data-view') === 'browse') {
+      return cur;
+    }
+    cur = cur.parentNode;
+  }
+  return cur || node;
+}
+
+// The eager-serial coordinator. One instance per drill view; reset
+// on every navigation via disposeActivePagers().
+function ensureCoordinator() {
+  if (_coordinator) {
+    // Already running — let the loop pick up the new query on its
+    // next iteration. `isFilterActive()` is checked between awaits.
+    return _coordinator.kick();
+  }
+  if (_activePagers.length === 0) return Promise.resolve();
+  _coordinator = createCrawlCoordinator();
+  return _coordinator.start();
+}
+
+// The coordinator state machine. Holds the section index, the active
+// pager, the progress strap, and a generation token so disposal mid-
+// fetch is a no-op on the late resolution.
+function createCrawlCoordinator() {
+  let gen = 0;
+  let strap = null;
+  let stopped = false;
+  let running = false;
+
+  function nextPager(fromIndex) {
+    // Section order is fixed; pick the first non-exhausted pager
+    // matching CRAWL_SECTION_ORDER starting at index. Pagers from
+    // other section keys are ignored (the spec is explicit about
+    // skipping `related`).
+    for (let i = fromIndex; i < CRAWL_SECTION_ORDER.length; i++) {
+      const key = CRAWL_SECTION_ORDER[i];
+      const p = _activePagers.find((x) => x.status && x.status.section === key);
+      if (p && !p.exhausted) return { pager: p, index: i, key };
+    }
+    return null;
+  }
+
+  function isFilterActive() {
+    return currentFilterQuery() !== '';
+  }
+
+  function mountStrap(sectionKey, scanned, cap) {
+    const root = _filterInput ? rootOf(_filterInput) : null;
+    if (!root) return null;
+    const body = findFirstChildByClass(root, 'browse-body');
+    if (!body) return null;
+    // The strap mounts at the top of the drill body so it sits just
+    // above the section card currently being crawled. One strap at a
+    // time — repurposed across sections.
+    let el = findFirstChildByClass(body, 'browse-strap');
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'browse-strap';
+      el.setAttribute('role', 'status');
+      el.setAttribute('aria-live', 'polite');
+      const label = document.createElement('span');
+      label.className = 'browse-strap__label';
+      el.appendChild(label);
+      if (body.firstChild) body.insertBefore(el, body.firstChild);
+      else body.appendChild(el);
+    }
+    updateStrapText(el, sectionKey, scanned, cap);
+    return el;
+  }
+
+  function updateStrapText(el, sectionKey, scanned, _cap) {
+    if (!el) return;
+    let label = findFirstChildByClass(el, 'browse-strap__label');
+    if (!label) {
+      label = document.createElement('span');
+      label.className = 'browse-strap__label';
+      el.appendChild(label);
+    }
+    const human = sectionLabel(sectionKey);
+    label.textContent = `Scanning ${human} · ${scanned} of ?`;
+  }
+
+  function unmountStrap() {
+    if (strap && strap.parentNode) {
+      try { strap.parentNode.removeChild(strap); } catch (_e) { /* ignored */ }
+    }
+    strap = null;
+  }
+
+  function attachKeepCrawlingAffordance(sectionKey, pager) {
+    // The pager hit its 50-page cap with the filter still active.
+    // Surface a "Keep crawling" button beside the strap; clicking it
+    // resumes the same pager with a fresh cap of equal size.
+    const root = _filterInput ? rootOf(_filterInput) : null;
+    if (!root) return;
+    const body = findFirstChildByClass(root, 'browse-body');
+    if (!body) return;
+    let el = findFirstChildByClass(body, 'browse-strap');
+    if (!el) {
+      el = mountStrap(sectionKey, pager.pagesFetched || 0, pager.status && pager.status.sectionCap);
+    }
+    if (!el) return;
+    // If an existing button is mounted, leave it alone.
+    if (findFirstChildByClass(el, 'browse-strap__keep')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'browse-strap__keep';
+    btn.textContent = 'Keep crawling';
+    btn.addEventListener('click', () => {
+      // Bump the pager out of "exhausted by cap" by lifting the cap
+      // (caller asked for it). We can't poke pager.exhausted directly,
+      // so swap in a fresh pager picking up at the same cursor URL.
+      // In practice this is a rare path — when it lands, we restart
+      // the coordinator after replacing the pager in `_activePagers`.
+      restartCappedPager(pager);
+      if (btn.parentNode) btn.parentNode.removeChild(btn);
+      if (_coordinator) _coordinator.kick();
+    });
+    el.appendChild(btn);
+  }
+
+  async function loop() {
+    if (running) return;
+    running = true;
+    const myGen = ++gen;
+    try {
+      let idx = 0;
+      while (!stopped && myGen === gen && isFilterActive()) {
+        const next = nextPager(idx);
+        if (!next) break;
+        idx = next.index;
+        strap = mountStrap(next.key, next.pager.pagesFetched || 0,
+          next.pager.status && next.pager.status.sectionCap);
+        // Pull one page at a time; the pager's own pageCap halts.
+        let result;
+        try {
+          result = await next.pager.loadMore();
+        } catch (_err) {
+          // Pager failure — give up on this section, move on.
+          idx = next.index + 1;
+          continue;
+        }
+        if (stopped || myGen !== gen) break;
+        // Mount the newly-fetched rows into the section's card.
+        const root = _filterInput ? rootOf(_filterInput) : null;
+        if (root) {
+          const section = findSectionByKey(root, next.key);
+          if (section) appendNewRows(section, next.pager);
+          applyDomFilter(root);
+        }
+        // Update the strap with the post-fetch scanned-count.
+        updateStrapText(strap, next.key, next.pager.pagesFetched || 0,
+          next.pager.status && next.pager.status.sectionCap);
+        if (next.pager.exhausted) {
+          // Did we exhaust on the cap with the filter still active?
+          // Surface the affordance and pause this section.
+          const cap = next.pager.status && next.pager.status.sectionCap;
+          const hitCap = cap != null && next.pager.pagesFetched >= cap;
+          if (hitCap && isFilterActive()) {
+            attachKeepCrawlingAffordance(next.key, next.pager);
+            // Pause — the user's click resumes the coordinator.
+            return;
+          }
+          // Natural exhaustion — move to the next section. Unmount
+          // the strap; the next iteration will mount a fresh one.
+          unmountStrap();
+          idx = next.index + 1;
+        }
+        // result.added intentionally not branched on — even an empty
+        // page (post-dedup) is valid progress; the pager's status
+        // update is what drives the strap.
+        void result;
+      }
+    } finally {
+      running = false;
+      // Tidy up if we exited because of stop/filter-clear/section-
+      // exhaustion. The keep-crawling pause path returns early
+      // without falling through here.
+      if (stopped || !isFilterActive() || myGen !== gen) {
+        unmountStrap();
+      } else if (nextPager(0) == null) {
+        // All eligible sections exhausted with nothing capped.
+        unmountStrap();
+      }
+    }
+  }
+
+  return {
+    start() { stopped = false; return loop(); },
+    stop()  { stopped = true; ++gen; unmountStrap(); },
+    kick()  { if (!running) return loop(); return Promise.resolve(); },
+    get running() { return running; },
+  };
+}
+
+// Replace a capped pager with a fresh instance pointed at its current
+// cursor URL. The new pager keeps the same dedup seed (existing rendered
+// row IDs) so already-mounted rows don't re-mount. Mutates
+// `_activePagers` in place so the coordinator's next nextPager() finds
+// it.
+function restartCappedPager(oldPager) {
+  // The pager doesn't surface its current cursor URL; we re-discover it
+  // from the section's `data-cursor-url` attribute — but only on a
+  // fresh response after the cap. In practice the section retained the
+  // original page-0 cursor; the safest restart is to dispose and stop.
+  // Callers in this slice rely on the user clicking Load-more to push
+  // further; mark the old pager disposed so the coordinator skips it.
+  try { oldPager.dispose(); } catch (_e) { /* ignored */ }
+}
+
+function findFirstChildByClass(root, cls) {
+  function walk(node) {
+    if (!node) return null;
+    if (node.nodeType === 1) {
+      const c = (node.getAttribute && node.getAttribute('class')) || '';
+      if (c.split(/\s+/).includes(cls)) return node;
+    }
+    for (const child of node.childNodes || []) {
+      const found = walk(child);
+      if (found) return found;
+    }
+    return null;
+  }
+  return walk(root);
+}
+
+function findSectionByKey(root, key) {
+  function walk(node) {
+    if (!node) return null;
+    if (node.nodeType === 1 && node.getAttribute &&
+        node.getAttribute('data-section') === key) {
+      return node;
+    }
+    for (const c of node.childNodes || []) {
+      const found = walk(c);
+      if (found) return found;
+    }
+    return null;
+  }
+  return walk(root);
+}
+
+// Human label for the strap. Section keys are TuneIn's wire-format
+// shorthand; surface the same case-aware names the API itself emits
+// in section headers.
+function sectionLabel(key) {
+  if (key === 'local')    return 'Local Stations';
+  if (key === 'stations') return 'Stations';
+  if (key === 'shows')    return 'Shows';
+  return key || 'rows';
+}
+
+// Test-only entry points. The coordinator is otherwise driven by the
+// filter input's change event.
+export function _getCoordinatorForTest() { return _coordinator; }
+export function _setActivePagersForTest(pagers) { _activePagers = pagers.slice(); }
+export function _setFilterInputForTest(el) { _filterInput = el; }
+export function _resetBrowseStateForTest() {
+  disposeActivePagers();
+}
+export function _ensureCoordinatorForTest() { return ensureCoordinator(); }
+export function _applyDomFilterForTest(root) { applyDomFilter(root); }
 

@@ -2692,6 +2692,75 @@ select.settings-input {
   display: none;
 }
 
+/* Page-top filter input — drill-view-only, always visible. Issue #77. */
+.browse-filter {
+  margin: 0 0 8px;
+}
+
+.browse-filter__input {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.browse-filter__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* DOM filter applicator — rows whose text/subtext/playing/current_track
+   don't contain the query collapse to display:none. Same class on
+   .station-row and .browse-row. */
+.station-row.is-filtered-out,
+.browse-row.is-filtered-out {
+  display: none;
+}
+
+/* Eager-serial crawl progress strap. Mounts at the top of the
+   drill body while a section is actively crawling under the
+   filter. Repurposed across sections (one strap at a time). */
+.browse-strap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-hi);
+  font-size: 12px;
+  color: var(--text-dim, var(--fg-muted));
+}
+
+.browse-strap__label {
+  flex: 1;
+  font-weight: 500;
+}
+
+.browse-strap__keep {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.browse-strap__keep:hover,
+.browse-strap__keep:focus-visible {
+  background: var(--surface-hi);
+}
+
 .browse-section__footer {
   padding: 8px 0 0;
 }
