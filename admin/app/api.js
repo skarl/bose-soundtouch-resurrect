@@ -182,6 +182,42 @@ export async function previewStream(payload) {
   return body;
 }
 
+// POST /play with {id:<guide_id>} — ephemeral playback. Resolves the
+// guide_id via Tune.ashx on-device, filters the two known placeholder
+// URLs, and asks the speaker to /select the resolved stream. Returns
+// the CGI envelope verbatim:
+//   { ok: true, url: "<resolved-stream-url>" }    on success
+//   { ok: false, error: "off-air" }               nostream placeholder
+//   { ok: false, error: "not-available" }         notcompatible placeholder
+//   { ok: false, error: "invalid-id" }            etc.
+//
+// Transport errors throw; structured `{ok:false, error}` envelopes
+// resolve normally so the caller can route the error to a toast.
+//
+// Unlike previewStream, no name/json is passed — the CGI does its own
+// Tune.ashx lookup and stages a minimal resolver entry only when none
+// exists, so preset entries with hand-curated names survive.
+//
+// `cachedUrl` (optional): a previously-resolved stream URL the caller
+// pulled from tunein-cache. When present, the CGI skips Tune.ashx and
+// goes straight to /select, but still applies the placeholder filter
+// so a stale cache entry can never select a tombstone.
+export async function playGuideId(guideId, cachedUrl) {
+  const payload = cachedUrl
+    ? { id: guideId, url: cachedUrl }
+    : { id: guideId };
+  const res = await fetch(`${apiBase}/play`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+  });
+  let body;
+  try { body = await res.json(); }
+  catch (err) { throw new Error(`playGuideId: malformed response (HTTP ${res.status})`); }
+  return body;
+}
+
 // POST /speaker/key — hardware key event. Used to send POWER for
 // "stop preview" (the speaker treats POWER as standby).
 export async function speakerKey(name, state) {

@@ -8,6 +8,9 @@
 import { setArt } from './art.js';
 import { icon } from './icons.js';
 import * as theme from './theme.js';
+import { playGuideId } from './api.js';
+import { cache, TTL_STREAM } from './tunein-cache.js';
+import { showToast } from './toast.js';
 
 // pill({ tone, pulse, text }) — generic status badge.
 // Tones map to .pill--{tone}; the optional pulse dot is a tiny child span.
@@ -418,9 +421,18 @@ export function stationCard({ sid, name, art, location, format }) {
 // state. Layout matches admin/design-mockup/app/views-browse-search.jsx
 // StationCard:
 //   [stationArt 40] name (semibold, ellipsis)
-//                   location · NNk CODEC      [chevron]
+//                   location · NNk CODEC      [▶ Play] [chevron]
 // All metadata fields are optional; the meta line still renders if any
 // piece is present so the row height stays stable across mixed lists.
+//
+// When `sid` carries an `s`, `p`, or `t` prefix the row gets an inline
+// Play button between the body and the chevron. Tapping the Play
+// button calls /play (via api.playGuideId) and toasts the outcome —
+// caching the resolved URL under `tunein.stream.<sid>` for 5 min so
+// repeat plays skip the resolve roundtrip. The rest of the row still
+// drills to the detail view; only the icon plays. Other prefixes
+// (`g`, `c`, `r`, `m`, `a`, `l`, `n` — drill-only types) get no Play
+// button.
 export function stationRow({
   sid,
   name,
@@ -476,10 +488,108 @@ export function stationRow({
 
   row.appendChild(body);
 
+  if (isPlayableSid(sid)) {
+    row.appendChild(playButton(sid, name || sid));
+  }
+
   const chev = document.createElement('span');
   chev.className = 'station-row__chev';
   chev.appendChild(icon('arrow', 14));
   row.appendChild(chev);
 
   return row;
+}
+
+// The Play icon only attaches to rows whose classified type plays
+// directly. The TuneIn guide_id prefixes are documented in
+// docs/tunein-api.md § 4; s/p/t are the only ones that resolve to a
+// stream. Everything else (g/c/r/m/a/l/n) is drill-only.
+const PLAYABLE_PREFIXES = ['s', 'p', 't'];
+
+export function isPlayableSid(sid) {
+  if (typeof sid !== 'string' || sid.length < 2) return false;
+  const prefix = sid.charAt(0);
+  if (!PLAYABLE_PREFIXES.includes(prefix)) return false;
+  // Cheap digit-tail check — avoids treating arbitrary text starting
+  // with s/p/t (e.g. `style`) as a playable guide_id if a future caller
+  // forgets to validate.
+  for (let i = 1; i < sid.length; i++) {
+    const c = sid.charCodeAt(i);
+    if (c < 48 || c > 57) return false;
+  }
+  return true;
+}
+
+// Build the inline Play button. The button is a <span role="button">
+// inside the <a> row so the click target is its own and we can
+// preventDefault + stopPropagation cleanly without losing keyboard
+// navigability of the row itself.
+function playButton(sid, label) {
+  const btn = document.createElement('span');
+  btn.className = 'station-row__play';
+  btn.setAttribute('role', 'button');
+  btn.setAttribute('tabindex', '0');
+  btn.setAttribute('aria-label', `Play ${label} on Bo`);
+  // Mobile tap target — 44x44 css per the issue.
+  btn.setAttribute('data-tap', '44');
+
+  const glyph = icon('play', 20);
+  btn.appendChild(glyph);
+
+  // Re-entrancy guard so a double-tap doesn't fire two POSTs.
+  let busy = false;
+
+  async function trigger(evt) {
+    if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
+    if (evt && typeof evt.stopPropagation === 'function') evt.stopPropagation();
+    if (busy) return;
+    busy = true;
+    btn.classList.add('is-loading');
+
+    const cacheKey = `tunein.stream.${sid}`;
+    const cached = cache.get(cacheKey);
+
+    try {
+      const result = await playGuideId(sid, cached);
+      if (result && result.ok) {
+        if (typeof result.url === 'string' && result.url) {
+          cache.set(cacheKey, result.url, TTL_STREAM);
+        }
+        showToast(`Playing on Bo: ${label}`);
+      } else {
+        // Stale cache entry that resolved to a placeholder — drop it so
+        // the next click re-resolves cleanly.
+        cache.invalidate(cacheKey);
+        const code = result && result.error;
+        showToast(messageFor(code));
+      }
+    } catch (err) {
+      cache.invalidate(cacheKey);
+      showToast('Could not reach Bo');
+    } finally {
+      btn.classList.remove('is-loading');
+      busy = false;
+    }
+  }
+
+  btn.addEventListener('click', trigger);
+  btn.addEventListener('keydown', (evt) => {
+    if (evt && (evt.key === ' ' || evt.key === 'Enter')) trigger(evt);
+  });
+
+  return btn;
+}
+
+const PLAY_ERROR_MESSAGES = {
+  'off-air':         'Off-air right now',
+  'not-available':   'Not available in your region',
+  'invalid-id':      'Cannot play this row',
+  'no-stream':       'No stream available',
+  'tune-failed':     'TuneIn lookup failed',
+  'select-failed':   'Speaker rejected the stream',
+  'select-rejected': 'Speaker rejected the stream',
+};
+
+function messageFor(code) {
+  return PLAY_ERROR_MESSAGES[code] || 'Could not play this row';
 }

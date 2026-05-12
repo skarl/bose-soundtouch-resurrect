@@ -54,7 +54,23 @@ if (!ElementProto.classList) {
 }
 
 if (!ElementProto.addEventListener) {
-  ElementProto.addEventListener = function () {};
+  ElementProto.addEventListener = function (type, fn) {
+    const map = this.__listeners__ || (this.__listeners__ = new Map());
+    if (!map.has(type)) map.set(type, new Set());
+    map.get(type).add(fn);
+  };
+  ElementProto.removeEventListener = function (type, fn) {
+    const map = this.__listeners__;
+    if (map && map.has(type)) map.get(type).delete(fn);
+  };
+  ElementProto.dispatchEvent = function (evt) {
+    const map = this.__listeners__;
+    if (!map || !map.has(evt.type)) return true;
+    for (const fn of map.get(evt.type)) {
+      try { fn.call(this, evt); } catch (_e) { /* swallow */ }
+    }
+    return !evt.defaultPrevented;
+  };
 }
 
 // xmldom keeps className / href / src as JS-only properties; the
@@ -67,7 +83,7 @@ if (!Object.getOwnPropertyDescriptor(ElementProto, 'className')) {
     set(v) { this.setAttribute('class', String(v == null ? '' : v)); },
   });
 }
-for (const attr of ['href', 'src', 'alt']) {
+for (const attr of ['href', 'src', 'alt', 'id']) {
   if (!Object.getOwnPropertyDescriptor(ElementProto, attr)) {
     Object.defineProperty(ElementProto, attr, {
       get() { return this.getAttribute(attr) || ''; },
@@ -377,4 +393,280 @@ test('browse css: .browse-tabs is a sunken 3-tab segmented control', async () =>
   const tabRule = css.match(/^\.browse-tab\s*\{([^}]+)\}/m);
   assert.ok(tabRule, 'found .browse-tab rule');
   assert.match(tabRule[1], /\bflex:\s*1\b/);
+});
+
+// --- Play icon on stationRow (issue #78) ----------------------------
+//
+// Tests cover only the new Play-icon click flow added by stationRow's
+// extension. browse.js orchestration tests above stay untouched so #76
+// (Load-more button mounting) can land without merge churn.
+
+// Bottom-of-file shims for the things the Play handler needs at runtime.
+// document.body is required by toast.showToast (it appends a container).
+// sessionStorage is needed by tunein-cache's defaultStorage.
+if (!doc.body) {
+  const body = doc.createElement('body');
+  doc.documentElement.appendChild(body);
+  // Make doc.body resolve to the same node we just attached.
+  Object.defineProperty(doc, 'body', { value: body, configurable: true });
+}
+if (!doc.getElementById) {
+  doc.getElementById = function (id) {
+    function walk(node) {
+      if (!node) return null;
+      if (node.nodeType === 1 && node.getAttribute && node.getAttribute('id') === id) return node;
+      for (const c of node.childNodes || []) {
+        const r = walk(c);
+        if (r) return r;
+      }
+      return null;
+    }
+    return walk(doc);
+  };
+}
+if (typeof globalThis.sessionStorage === 'undefined') {
+  const m = new Map();
+  globalThis.sessionStorage = {
+    getItem(k)         { return m.has(k) ? m.get(k) : null; },
+    setItem(k, v)      { m.set(k, String(v)); },
+    removeItem(k)      { m.delete(k); },
+    clear()            { m.clear(); },
+  };
+}
+// xmldom's <span> doesn't expose offsetWidth; the toast nudges layout
+// with `void node.offsetWidth`. A getter returning 0 is enough — we
+// just need the property access to not throw.
+if (!Object.getOwnPropertyDescriptor(ElementProto, 'offsetWidth')) {
+  Object.defineProperty(ElementProto, 'offsetWidth', { get() { return 0; } });
+}
+
+// Lazy import — tunein-cache + toast import lazily-bound globals we set up above.
+const { cache: playCache } = await import('../app/tunein-cache.js');
+
+function findPlayButton(row) {
+  return findFirstByClass(row, 'station-row__play');
+}
+
+function dispatchClick(el) {
+  const evt = {
+    type: 'click',
+    defaultPrevented: false,
+    preventDefault() { this.defaultPrevented = true; },
+    stopPropagation() {},
+  };
+  if (typeof el.dispatchEvent === 'function') return el.dispatchEvent(evt);
+  // Fallback for the xmldom shim path: pull registered click handlers
+  // directly off __listeners__. The shim in test_components.js installs
+  // exactly this storage shape.
+  const map = el.__listeners__;
+  if (map && map.get('click')) for (const fn of map.get('click')) fn.call(el, evt);
+}
+
+async function flushMicrotasks() {
+  // Resolve any chained .then() handlers queued by the click. The
+  // Play handler awaits fetch → res.json() → playGuideId → caller,
+  // so we drain several macrotask ticks to be safe.
+  for (let i = 0; i < 5; i++) {
+    await new Promise((r) => setTimeout(r, 0));
+  }
+}
+
+test('stationRow: station (s-prefix) renders a Play button with 44x44 tap target', async () => {
+  const node = renderEntry({
+    type: 'audio',
+    guide_id: 's12345',
+    text: 'Test Station',
+  });
+  const play = findPlayButton(node);
+  assert.ok(play, 'station row has a Play button');
+  assert.equal(play.getAttribute('role'), 'button');
+  assert.equal(play.getAttribute('data-tap'), '44');
+  assert.match(play.getAttribute('aria-label') || '', /^Play Test Station on Bo$/);
+});
+
+test('stationRow: drill-only prefixes (g, c, r, m) get no Play button', async () => {
+  for (const url of [
+    'http://opml.radiotime.com/Browse.ashx?id=g22',
+    'http://opml.radiotime.com/Browse.ashx?id=c424724',
+  ]) {
+    const node = renderEntry({ text: 'Drill', URL: url });
+    assert.equal(findPlayButton(node), null, `no Play button on ${url}`);
+  }
+});
+
+test('stationRow: clicking Play calls playGuideId, sets is-loading then clears, toasts success', async () => {
+  // Mock fetch to intercept api.playGuideId. We test against the
+  // station-row produced by renderEntry so this exercises the full
+  // wiring path (audio leaf → stationRow → Play button click).
+  const realFetch = globalThis.fetch;
+  const calls = [];
+  let resolveFetch;
+  const pendingFetch = new Promise((res) => { resolveFetch = res; });
+  globalThis.fetch = (url, opts) => {
+    calls.push({ url, opts });
+    return pendingFetch;
+  };
+
+  // Clear any cache state from earlier tests.
+  playCache.invalidate('tunein.stream.s24862');
+
+  const node = renderEntry({
+    type: 'audio',
+    guide_id: 's24862',
+    text: 'Radio Test',
+  });
+  const play = findPlayButton(node);
+  assert.ok(play, 'Play button mounted');
+
+  dispatchClick(play);
+  // Microtask: the handler enters, sets is-loading, awaits fetch.
+  await Promise.resolve();
+  assert.ok(
+    (play.getAttribute('class') || '').includes('is-loading'),
+    `Play button enters is-loading state, got: ${play.getAttribute('class')}`,
+  );
+
+  assert.equal(calls.length, 1, 'one fetch issued');
+  assert.match(calls[0].url, /\/cgi-bin\/api\/v1\/play$/);
+  assert.equal(calls[0].opts.method, 'POST');
+  const payload = JSON.parse(calls[0].opts.body);
+  assert.equal(payload.id, 's24862');
+  // First-call has no cached URL.
+  assert.equal(payload.url, undefined);
+
+  // Resolve the CGI response with a stream URL.
+  resolveFetch({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, url: 'http://stream.example/test.aac' }),
+  });
+  await flushMicrotasks();
+
+  assert.ok(
+    !(play.getAttribute('class') || '').includes('is-loading'),
+    'Play button leaves is-loading after success',
+  );
+
+  // Toast appears in the doc body.
+  const toastContainer = doc.getElementById('toast-container');
+  assert.ok(toastContainer, 'toast container mounted on success');
+  const toast = findFirstByClass(toastContainer, 'toast');
+  assert.ok(toast, 'toast node attached');
+  assert.equal(toast.textContent, 'Playing on Bo: Radio Test');
+
+  // Cache persisted under the documented key.
+  const cached = playCache.get('tunein.stream.s24862');
+  assert.equal(cached, 'http://stream.example/test.aac');
+
+  globalThis.fetch = realFetch;
+  // Strip the toast so subsequent tests start clean.
+  if (toastContainer.parentNode) toastContainer.parentNode.removeChild(toastContainer);
+});
+
+test('stationRow: clicking Play with cached URL passes it to the CGI', async () => {
+  const realFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, url: 'http://stream.example/test.aac' }),
+  });
+  const realFetchAsync = globalThis.fetch;
+  globalThis.fetch = (url, opts) => {
+    calls.push({ url, opts });
+    return realFetchAsync(url, opts);
+  };
+
+  // Prime the cache.
+  playCache.set('tunein.stream.s55555', 'http://stream.example/cached.aac', 5 * 60_000);
+
+  const node = renderEntry({
+    type: 'audio',
+    guide_id: 's55555',
+    text: 'Cached Station',
+  });
+  dispatchClick(findPlayButton(node));
+  await flushMicrotasks();
+
+  assert.equal(calls.length, 1, 'one fetch issued');
+  const payload = JSON.parse(calls[0].opts.body);
+  assert.equal(payload.id, 's55555');
+  assert.equal(payload.url, 'http://stream.example/cached.aac',
+    'cached URL forwarded as `url` field');
+
+  playCache.invalidate('tunein.stream.s55555');
+  globalThis.fetch = realFetch;
+  const tc = doc.getElementById('toast-container');
+  if (tc && tc.parentNode) tc.parentNode.removeChild(tc);
+});
+
+test('stationRow: off-air response toasts the error and drops the cache entry', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: false, error: 'off-air' }),
+  });
+
+  // Seed the cache so we can assert it's invalidated.
+  playCache.set('tunein.stream.s77777', 'http://stale.example/x', 5 * 60_000);
+
+  const node = renderEntry({
+    type: 'audio',
+    guide_id: 's77777',
+    text: 'Dark Station',
+  });
+  const play = findPlayButton(node);
+  dispatchClick(play);
+  await flushMicrotasks();
+
+  assert.equal(playCache.get('tunein.stream.s77777'), undefined,
+    'stale cache entry invalidated on failure');
+
+  const toastContainer = doc.getElementById('toast-container');
+  const toast = findFirstByClass(toastContainer, 'toast');
+  assert.ok(toast);
+  assert.equal(toast.textContent, 'Off-air right now');
+
+  globalThis.fetch = realFetch;
+  if (toastContainer && toastContainer.parentNode) toastContainer.parentNode.removeChild(toastContainer);
+});
+
+test('stationRow: clicking the Play button does not navigate the row link', async () => {
+  // The row body itself drills via href; the icon must preventDefault so
+  // the user gets play-on-tap separation from drill-on-tap.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ ok: true, url: 'http://stream.example/test.aac' }),
+  });
+
+  const node = renderEntry({
+    type: 'audio',
+    guide_id: 's99999',
+    text: 'Sep Test',
+  });
+  const play = findPlayButton(node);
+
+  // Capture the event default-prevented state via our local dispatcher.
+  const evt = {
+    type: 'click',
+    defaultPrevented: false,
+    preventDefault() { this.defaultPrevented = true; },
+    stopPropagation() {},
+  };
+  if (typeof play.dispatchEvent === 'function') play.dispatchEvent(evt);
+  else {
+    const map = play.__listeners__;
+    if (map && map.get('click')) for (const fn of map.get('click')) fn.call(play, evt);
+  }
+  await flushMicrotasks();
+  assert.equal(evt.defaultPrevented, true,
+    'Play click preventDefaults so the parent <a> never navigates');
+
+  playCache.invalidate('tunein.stream.s99999');
+  globalThis.fetch = realFetch;
+  const tc = doc.getElementById('toast-container');
+  if (tc && tc.parentNode) tc.parentNode.removeChild(tc);
 });
