@@ -1,0 +1,13 @@
+{
+  "head": {
+    "title": "Music",
+    "status": "200"
+  },
+  "body": [
+    {
+      "element": "outline",
+      "type": "text",
+      "text": "No stations or shows available"
+    }
+  ]
+}
