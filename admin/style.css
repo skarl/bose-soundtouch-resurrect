@@ -2649,6 +2649,47 @@ select.settings-input {
   padding: 8px 0 0;
 }
 
+/* Load-more button — mounts into .browse-section__footer for any
+   section whose page response carried a `next*` cursor. Same pill
+   shape as the pivot chips for visual continuity, slightly heavier
+   so it reads as a "primary" action within the footer. */
+.browse-load-more {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.browse-load-more:hover,
+.browse-load-more:focus-visible {
+  background: var(--surface-hi);
+}
+
+.browse-load-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.browse-load-more[data-state="busy"] {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.browse-load-more[data-state="error"] {
+  border-color: var(--danger, #c33);
+  color: var(--danger, #c33);
+  cursor: default;
+}
+
 /* Drill-mode breadcrumb header bits. */
 .browse-crumb {
   font-family: 'Geist Mono', ui-monospace, monospace;

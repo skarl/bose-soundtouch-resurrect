@@ -30,6 +30,7 @@ import {
   normaliseRow,
   extractPivots,
 } from '../tunein-outline.js';
+import { createPager } from '../tunein-pager.js';
 
 // Top-level tab → Browse.ashx parameter. Verified against the TuneIn
 // API reference (docs/tunein-api.md § Categories worth knowing):
@@ -68,8 +69,24 @@ export function _setChildCrumbsForTest(crumbs) {
   _childCrumbs = Array.isArray(crumbs) ? crumbs.slice() : [];
 }
 
+// Per-drill set of pager instances. Reset on every navigation so
+// drilling elsewhere disposes the previous drill's pagers (their
+// in-flight fetches become no-ops via pager.dispose()).
+let _activePagers = [];
+
+function disposeActivePagers() {
+  for (const p of _activePagers) {
+    try { p.dispose(); } catch (_err) { /* defensive */ }
+  }
+  _activePagers = [];
+}
+
 export default defineView({
   mount(root, _store, ctx) {
+    // Tear down any pagers left over from the previous drill before
+    // mounting fresh ones. Each navigation gets a clean slate; the
+    // disposed pagers ignore late fetch resolutions.
+    disposeActivePagers();
     const query = (ctx && ctx.query) || {};
     const drillParts = pickDrillParts(query);
     const crumbs = parseCrumbs(query.from);
@@ -368,6 +385,9 @@ function loadInto(body, promise, headerCount, head) {
       if (head && head.crumbToken && title) {
         cache.set(`tunein.label.${head.crumbToken}`, title, TTL_LABEL);
       }
+      // Mount one pager + Load-more button per section that came back
+      // with a cursor URL parked on it by renderSection / renderFlatSection.
+      mountLoadMoreButtons(body);
     })
     .catch((err) => {
       body.replaceChildren();
@@ -564,6 +584,199 @@ function renderCard(entries) {
     card.appendChild(row);
   }
   return card;
+}
+
+// ---- per-section pagination (#76) ----------------------------------
+//
+// After renderOutline has built its section cards, walk the body and
+// mount a "Load more" button into each section that captured a cursor
+// URL on `data-cursor-url`. Each button gets its own pager instance;
+// the dedup Set is seeded from the section's already-rendered
+// guide_ids so a mid-crawl re-rank that re-emits a page-0 row on
+// page 1 doesn't double it.
+//
+// Exported for the integration test that drives it directly without
+// going through the full SPA mount path.
+
+export function mountLoadMoreButtons(body, opts) {
+  const fetcher = (opts && typeof opts.fetcher === 'function')
+    ? opts.fetcher
+    : defaultPagerFetcher;
+  const pageCap = (opts && Number.isFinite(opts.pageCap))
+    ? opts.pageCap
+    : undefined;
+  const sections = findAllSections(body);
+  for (const section of sections) {
+    const cursorUrl = section.getAttribute('data-cursor-url');
+    if (!cursorUrl) continue;
+    const footer = findFooterIn(section);
+    if (!footer) continue;
+    // Seed dedup from the rows we've already mounted. Each station-row
+    // / show-row carries a data-sid; browse-row entries don't because
+    // they're drill nodes, not stations — they can't collide with the
+    // cursor follow which only returns playables.
+    const initialIds = collectGuideIds(section);
+    const pager = createPager(cursorUrl, {
+      fetch: fetcher,
+      initialIds,
+      pageCap,
+      section: section.getAttribute('data-section') || '',
+    });
+    _activePagers.push(pager);
+    mountLoadMoreButton(section, footer, pager);
+  }
+}
+
+// Walk an element subtree and collect every `data-sid` value already
+// in the DOM. Used to seed the pager dedup set.
+function collectGuideIds(root) {
+  const ids = [];
+  function walk(node) {
+    if (!node) return;
+    if (node.nodeType === 1) {
+      const sid = node.getAttribute && node.getAttribute('data-sid');
+      if (sid) ids.push(sid);
+    }
+    for (const c of node.childNodes || []) walk(c);
+  }
+  walk(root);
+  return ids;
+}
+
+function findAllSections(root) {
+  const out = [];
+  function walk(node) {
+    if (!node) return;
+    if (node.nodeType === 1 && node.getAttribute &&
+        node.getAttribute('data-section') != null) {
+      out.push(node);
+    }
+    for (const c of node.childNodes || []) walk(c);
+  }
+  walk(root);
+  return out;
+}
+
+function findFooterIn(section) {
+  function walk(node) {
+    if (!node) return null;
+    if (node.nodeType === 1) {
+      const cls = (node.getAttribute && node.getAttribute('class')) || '';
+      if (cls.split(/\s+/).includes('browse-section__footer')) return node;
+    }
+    for (const c of node.childNodes || []) {
+      const found = walk(c);
+      if (found) return found;
+    }
+    return null;
+  }
+  return walk(section);
+}
+
+function findCardIn(section) {
+  function walk(node) {
+    if (!node) return null;
+    if (node.nodeType === 1) {
+      const cls = (node.getAttribute && node.getAttribute('class')) || '';
+      if (cls.split(/\s+/).includes('browse-card')) return node;
+    }
+    for (const c of node.childNodes || []) {
+      const found = walk(c);
+      if (found) return found;
+    }
+    return null;
+  }
+  return walk(section);
+}
+
+// Build the Load-more button, wire its click handler, append it into
+// the section's footer.
+function mountLoadMoreButton(section, footer, pager) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'browse-load-more';
+  btn.textContent = 'Load more';
+  btn.setAttribute('data-load-more', section.getAttribute('data-section') || '');
+  // Idle / busy / done are the three button-state surfaces. Tests and
+  // CSS hook off these attributes.
+  btn.setAttribute('data-state', 'idle');
+  btn.addEventListener('click', async () => {
+    if (btn.getAttribute('data-state') === 'busy') return;
+    btn.setAttribute('data-state', 'busy');
+    btn.textContent = 'Loading...';
+    let result;
+    try {
+      result = await pager.loadMore();
+    } catch (err) {
+      btn.setAttribute('data-state', 'error');
+      btn.textContent = `Couldn't load more: ${err.message}`;
+      return;
+    }
+    // Append the newly-fetched rows. `pager.rows` accumulates; track
+    // how many were already in the DOM and append only the tail.
+    appendNewRows(section, pager);
+    if (pager.exhausted) {
+      // The button removes itself when there's no more to fetch.
+      footer.removeChild(btn);
+    } else {
+      btn.setAttribute('data-state', 'idle');
+      btn.textContent = result && result.added === 0
+        ? 'Load more (no new rows)'
+        : 'Load more';
+    }
+  });
+  footer.appendChild(btn);
+}
+
+// Append every pager row not yet represented in the section card. The
+// pager exposes its accumulated rows array; track the count in the
+// section dataset so subsequent loadMore calls only append the delta.
+function appendNewRows(section, pager) {
+  const card = findCardIn(section);
+  if (!card) return;
+  const alreadyMounted = Number(section.getAttribute('data-pager-mounted') || '0');
+  const rows = pager.rows;
+  // Strip the `is-last` marker from the current last child so the new
+  // tail row owns it (the visual rule applies only to the bottom row).
+  const lastBefore = lastElementChild(card);
+  if (lastBefore && lastBefore.classList && typeof lastBefore.classList.remove === 'function') {
+    lastBefore.classList.remove('is-last');
+  }
+  for (let i = alreadyMounted; i < rows.length; i++) {
+    const node = renderEntry(rows[i]);
+    if (i === rows.length - 1) node.classList.add('is-last');
+    card.appendChild(node);
+  }
+  section.setAttribute('data-pager-mounted', String(rows.length));
+}
+
+function lastElementChild(node) {
+  if (!node || !node.childNodes) return null;
+  for (let i = node.childNodes.length - 1; i >= 0; i--) {
+    const c = node.childNodes[i];
+    if (c && c.nodeType === 1) return c;
+  }
+  return null;
+}
+
+// The production pager fetcher: canonicalisation happens inside the
+// pager itself, so we just route the resulting URL through the CGI
+// proxy. tuneinBrowse accepts either a bare id string or a parts
+// object; for cursor URLs we already hold the full query string, so
+// hand it to the proxy verbatim via the {params...} object form.
+async function defaultPagerFetcher(canonicalUrl) {
+  // canonicalUrl is `Browse.ashx?id=...&render=json` (no host) — extract
+  // the params and re-pack as the parts object tuneinBrowse expects.
+  const qIdx = canonicalUrl.indexOf('?');
+  const qs = qIdx >= 0 ? canonicalUrl.slice(qIdx + 1) : '';
+  const params = new URLSearchParams(qs);
+  // tuneinBrowse forwards every param verbatim to the proxy, which in
+  // turn forwards to opml.radiotime.com. The proxy already adds
+  // render=json server-side, but having it on the request URL too is
+  // idempotent (§ 6.1).
+  const arg = {};
+  for (const [k, v] of params.entries()) arg[k] = v;
+  return tuneinBrowse(arg);
 }
 
 // Pivot chips render inline below the related section. Each chip is

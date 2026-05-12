@@ -327,3 +327,271 @@ test('createPager: throws when fetch option is missing', () => {
   assert.throws(() => createPager('http://example/p1', {}),
     /fetch is required/);
 });
+
+// =============================================================
+// Browse-view integration: mountLoadMoreButtons against a DOM.
+// =============================================================
+//
+// The integration exercises end-to-end Load-more without going through
+// the SPA router: build the Folk section card via renderOutline, mount
+// Load-more buttons with an injected fetcher, click, verify rows grow
+// and no guide_id repeats in the DOM.
+
+import { DOMImplementation } from '@xmldom/xmldom';
+
+// --- DOM shim (mirrors test_browse.js) -------------------------------
+
+const _doc = new DOMImplementation().createDocument(null, null, null);
+if (!_doc.querySelector) _doc.querySelector = () => null;
+if (!_doc.documentElement) {
+  const htmlEl = _doc.createElement('html');
+  _doc.appendChild(htmlEl);
+}
+if (!_doc.documentElement.dataset) _doc.documentElement.dataset = {};
+globalThis.document = _doc;
+
+const _sample = _doc.createElement('span');
+const ElementProto = Object.getPrototypeOf(_sample);
+
+if (!ElementProto.classList) {
+  Object.defineProperty(ElementProto, 'classList', {
+    get() {
+      const el = this;
+      return {
+        add(...names) {
+          const cur = (el.getAttribute('class') || '').split(/\s+/).filter(Boolean);
+          for (const n of names) if (!cur.includes(n)) cur.push(n);
+          el.setAttribute('class', cur.join(' '));
+        },
+        remove(...names) {
+          const cur = (el.getAttribute('class') || '').split(/\s+/).filter(Boolean);
+          el.setAttribute('class', cur.filter((c) => !names.includes(c)).join(' '));
+        },
+        contains(name) {
+          return (el.getAttribute('class') || '').split(/\s+/).includes(name);
+        },
+        toggle(name, force) {
+          const has = this.contains(name);
+          const want = force == null ? !has : !!force;
+          if (want && !has) this.add(name);
+          else if (!want && has) this.remove(name);
+          return want;
+        },
+      };
+    },
+  });
+}
+
+if (!ElementProto.addEventListener) {
+  // Per-element listener map. Synchronous click dispatch — the click
+  // handler is async, so we await microtasks separately in each test.
+  ElementProto.addEventListener = function (type, fn) {
+    this.__handlers = this.__handlers || {};
+    (this.__handlers[type] = this.__handlers[type] || []).push(fn);
+  };
+  ElementProto.removeEventListener = function (type, fn) {
+    if (!this.__handlers || !this.__handlers[type]) return;
+    this.__handlers[type] = this.__handlers[type].filter((h) => h !== fn);
+  };
+  ElementProto.click = function () {
+    const fns = (this.__handlers && this.__handlers.click) || [];
+    for (const fn of fns) fn({ target: this });
+  };
+}
+
+if (!Object.getOwnPropertyDescriptor(ElementProto, 'className')) {
+  Object.defineProperty(ElementProto, 'className', {
+    get() { return this.getAttribute('class') || ''; },
+    set(v) { this.setAttribute('class', String(v == null ? '' : v)); },
+  });
+}
+for (const attr of ['href', 'src', 'alt']) {
+  if (!Object.getOwnPropertyDescriptor(ElementProto, attr)) {
+    Object.defineProperty(ElementProto, attr, {
+      get() { return this.getAttribute(attr) || ''; },
+      set(v) { this.setAttribute(attr, String(v == null ? '' : v)); },
+    });
+  }
+}
+if (!Object.getOwnPropertyDescriptor(ElementProto, 'dataset')) {
+  Object.defineProperty(ElementProto, 'dataset', {
+    get() {
+      const el = this;
+      return new Proxy({}, {
+        get(_t, key) {
+          if (typeof key !== 'string') return undefined;
+          const attr = 'data-' + key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+          const v = el.getAttribute(attr);
+          return v == null ? undefined : v;
+        },
+        set(_t, key, value) {
+          if (typeof key !== 'string') return true;
+          const attr = 'data-' + key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
+          el.setAttribute(attr, String(value));
+          return true;
+        },
+      });
+    },
+  });
+}
+
+// --- imports (post DOM-shim) ----------------------------------------
+
+const { renderOutline, mountLoadMoreButtons } = await import('../app/views/browse.js');
+
+// --- helpers --------------------------------------------------------
+
+function findAllBy(root, predicate) {
+  const out = [];
+  function walk(node) {
+    if (!node) return;
+    if (node.nodeType === 1 && predicate(node)) out.push(node);
+    for (const c of node.childNodes || []) walk(c);
+  }
+  walk(root);
+  return out;
+}
+
+function findFirstByClass(root, cls) {
+  function walk(node) {
+    if (!node) return null;
+    if (node.nodeType === 1) {
+      const c = (node.getAttribute && node.getAttribute('class')) || '';
+      if (c.split(/\s+/).includes(cls)) return node;
+    }
+    for (const ch of node.childNodes || []) {
+      const f = walk(ch);
+      if (f) return f;
+    }
+    return null;
+  }
+  return walk(root);
+}
+
+// Drain enough microtasks for the click handler's awaits to settle.
+// The handler is async with two awaits (the loadMore + the render),
+// so three flushes covers it.
+async function drain() {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+}
+
+// --- mount + click integration --------------------------------------
+
+test('mountLoadMoreButtons: clicking Load-more grows rows and dedupes by guide_id', async () => {
+  const folk = loadFixture('c100000948-page0.tunein.json');
+  const body = _doc.createElement('div');
+  renderOutline(body, folk);
+
+  const page1 = loadFixture('c100000948-page1.tunein.json');
+  const page2 = loadFixture('c100000948-page2.tunein.json');
+  const tomb  = loadFixture('c424724-l117-tombstone.tunein.json');
+
+  // Two Load-more buttons exist (stations + shows). Each pager gets a
+  // turn via the shared scripted fetcher. Order in this test: we only
+  // click the stations button, so the script feeds stations.
+  const fetcher = scriptedFetch(page1, page2, tomb);
+  mountLoadMoreButtons(body, { fetcher });
+
+  const sections = findAllBy(body, (el) => el.getAttribute('data-section') != null);
+  const stationsSection = sections.find((s) => s.getAttribute('data-section') === 'stations');
+  assert.ok(stationsSection);
+  const stationsBtn = findFirstByClass(stationsSection, 'browse-load-more');
+  assert.ok(stationsBtn, 'stations section has a Load-more button');
+  assert.equal(stationsBtn.getAttribute('data-state'), 'idle');
+
+  // Snapshot BEFORE: row count + no-dupe baseline.
+  const sidsBefore = findAllBy(stationsSection, (el) => el.getAttribute('data-sid') != null)
+    .map((el) => el.getAttribute('data-sid'));
+  assert.ok(sidsBefore.length >= 20, 'stations section already had ~23 page-0 rows');
+  assert.equal(sidsBefore.length, new Set(sidsBefore).size);
+
+  // Click 1 — appends page1 rows.
+  stationsBtn.click();
+  await drain();
+  const sidsAfter1 = findAllBy(stationsSection, (el) => el.getAttribute('data-sid') != null)
+    .map((el) => el.getAttribute('data-sid'));
+  assert.ok(sidsAfter1.length > sidsBefore.length,
+    `expected rows to grow after click 1; before=${sidsBefore.length}, after=${sidsAfter1.length}`);
+  assert.equal(sidsAfter1.length, new Set(sidsAfter1).size, 'no duplicate guide_ids after click 1');
+
+  // Click 2 — appends page2 rows. Page 2 re-emits s54615 and s150125
+  // from page 1 + 3 fresh rows. Dedup drops the two collisions.
+  stationsBtn.click();
+  await drain();
+  const sidsAfter2 = findAllBy(stationsSection, (el) => el.getAttribute('data-sid') != null)
+    .map((el) => el.getAttribute('data-sid'));
+  assert.equal(sidsAfter2.length, sidsAfter1.length + 3,
+    'page 2 added exactly 3 net new rows (two re-ranks deduped)');
+  assert.equal(sidsAfter2.length, new Set(sidsAfter2).size, 'no duplicate guide_ids after click 2');
+
+  // Click 3 — tombstone terminates the walk; button removes itself.
+  stationsBtn.click();
+  await drain();
+  assert.equal(findFirstByClass(stationsSection, 'browse-load-more'), null,
+    'tombstone terminator removes the Load-more button');
+});
+
+test('mountLoadMoreButtons: sections without a cursor get no button', async () => {
+  const folk = loadFixture('c100000948-page0.tunein.json');
+  const body = _doc.createElement('div');
+  renderOutline(body, folk);
+
+  mountLoadMoreButtons(body, { fetcher: async () => ({}) });
+
+  const sections = findAllBy(body, (el) => el.getAttribute('data-section') != null);
+  const local = sections.find((s) => s.getAttribute('data-section') === 'local');
+  assert.ok(local);
+  assert.equal(findFirstByClass(local, 'browse-load-more'), null,
+    'local section has no cursor; no button is mounted');
+});
+
+test('mountLoadMoreButtons: pageCap override removes the button after the cap is hit', async () => {
+  // Build a synthetic section the integration can drive directly.
+  const body = _doc.createElement('div');
+  const section = _doc.createElement('section');
+  section.setAttribute('data-section', 'stations');
+  section.setAttribute('class', 'browse-section');
+  section.setAttribute('data-cursor-url',
+    'http://opml.radiotime.com/Browse.ashx?offset=0&id=cX&filter=s');
+  const card = _doc.createElement('div');
+  card.setAttribute('class', 'browse-card');
+  section.appendChild(card);
+  const footer = _doc.createElement('div');
+  footer.setAttribute('class', 'browse-section__footer');
+  section.appendChild(footer);
+  body.appendChild(section);
+
+  // Fetcher emits a fresh cursor every time — would loop forever
+  // without the cap.
+  let n = 0;
+  const fetcher = async (_url) => {
+    n += 1;
+    return makePage([`s${n}_a`, `s${n}_b`], `http://example/p${n + 1}?id=cX`);
+  };
+
+  mountLoadMoreButtons(body, { fetcher, pageCap: 2 });
+
+  let btn = findFirstByClass(section, 'browse-load-more');
+  assert.ok(btn);
+
+  btn.click();
+  await drain();
+  btn = findFirstByClass(section, 'browse-load-more');
+  assert.ok(btn, 'button still present after click 1');
+
+  btn.click();
+  await drain();
+  btn = findFirstByClass(section, 'browse-load-more');
+  assert.equal(btn, null, 'pageCap exhaustion removes the button on click 2');
+  assert.equal(n, 2, 'exactly 2 fetches happened (cap halted the third)');
+});
+
+test('browse css: .browse-load-more is a pill-shaped button matching the pivot chips', async () => {
+  const fs = await import('node:fs');
+  const pathMod = await import('node:path');
+  const css = fs.readFileSync(pathMod.resolve('admin/style.css'), 'utf8');
+  const rule = css.match(/^\.browse-load-more\s*\{([^}]+)\}/m);
+  assert.ok(rule, 'found .browse-load-more rule');
+  assert.match(rule[1], /\bborder-radius:\s*999px\b/);
+  assert.match(rule[1], /\bborder:\s*1px\s+solid\s+var\(--border\)/);
+});
