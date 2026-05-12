@@ -1264,3 +1264,204 @@ test('renderOutline (#81): topics row without topic_duration falls back to subte
   // Falls back to the subtext when topic_duration is absent.
   assert.equal(loc.textContent, 'A description with no duration.');
 });
+
+// --- Slice #82: Local Radio surface, tiny-country, related-as-chips,
+//                lazy-img -----------------------------------------------
+
+test('renderOutline (#82): c=local response lifts the localCountry link as a prominent card at the top', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const local = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/c-local-de.tunein.json'), 'utf8'),
+  );
+
+  const body = doc.createElement('div');
+  const total = renderOutline(body, local);
+
+  // The country card mounts as the first child of body, ahead of any
+  // section/audio row.
+  const cards = findAllBy(body, (el) => hasClass(el, 'browse-local-country'));
+  assert.equal(cards.length, 1, 'one localCountry card surfaces from c=local');
+  const card = cards[0];
+  // First-child-of-body ordering — the card sits above the audio list.
+  assert.equal(body.childNodes[0], card,
+    'localCountry card is the first element of the rendered drill');
+
+  // Label reads "Browse all of <country>".
+  const labelEl = findFirstByClass(card, 'browse-local-country__label');
+  assert.ok(labelEl, 'label slot present');
+  assert.equal(labelEl.textContent, 'Browse all of Germany',
+    `expected "Browse all of Germany", got "${labelEl.textContent}"`);
+
+  // The card drills via canonicalised URL — id=r100346 lands in the hash.
+  assert.equal(card.tagName, 'a', 'card is a drillable anchor');
+  const href = card.getAttribute('href') || '';
+  assert.match(href, /^#\/browse\?/);
+  assert.match(href, /id=r100346/, `country root id in hash, got: ${href}`);
+
+  // The audio rows are still rendered — three stations in this fixture.
+  const stationRows = findAllBy(body, (el) => hasClass(el, 'station-row'));
+  assert.equal(stationRows.length, 3, 'three audio rows render below the country card');
+
+  // The localCountry row itself is NOT mounted as a normal row (no
+  // .browse-row with data-key="localCountry" leaks into the audio list).
+  // The card is the only representation.
+  assert.equal(total, 3, `total counts audio rows only, got ${total}`);
+});
+
+test('renderEntry (#82): country row with station_count <= 5 emits an inline annotation, not a count badge', () => {
+  // Vatican: 1 station — annotation reads "· 1 station".
+  const vatican = renderEntry({
+    text: 'Vatican City',
+    URL:  'http://opml.radiotime.com/Browse.ashx?id=r101193',
+    guide_id: 'r101193',
+    station_count: 1,
+  });
+  const vAnnot = findFirstByClass(vatican, 'browse-row__annot');
+  assert.ok(vAnnot, 'Vatican row carries the tiny-country annotation');
+  assert.equal(vAnnot.getAttribute('data-tiny-country'), '1');
+  assert.equal(vAnnot.textContent.trim(), '· 1 station',
+    `expected "· 1 station", got "${vAnnot.textContent}"`);
+  // No right-aligned count badge at this size — the inline path took
+  // over so the row reads cleanly.
+  assert.equal(findFirstByClass(vatican, 'browse-row__count'), null,
+    'no separate count badge for tiny-country rows');
+
+  // Liechtenstein: 3 stations — plural form.
+  const liech = renderEntry({
+    text: 'Liechtenstein',
+    URL:  'http://opml.radiotime.com/Browse.ashx?id=r101160',
+    guide_id: 'r101160',
+    station_count: 3,
+  });
+  const lAnnot = findFirstByClass(liech, 'browse-row__annot');
+  assert.ok(lAnnot, 'Liechtenstein row carries the annotation');
+  assert.equal(lAnnot.textContent.trim(), '· 3 stations');
+
+  // Andorra: 5 stations — boundary case (threshold is ≤5).
+  const andorra = renderEntry({
+    text: 'Andorra',
+    URL:  'http://opml.radiotime.com/Browse.ashx?id=r101110',
+    guide_id: 'r101110',
+    station_count: 5,
+  });
+  const aAnnot = findFirstByClass(andorra, 'browse-row__annot');
+  assert.ok(aAnnot, 'Andorra (5 stations) is still tiny-country');
+  assert.equal(aAnnot.textContent.trim(), '· 5 stations');
+});
+
+test('renderEntry (#82): country row with station_count > 5 keeps the right-aligned count badge', () => {
+  // Monaco: 8 stations — above the threshold, keeps the badge.
+  const monaco = renderEntry({
+    text: 'Monaco',
+    URL:  'http://opml.radiotime.com/Browse.ashx?id=r101172',
+    guide_id: 'r101172',
+    station_count: 8,
+  });
+  const annot = findFirstByClass(monaco, 'browse-row__annot');
+  assert.equal(annot, null, 'no inline annotation above the threshold');
+  const c = findFirstByClass(monaco, 'browse-row__count');
+  assert.ok(c, 'count badge mounts for >5');
+  assert.equal(c.textContent, '8');
+});
+
+test('renderOutline (#82): mixed country list — tiny rows get annotation, large rows get count badge', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const countries = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/r-europe-countries.tunein.json'), 'utf8'),
+  );
+  const body = doc.createElement('div');
+  renderOutline(body, countries);
+
+  const rows = findAllBy(body, (el) => hasClass(el, 'browse-row'));
+  assert.equal(rows.length, 5, 'five country rows render');
+
+  // Vatican / Liechtenstein / Andorra → annotation.
+  const tiny = rows.slice(0, 3);
+  for (const r of tiny) {
+    const a = findFirstByClass(r, 'browse-row__annot');
+    assert.ok(a, `tiny row gets annotation: ${findFirstByClass(r, 'browse-row__label').textContent}`);
+  }
+  // Monaco (8) / Germany (38420) → count badge.
+  for (const r of rows.slice(3)) {
+    const a = findFirstByClass(r, 'browse-row__annot');
+    assert.equal(a, null, `large country has no annotation`);
+    const c = findFirstByClass(r, 'browse-row__count');
+    assert.ok(c, `large country has count badge`);
+  }
+});
+
+test('renderOutline (#82): related section renders ALL children as chips, no stacked row cards', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const fixture = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/related-mixed.tunein.json'), 'utf8'),
+  );
+
+  const body = doc.createElement('div');
+  renderOutline(body, fixture);
+
+  const relatedSection = findAllBy(body, (el) =>
+    el.getAttribute('data-section') === 'related')[0];
+  assert.ok(relatedSection, 'related section mounts');
+
+  // No browse-card (stacked rows container) lives inside the related
+  // section any more — the chips wrap-list replaces it.
+  const cards = findAllBy(relatedSection, (el) => hasClass(el, 'browse-card'));
+  assert.equal(cards.length, 0,
+    'related section emits no stacked-rows card');
+
+  // Chips wrap-list mounted.
+  const wraps = findAllBy(relatedSection, (el) => hasClass(el, 'browse-related'));
+  assert.equal(wraps.length, 1, 'one chip wrap-list mounted');
+  const wrap = wraps[0];
+  assert.ok(hasClass(wrap, 'browse-pivots'),
+    'chips wrap reuses .browse-pivots layout class');
+
+  // Four chips total: popular nav + 2 pivots + 1 drill child.
+  const chips = findAllBy(wrap, (el) => hasClass(el, 'browse-pivot'));
+  assert.equal(chips.length, 4, `four chips, got ${chips.length}`);
+
+  // Each chip's class differs from station-row / browse-row (issue
+  // acceptance: "different class than station rows").
+  for (const chip of chips) {
+    const cls = classOf(chip);
+    assert.equal(cls.split(/\s+/).includes('station-row'), false,
+      `chip class does not collide with station-row: "${cls}"`);
+    assert.equal(cls.split(/\s+/).includes('browse-row'), false,
+      `chip class does not collide with browse-row: "${cls}"`);
+  }
+
+  // Chip kinds tagged for tests + a11y.
+  const kinds = chips.map((c) => c.getAttribute('data-chip-kind'));
+  // Popular = nav, pivotLocation+pivotName = pivot, Bluegrass drill = drill.
+  assert.deepEqual(kinds.sort(), ['drill', 'nav', 'pivot', 'pivot'],
+    `chip kinds: ${kinds.join(', ')}`);
+
+  // pivotLocation chip carries an axis attribute for CSS / a11y hooks.
+  const pivotChip = chips.find((c) =>
+    c.getAttribute('data-chip-kind') === 'pivot'
+    && c.getAttribute('data-pivot-axis') === 'location');
+  assert.ok(pivotChip, 'pivotLocation chip tagged with axis=location');
+});
+
+test('every <img> in the rendered drill DOM has loading="lazy" (issue #82)', async () => {
+  // Folk fixture exercises both station-row art and show-row art —
+  // every <img> that the browse pipeline emits should carry the
+  // native lazy-load attribute.
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const folk = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/c100000948-page0.tunein.json'), 'utf8'),
+  );
+  const body = doc.createElement('div');
+  renderOutline(body, folk);
+
+  const imgs = findAllBy(body, (el) => el.tagName === 'img');
+  assert.ok(imgs.length > 0, 'fixture renders at least one image');
+  for (const img of imgs) {
+    assert.equal(img.getAttribute('loading'), 'lazy',
+      `every <img> opts into native lazy-load — missing on src="${img.getAttribute('src')}"`);
+  }
+});

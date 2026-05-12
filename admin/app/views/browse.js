@@ -32,6 +32,13 @@ import {
 } from '../tunein-outline.js';
 import { createPager } from '../tunein-pager.js';
 
+// Threshold below which a country-drill row prefers the inline
+// "· N stations" annotation over the right-aligned count badge.
+// Vatican / Liechtenstein / Andorra / Monaco are the documented
+// examples in issue #82; bumped to 5 to absorb similarly-small slots
+// like San Marino without re-litigating per-row.
+const TINY_COUNTRY_THRESHOLD = 5;
+
 // Section keys that the c=pbrowse show-drill response uses. The
 // `liveShow` container holds the currently-airing show as a single
 // playable p-prefix row; `topics` holds recent episodes as t-prefix
@@ -468,9 +475,9 @@ function errorNode(err) {
 // Returns the total visible row count (cursors + pivots are excluded
 // — they're meta, not rows the user reads through).
 export function renderOutline(body, json) {
-  const items = Array.isArray(json && json.body) ? json.body : [];
+  const rawItems = Array.isArray(json && json.body) ? json.body : [];
 
-  if (items.length === 0) {
+  if (rawItems.length === 0) {
     body.appendChild(emptyNode('Nothing here.'));
     return 0;
   }
@@ -480,13 +487,22 @@ export function renderOutline(body, json) {
   // classifyOutline tags it that way — the fallback in tunein-outline
   // returns 'tombstone' for any type-less typeless URL-less guide-less
   // outline, which also matches a bare section header.
-  const onlyEntryIsTombstone = items.length === 1
-    && classifyOutline(items[0]) === 'tombstone'
-    && !(Array.isArray(items[0].children) && items[0].children.length > 0);
+  const onlyEntryIsTombstone = rawItems.length === 1
+    && classifyOutline(rawItems[0]) === 'tombstone'
+    && !(Array.isArray(rawItems[0].children) && rawItems[0].children.length > 0);
   if (onlyEntryIsTombstone) {
-    body.appendChild(emptyNode(items[0].text || 'Nothing here.'));
+    body.appendChild(emptyNode(rawItems[0].text || 'Nothing here.'));
     return 0;
   }
+
+  // Local Radio surface (issue #82): c=local responses include a
+  // `key="localCountry"` link pointing at the corresponding r-prefix
+  // country root. Lift it out of the row stream and surface it as a
+  // prominent "Browse all of <country>" card above the audio list.
+  // The localCountry row can sit either at body root (typical c=local
+  // shape) or inside a section's children — handle both by walking
+  // one level deep.
+  const items = liftLocalCountry(rawItems, body, json);
 
   let total = 0;
 
@@ -511,6 +527,90 @@ export function renderOutline(body, json) {
     body.appendChild(rendered.element);
   }
   return total;
+}
+
+// Detect the `key="localCountry"` link in a Browse response, mount it
+// as a prominent card at the top of the drill body, and return the
+// row list with that entry filtered out so downstream renderers don't
+// double-mount it. Search depth is one level: body[] root, then any
+// section's `children`. Returns the original array unchanged when
+// no localCountry row is found.
+function liftLocalCountry(rawItems, body, json) {
+  // Top-level scan first — c=local typically lays out the link as a
+  // body-root sibling of the audio entries.
+  for (let i = 0; i < rawItems.length; i++) {
+    if (isLocalCountryEntry(rawItems[i])) {
+      const card = renderLocalCountryCard(rawItems[i], json);
+      if (card) body.appendChild(card);
+      return rawItems.slice(0, i).concat(rawItems.slice(i + 1));
+    }
+  }
+  // Section-children scan — some sectioned shapes nest the link
+  // inside a `related`-like container. Drop it from the section's
+  // children rather than the body[] so the section's other rows
+  // still render normally.
+  const out = rawItems.map((entry) => {
+    if (!entry || !Array.isArray(entry.children)) return entry;
+    const idx = entry.children.findIndex(isLocalCountryEntry);
+    if (idx < 0) return entry;
+    const card = renderLocalCountryCard(entry.children[idx], json);
+    if (card) body.appendChild(card);
+    const newKids = entry.children.slice(0, idx).concat(entry.children.slice(idx + 1));
+    return { ...entry, children: newKids };
+  });
+  return out;
+}
+
+function isLocalCountryEntry(entry) {
+  return !!entry && typeof entry === 'object' && entry.key === 'localCountry';
+}
+
+// Build the prominent "Browse all of <country>" card. Drills via the
+// canonicalised URL (tunein-url.js stripping any magic params); the
+// link is unclickable if the URL is missing or malformed (defensive
+// — never seen in the wild but the response is service-emitted).
+//
+// The label prefers `entry.text` ("Germany"); if missing, the head
+// title is the next-best signal. Final fallback is a bare "country
+// root" so the affordance still surfaces.
+function renderLocalCountryCard(entry, json) {
+  const parts = drillPartsFor(entry);
+  const drillable = parts != null;
+  const card = document.createElement(drillable ? 'a' : 'span');
+  card.className = drillable
+    ? 'browse-local-country'
+    : 'browse-local-country is-disabled';
+  if (drillable) card.setAttribute('href', drillHashFor(parts));
+  card.setAttribute('data-local-country', '1');
+
+  const labelEl = document.createElement('span');
+  labelEl.className = 'browse-local-country__label';
+  const country = pickLocalCountryName(entry, json);
+  labelEl.textContent = country
+    ? `Browse all of ${country}`
+    : 'Browse the country root';
+  card.appendChild(labelEl);
+
+  if (drillable) {
+    const chev = document.createElement('span');
+    chev.className = 'browse-local-country__chev';
+    chev.appendChild(icon('arrow', 14));
+    card.appendChild(chev);
+  }
+  return card;
+}
+
+function pickLocalCountryName(entry, json) {
+  const t = entry && typeof entry.text === 'string' ? entry.text.trim() : '';
+  if (t) return t;
+  const headTitle = json && json.head && typeof json.head.title === 'string'
+    ? json.head.title.trim()
+    : '';
+  // c=local responses use head.title="Local Radio" — useless as a
+  // country name. Fall through to '' so the renderer picks the
+  // generic affordance label.
+  if (headTitle && !/^local radio$/i.test(headTitle)) return headTitle;
+  return '';
 }
 
 function emptyNode(message) {
@@ -568,21 +668,43 @@ function renderSection(section) {
   // specialised renderer: a liveShow's single p-prefix child needs the
   // Play icon (stationRow auto-attaches it for p/s/t guide_ids), and
   // topic rows need their duration formatted into the meta line.
+  //
+  // `related` is a special case: the section is curated cross-cuts
+  // (pivots + canned nav links like `popular`, `localCountry`). Issue
+  // #82 surfaces every visible child as a flat wrap-list of chips —
+  // not stacked rows — so the section reads as a row of taps rather
+  // than a list of full-width cards. The pivot-chips path below stays
+  // disabled for `related` to avoid double-rendering.
   if (visibleChildren.length > 0) {
     if (sectionKey === 'liveShow') {
       wrap.appendChild(renderLiveShowCard(visibleChildren));
     } else if (sectionKey === 'topics') {
       wrap.appendChild(renderTopicsCard(visibleChildren));
+    } else if (sectionKey === 'related') {
+      wrap.appendChild(renderRelatedChips(section.children || []));
     } else {
       wrap.appendChild(renderCard(visibleChildren));
     }
+  } else if (sectionKey === 'related') {
+    // Pure-pivot related sections (visibleChildren empty because every
+    // child classifies as 'pivot') still surface as chips.
+    const onlyPivots = (section.children || []).filter((c) => {
+      const t = classifyOutline(c);
+      return t === 'pivot';
+    });
+    if (onlyPivots.length > 0) {
+      wrap.appendChild(renderRelatedChips(section.children || []));
+    }
   }
 
-  // Pivot chips (related section in practice — but we don't filter by
-  // section name; anywhere the API emits `pivot*` children gets chips).
-  const pivots = extractPivots(section);
-  if (pivots.length > 0) {
-    wrap.appendChild(renderPivotChips(pivots));
+  // Pivot chips (any section other than `related` — the related path
+  // above already folds pivots into its own chips wrap-list, so we
+  // skip the dedicated pivot row there).
+  if (sectionKey !== 'related') {
+    const pivots = extractPivots(section);
+    if (pivots.length > 0) {
+      wrap.appendChild(renderPivotChips(pivots));
+    }
   }
 
   // Footer placeholder for #76's "Load more" button. The cursor URL
@@ -973,6 +1095,41 @@ function renderPivotChips(pivots) {
   return wrap;
 }
 
+// Render every visible child of a `related` section as a flat wrap-
+// list of chips (issue #82). Mixes `pivot*` rows, `popular`/
+// `localCountry` nav rows, and any drill/show/station children into
+// one row — the section reads as a quick set of jumps rather than a
+// list of stacked rows. Cursors and tombstones are skipped; URLs go
+// through canonicaliseBrowseUrl via drillPartsForUrl so the
+// language-tree rewrite happens once at the seam.
+//
+// Chips reuse the `.browse-pivot` class so CSS treats them the same
+// as the pivot chips that already shipped — visual parity, no extra
+// stylesheet entries. Each chip carries `data-chip-kind` (pivot /
+// nav / drill / station / show) so tests can target by intent.
+function renderRelatedChips(children) {
+  const wrap = document.createElement('div');
+  wrap.className = 'browse-pivots browse-related';
+  for (const entry of children || []) {
+    const kind = classifyOutline(entry);
+    if (kind === 'cursor' || kind === 'tombstone') continue;
+    const parts = drillPartsFor(entry);
+    const chip = document.createElement(parts ? 'a' : 'span');
+    chip.className = parts ? 'browse-pivot' : 'browse-pivot is-disabled';
+    if (parts) chip.setAttribute('href', drillHashFor(parts));
+    chip.setAttribute('data-chip-kind', kind);
+    if (kind === 'pivot') {
+      const k = typeof entry.key === 'string' ? entry.key : '';
+      const axis = k.startsWith('pivot') ? k.slice('pivot'.length).toLowerCase() : '';
+      if (axis) chip.setAttribute('data-pivot-axis', axis);
+    }
+    const text = (entry && typeof entry.text === 'string') ? entry.text : '';
+    chip.textContent = text || (parts && (parts.id || parts.c)) || '(unnamed)';
+    wrap.appendChild(chip);
+  }
+  return wrap;
+}
+
 // Public for tests. Returns ONE row element shaped by the entry's
 // classification:
 //
@@ -1103,12 +1260,28 @@ function drillRow(entry, norm, _kind) {
 
   // Some Browse.ashx entries surface a child count via station_count /
   // count / item_count.
+  //
+  // Two presentations:
+  //   - ≤5 stations → inline "· N station(s)" annotation glued next
+  //     to the row's label, signalling tiny countries (Vatican,
+  //     Liechtenstein, Andorra, …) before the user wastes a drill.
+  //   - >5 stations → right-aligned count badge as before.
+  // Threshold is the UX heuristic called out in issue #82.
   const count = countOf(entry);
   if (count != null) {
-    const c = document.createElement('span');
-    c.className = 'browse-row__count';
-    c.textContent = count.toLocaleString();
-    row.appendChild(c);
+    if (count <= TINY_COUNTRY_THRESHOLD) {
+      const annot = document.createElement('span');
+      annot.className = 'browse-row__annot';
+      annot.setAttribute('data-tiny-country', '1');
+      const word = count === 1 ? 'station' : 'stations';
+      annot.textContent = ` · ${count} ${word}`;
+      row.appendChild(annot);
+    } else {
+      const c = document.createElement('span');
+      c.className = 'browse-row__count';
+      c.textContent = count.toLocaleString();
+      row.appendChild(c);
+    }
   }
 
   if (drillable) {

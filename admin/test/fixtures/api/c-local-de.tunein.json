@@ -1,0 +1,63 @@
+{
+  "head": {
+    "title": "Local Radio",
+    "status": "200"
+  },
+  "body": [
+    {
+      "element": "outline",
+      "type": "link",
+      "text": "Germany",
+      "URL": "http://opml.radiotime.com/Browse.ashx?id=r100346",
+      "key": "localCountry"
+    },
+    {
+      "element": "outline",
+      "type": "audio",
+      "text": "SWR3",
+      "URL": "http://opml.radiotime.com/Tune.ashx?id=s24896",
+      "bitrate": "128",
+      "reliability": "99",
+      "guide_id": "s24896",
+      "subtext": "Stuttgart, DE",
+      "genre_id": "g79",
+      "formats": "mp3",
+      "item": "station",
+      "image": "http://cdn-profiles.tunein.com/s24896/images/logoq.png?t=1",
+      "now_playing_id": "s24896",
+      "preset_id": "s24896"
+    },
+    {
+      "element": "outline",
+      "type": "audio",
+      "text": "Bayern 3",
+      "URL": "http://opml.radiotime.com/Tune.ashx?id=s24921",
+      "bitrate": "128",
+      "reliability": "98",
+      "guide_id": "s24921",
+      "subtext": "Munich, DE",
+      "genre_id": "g90",
+      "formats": "mp3",
+      "item": "station",
+      "image": "http://cdn-profiles.tunein.com/s24921/images/logoq.png?t=1",
+      "now_playing_id": "s24921",
+      "preset_id": "s24921"
+    },
+    {
+      "element": "outline",
+      "type": "audio",
+      "text": "Deutschlandfunk",
+      "URL": "http://opml.radiotime.com/Tune.ashx?id=s25024",
+      "bitrate": "128",
+      "reliability": "97",
+      "guide_id": "s25024",
+      "subtext": "Cologne, DE",
+      "genre_id": "g94",
+      "formats": "mp3",
+      "item": "station",
+      "image": "http://cdn-profiles.tunein.com/s25024/images/logoq.png?t=1",
+      "now_playing_id": "s25024",
+      "preset_id": "s25024"
+    }
+  ]
+}
