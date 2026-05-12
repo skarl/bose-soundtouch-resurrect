@@ -88,7 +88,7 @@ export default defineView({
         <div class="np-card">
           <div class="np-card__top">
             <div class="np-art-wrap">
-              <img class="np-art" alt="">
+              <img class="np-art" alt="" loading="lazy">
             </div>
             <div class="np-body">
               <div class="np-text">
