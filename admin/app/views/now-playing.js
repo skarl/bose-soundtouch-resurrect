@@ -385,8 +385,9 @@ export default defineView({
       try {
         await actions.playPreset(Number(slot));
       } catch (_err) {
-        // Non-fatal — the next nowPlayingUpdated / nowSelectionUpdated
-        // will confirm or deny the switch.
+        // Rollback + error toast are owned by actions.playPreset; the
+        // throw is rethrown for observability but the UI has already
+        // self-corrected by the time we get here.
       }
     }
 
@@ -529,8 +530,9 @@ export default defineView({
       try {
         await actions.selectSource(src);
       } catch (_err) {
-        // Switch errors are non-fatal — the source pill state will
-        // self-correct when the next nowPlaying update arrives.
+        // Rollback + error toast are owned by actions.selectSource; the
+        // throw is rethrown for observability but the UI has already
+        // self-corrected by the time we get here.
       }
     }
 

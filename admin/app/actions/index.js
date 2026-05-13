@@ -18,6 +18,7 @@ import { store } from '../state.js';
 import { recordOutgoing, wasRecent } from './ledger.js';
 import { controllerFor, volumeCtl, bassCtl, balanceCtl } from '../sliders.js';
 import { ledgerKindForField } from '../speaker-state.js';
+import { runOptimistic } from '../optimistic.js';
 
 // Hardware-key kinds aren't fields — 'preset' and 'transport' have no FIELDS
 // row, so the mapping stays here.
@@ -49,17 +50,38 @@ export async function pressKey(name) {
 // via `/selectLocalSource`; streaming sources take a ContentItem via
 // `/select`. Accepts the whole source object so callers don't need to
 // know the wire shape.
+//
+// Optimistic: rewrites `nowPlaying.source` eagerly so the active pill
+// flips under the user's finger. On POST rejection the previous
+// nowPlaying is restored and an error toast is surfaced. The matching
+// <nowPlayingUpdated> / <sourcesUpdated> WS event reconciles on success
+// via the normal dispatch pipeline.
 export async function selectSource(src) {
   if (!src || !src.source) return;
   recordOutgoing(ledgerKindForField('sources'));
-  if (src.isLocal) {
-    await postSelectLocalSource(src.source);
-  } else {
-    await postSelect({
-      source: src.source,
-      sourceAccount: src.sourceAccount || '',
-    });
-  }
+  await runOptimistic({
+    snapshot: () => store.state.speaker.nowPlaying,
+    apply: () => {
+      const prev = store.state.speaker.nowPlaying || {};
+      store.state.speaker.nowPlaying = {
+        ...prev,
+        source: src.source,
+        sourceAccount: src.sourceAccount || '',
+        // Clear track-level metadata so the pre-existing title/artist
+        // doesn't flash next to the new source pill while the speaker
+        // catches up. The next nowPlayingUpdated will repopulate.
+        item: null,
+        track: '',
+        artist: '',
+        art: '',
+      };
+    },
+    post: () => src.isLocal
+      ? postSelectLocalSource(src.source)
+      : postSelect({ source: src.source, sourceAccount: src.sourceAccount || '' }),
+    rollback: (prev) => { store.state.speaker.nowPlaying = prev; },
+    errorMessage: `Couldn’t switch to ${src.displayName || src.source}`,
+  });
 }
 
 // Recall a stored preset by its 1-based user-facing slot number (1..6).
@@ -67,6 +89,11 @@ export async function selectSource(src) {
 // preset's stored ContentItem — Bo's firmware silently ignores
 // `/key PRESET_N` and 400s on `/selectPreset`. Returns silently when
 // the slot is empty or missing so callers don't need to pre-check.
+//
+// Optimistic: rewrites `nowPlaying` with a synthetic record carrying
+// the preset's contentItem fields so the active-preset highlight in
+// the grid flips immediately. On POST rejection the previous
+// nowPlaying is restored and an error toast is surfaced.
 export async function playPreset(slot) {
   const idx = Number(slot) - 1;
   if (!Number.isInteger(idx) || idx < 0) return;
@@ -74,11 +101,34 @@ export async function playPreset(slot) {
   const p = presets && presets[idx];
   if (!p || p.empty) return;
   recordOutgoing('preset', slot);
-  await postSelect({
-    source:        p.source,
-    sourceAccount: p.sourceAccount || '',
-    type:          p.type || '',
-    location:      p.location || '',
+  await runOptimistic({
+    snapshot: () => store.state.speaker.nowPlaying,
+    apply: () => {
+      const prev = store.state.speaker.nowPlaying || {};
+      store.state.speaker.nowPlaying = {
+        ...prev,
+        source:        p.source,
+        sourceAccount: p.sourceAccount || '',
+        item: {
+          source:        p.source,
+          sourceAccount: p.sourceAccount || '',
+          type:          p.type || '',
+          location:      p.location || '',
+          name:          p.itemName || '',
+        },
+        track:  '',
+        artist: '',
+        art:    typeof p.art === 'string' ? p.art : '',
+      };
+    },
+    post: () => postSelect({
+      source:        p.source,
+      sourceAccount: p.sourceAccount || '',
+      type:          p.type || '',
+      location:      p.location || '',
+    }),
+    rollback: (prev) => { store.state.speaker.nowPlaying = prev; },
+    errorMessage: `Preset ${slot} failed`,
   });
 }
 
