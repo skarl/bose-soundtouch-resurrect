@@ -185,6 +185,11 @@ export function searchRow(entry) {
       row.setAttribute('href', drillHash);
     }
     row.setAttribute('data-prefix', sid ? sid.charAt(0) : '');
+    // #88: stash the outline on the row so the inline Play handler can
+    // mine the topic's `sid=p<N>` parent for the now-playing skip
+    // classifier. Other call sites (browse-topics) tag the row the
+    // same way — see admin/app/views/browse.js renderTopicsCard.
+    row._outline = entry;
     return row;
   }
 

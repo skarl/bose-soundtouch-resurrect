@@ -10,8 +10,9 @@ import { icon } from './icons.js';
 import * as theme from './theme.js';
 import { canonicaliseBrowseUrl } from './tunein-url.js';
 import { playGuideId } from './api.js';
-import { cache, TTL_STREAM } from './tunein-cache.js';
+import { cache, TTL_STREAM, TTL_LABEL } from './tunein-cache.js';
 import { showToast } from './toast.js';
+import { parentKey as tuneinParentKey, extractParentShowId } from './transport-state.js';
 
 // pill({ tone, pulse, text }) — generic status badge.
 // Tones map to .pill--{tone}; the optional pulse dot is a tiny child span.
@@ -753,6 +754,19 @@ function playButton(sid, label) {
     if (busy) return;
     busy = true;
     btn.classList.add('is-loading');
+
+    // Issue #88: prime the parent-show cache the moment a topic plays.
+    // Topic outlines carry a `Tune.ashx?...&sid=p<N>` URL; mine the
+    // sid here so the now-playing Prev/Next classifier can answer
+    // "what show is this from?" without re-fetching. The outline is
+    // stashed on the row anchor by browse.js / search rendering paths;
+    // when absent (hand-crafted callers, tests) the write is silently
+    // skipped — the classifier falls back to its disabled default.
+    if (typeof sid === 'string' && sid.charAt(0) === 't') {
+      const outline = btn.parentNode && btn.parentNode._outline;
+      const parent = outline ? extractParentShowId(outline) : null;
+      if (parent) cache.set(tuneinParentKey(sid), parent, TTL_LABEL);
+    }
 
     const cacheKey = `tunein.stream.${sid}`;
     const cached = cache.get(cacheKey);

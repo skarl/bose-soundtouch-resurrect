@@ -25,7 +25,12 @@ import { stationRow } from '../components.js';
 import { showHero } from '../show-hero.js';
 import { icon } from '../icons.js';
 import { canonicaliseBrowseUrl, extractDrillKey } from '../tunein-url.js';
-import { cache, TTL_LABEL } from '../tunein-cache.js';
+import { cache, TTL_LABEL, TTL_DRILL_HEAD } from '../tunein-cache.js';
+import {
+  parentKey as tuneinParentKey,
+  topicsKey as tuneinTopicsKey,
+  extractParentShowId,
+} from '../transport-state.js';
 import {
   classifyOutline,
   normaliseRow,
@@ -1093,6 +1098,15 @@ function renderLiveShowRow(entry) {
 function renderTopicsCard(entries) {
   const card = document.createElement('div');
   card.className = 'browse-card';
+
+  // Issue #88: prime the parent-show + topics-list caches as the user
+  // walks past this drill. The parent key (per-topic) lets the now-
+  // playing Prev/Next classifier answer "what show is this topic
+  // from?" without re-fetching; the topics-list key gives it the
+  // ordered neighbours for the skip path. Both writes are cheap and
+  // run once per render — TTL keeps them from going stale.
+  primeTuneinSkipCaches(entries);
+
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
     const row = renderTopicRow(entry);
@@ -1101,6 +1115,33 @@ function renderTopicsCard(entries) {
     card.appendChild(row);
   }
   return card;
+}
+
+// Mine each topic outline for its `sid=p<N>` parent + collect the
+// ordered topic-id list. When at least one parent emerges (typical for
+// `c=pbrowse&id=p<N>` and `c=topics&id=p<N>` responses, which share the
+// same outline shape), write:
+//   - one `tunein.parent.<t<N>>` per topic
+//   - one `tunein.topics.<p<N>>` for the show (when the list has ≥1
+//     entry — the classifier itself still requires ≥2 to enable skip)
+// Tolerates rows with no URL (rare, but seen on hand-rolled fixtures).
+function primeTuneinSkipCaches(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) return;
+  let parent = null;
+  const ids = [];
+  for (const entry of entries) {
+    const gid = entry && typeof entry.guide_id === 'string' ? entry.guide_id : '';
+    if (!/^t\d+$/.test(gid)) continue;
+    ids.push(gid);
+    const p = extractParentShowId(entry);
+    if (p) {
+      if (!parent) parent = p;
+      cache.set(tuneinParentKey(gid), p, TTL_LABEL);
+    }
+  }
+  if (parent && ids.length > 0) {
+    cache.set(tuneinTopicsKey(parent), ids, TTL_DRILL_HEAD);
+  }
 }
 
 function renderTopicRow(entry) {
