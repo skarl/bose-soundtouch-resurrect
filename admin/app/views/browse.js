@@ -22,6 +22,7 @@
 import { html, mount, defineView } from '../dom.js';
 import { tuneinBrowse, tuneinDescribe } from '../api.js';
 import { stationRow } from '../components.js';
+import { showHero } from '../show-hero.js';
 import { icon } from '../icons.js';
 import { canonicaliseBrowseUrl, extractDrillKey } from '../tunein-url.js';
 import { cache, TTL_LABEL } from '../tunein-cache.js';
@@ -582,11 +583,12 @@ function pickShowTitle(describeJson, browseJson) {
   return '';
 }
 
-// Render the show landing card. The card is composed via the same
-// stationRow primitive used elsewhere — feeding the show id (p-prefix)
-// lights up the inline Play icon (#78's isPlayableSid auto-attach).
-// Genre + description fold into the chips / tertiary slots so the
-// card reads as "this is the show, here's what it is, tap to play".
+// Render the show landing card. The card is the *page subject* — a
+// hero block, not a listing row — so it's composed via showHero (a
+// non-anchor <div> with the same visual treatment as stationRow). Genre
+// folds into the chips slot; description renders below as its own
+// block. The p-prefix guide_id lights up the inline Play icon via
+// isPlayableSid; tapping the body itself does nothing (no self-link).
 function renderShowLandingCard(show) {
   const wrap = document.createElement('section');
   wrap.className = 'browse-section browse-section--show-landing';
@@ -604,22 +606,22 @@ function renderShowLandingCard(show) {
   const logo = typeof show.logo === 'string' ? show.logo : '';
   const genreId = typeof show.genre_id === 'string' ? show.genre_id : '';
 
-  // Compose the chips array so stationRow's existing chip pipeline
-  // surfaces the genre as a tappable pill (drills to #/browse?id=<gNN>).
+  // Compose the chips array so the chip pipeline surfaces the genre as
+  // a tappable pill (drills to #/browse?id=<gNN>).
   const chips = genreId ? [{ kind: 'genre', id: genreId }] : [];
 
   // Hosts are the most useful secondary line (e.g. "Terry Gross").
   // When hosts are absent, fall back to location ("Kent, OH").
   const secondary = hosts || location;
 
-  const row = stationRow({
+  const row = showHero({
     sid,
     name: title,
     art:  logo,
     location: secondary,
     chips,
   });
-  // Mark the row so tests / CSS can target it specifically.
+  // Mark the hero so tests / CSS can target it specifically.
   row.setAttribute('data-show-landing', '1');
   row.classList.add('is-last');
   card.appendChild(row);
@@ -1070,13 +1072,11 @@ function renderLiveShowCard(entries) {
 function renderLiveShowRow(entry) {
   const id = (entry && typeof entry.guide_id === 'string') ? entry.guide_id : '';
   const norm = normaliseRow(entry);
-  // stationRow auto-mounts a Play icon for s/p/t prefixes (components.js
-  // § isPlayableSid). The href routes to #/station/<sid> by default;
-  // for a live-show row that's not ideal but the Play icon is the
-  // primary affordance, and the issue explicitly forbids us from
-  // touching components.js for #81. No preset-assign affordance is
-  // added — the issue forbids it and stationRow does not emit one.
-  return stationRow({
+  // The live-show card is a hero (the airing show you're already looking
+  // at), not a drill row — its primary affordance is the inline Play
+  // icon, not navigation. showHero produces a non-anchor body and
+  // auto-mounts the Play icon for p/s/t prefixes via isPlayableSid.
+  return showHero({
     sid:      id,
     name:     norm.primary || id,
     art:      norm.image,
