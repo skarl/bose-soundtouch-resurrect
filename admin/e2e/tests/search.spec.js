@@ -1,50 +1,61 @@
 // Slice #80 — Search reframe.
 //
 // The unified search returns stations (s-prefix), shows (p-prefix),
-// and topics. A "Include podcasts" toggle filters out p-prefix rows.
-// Inline Play icons surface on every audio leaf, including p-prefix
-// rows when podcasts are included.
+// topics (t-prefix), and artists (m-prefix). The "Include podcasts"
+// toggle filters out p-prefix rows via the `filter=s:popular`
+// upstream parameter. Inline Play icons surface on every playable
+// row (s / p / t), including p-prefix rows when podcasts are included.
+//
+// Search results render as `a.station-row[data-prefix=…]` inside the
+// `.search-results` container (search.js searchRowCard). Show
+// (p-prefix) rows override the href to point at a browse-drill,
+// not a station detail.
 
 import { test, expect, gotoSearch } from './_setup.js';
 
 test('searching "Folk Alley" yields a p-prefix row with inline Play; toggle off excludes p-prefix rows', async ({ page }) => {
   await gotoSearch(page, 'Folk Alley');
 
-  // Wait for at least one result row to render.
-  await page.waitForSelector('.station-row, .search-row, [data-role="result"]', { timeout: 20_000 });
+  // Wait for the search to settle: at least one row inside the
+  // results pane.
+  const resultRows = page.locator('.search-results a.station-row');
+  await expect(resultRows.first()).toBeVisible({ timeout: 20_000 });
 
-  // p-prefix row appears. We look at row hrefs for #/station/p... or
-  // #/show/p... since both shapes have surfaced across recent slices.
-  const allHrefs = await page.$$eval('a[href*="#/station/"], a[href*="#/show/"]', (els) =>
-    els.map((a) => a.getAttribute('href') || ''));
-  const hasPRow = allHrefs.some((h) => /\b\/(?:station|show)\/p[0-9a-z]+/i.test(h));
-  expect(hasPRow, `expected a p-prefix result for "Folk Alley", got hrefs: ${allHrefs.join(', ')}`).toBe(true);
+  // ≥1 p-prefix row appears. The row carries data-prefix="p".
+  const pRows = page.locator('.search-results a.station-row[data-prefix="p"]');
+  expect(await pRows.count()).toBeGreaterThanOrEqual(1);
 
-  // Inline Play icon present on the p-prefix row.
-  const pRow = page.locator('a[href*="#/station/p"], a[href*="#/show/p"]').first();
-  const pRowContainer = pRow.locator('xpath=ancestor-or-self::*[contains(@class, "station-row") or contains(@class, "search-row") or @data-role="result"][1]');
-  await expect(pRowContainer.locator('button.station-row__play, [data-action="play"], .inline-play').first())
-    .toBeVisible({ timeout: 5_000 });
+  // Inline Play icon present on the first p-prefix row. Play is a
+  // span[role="button"].station-row__play, not an actual <button>.
+  const firstPRow = pRows.first();
+  await expect(firstPRow.locator('.station-row__play')).toBeVisible({ timeout: 5_000 });
 
-  // Toggle "Include podcasts" off.
-  const toggle = page.locator('label:has-text("Include podcasts") input, [data-toggle="podcasts"] input, input[name="include-podcasts"]').first();
+  // Capture station-rows from the initial (podcasts-included) response
+  // for the post-toggle comparison.
+  const baselineCount = await resultRows.count();
+  expect(baselineCount).toBeGreaterThan(0);
+
+  // Toggle "Include podcasts" off. Set up the response listener BEFORE
+  // the toggle click so the eager-fire search doesn't race past us.
+  const toggle = page.locator('input.search-include-podcasts__input');
   await expect(toggle).toBeVisible({ timeout: 5_000 });
+  const responsePromise = page.waitForResponse(
+    (r) => r.url().includes('/cgi-bin/api/v1/tunein/search')
+       && /filter=s(?:%3A|:)popular/.test(r.url())
+       && r.status() === 200,
+    { timeout: 10_000 },
+  );
   if (await toggle.isChecked()) {
     await toggle.uncheck();
   }
+  await responsePromise;
 
-  // Re-run the same query so the toggle takes effect.
-  const searchInput = page.locator('input.search-input, input[type="search"], input[placeholder*="Search" i]').first();
-  if (await searchInput.count() > 0) {
-    await searchInput.fill('');
-    await searchInput.fill('Folk Alley');
-    await searchInput.press('Enter');
-  }
+  // After the toggle re-render, p-prefix rows are gone.
+  await expect(page.locator('.search-results a.station-row[data-prefix="p"]'))
+    .toHaveCount(0, { timeout: 5_000 });
 
-  // Wait for results to settle, then assert no p-prefix rows.
-  await page.waitForTimeout(500);
-  const refreshed = await page.$$eval('a[href*="#/station/"], a[href*="#/show/"]', (els) =>
-    els.map((a) => a.getAttribute('href') || ''));
-  const stillHasP = refreshed.some((h) => /\b\/(?:station|show)\/p[0-9a-z]+/i.test(h));
-  expect(stillHasP, 'p-prefix rows leaked through when "Include podcasts" was OFF').toBe(false);
+  // ≥1 s-prefix row still surfaces — Folk Alley has multiple s-rows
+  // from affiliate stations.
+  await expect(page.locator('.search-results a.station-row[data-prefix="s"]').first())
+    .toBeVisible({ timeout: 10_000 });
 });
