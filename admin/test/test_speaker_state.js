@@ -266,11 +266,12 @@ test('dispatch: hint-only event (presetsUpdated) → falls back to fetcher and a
   }),
 );
 
-test('dispatch: <connectionStateUpdated/> → network fetcher fires (#94)', () =>
-  withFetchers({ network: async () => FAKE_NETWORK }, async () => {
-    // The firmware emits this on every Wi-Fi link transition. There's
-    // no inline payload, so parseInline returns null and dispatch
-    // falls through to getNetworkInfo. Without this wiring the
+test('dispatch: <connectionStateUpdated/> → network refetched via xmlGet (#94)', () =>
+  withStubs({}, async () => {
+    // The firmware emits this on every Wi-Fi link transition. The
+    // envelope has no inline <networkInfo> child, so parseInline
+    // returns null and dispatch falls through to xmlGet via the
+    // network row's path/tag/parseEl. Without this wiring the
     // Settings → Network panel held stale SSID / IP / signal until a
     // WS reconnect happened to refetch on its own.
     const doc = new DOMParser().parseFromString('<connectionStateUpdated/>', 'application/xml');
@@ -279,7 +280,8 @@ test('dispatch: <connectionStateUpdated/> → network fetcher fires (#94)', () =
     const store = makeStore();
     await dispatch(child, store);
 
-    assert.deepEqual(store.state.speaker.network, FAKE_NETWORK, 'network refetched from event');
+    assert.ok(store.state.speaker.network, 'network refetched from event');
+    assert.equal(store.state.speaker.network.ssid, 'WLAN-Oben');
     assert.equal(store._touched.length, 1, 'single touch');
   }),
 );
