@@ -304,52 +304,59 @@ function selectTab(tab, buttons, body, headerLeft, headerCount) {
 // ---- drill view (id=...) --------------------------------------------
 //
 // renderDrill (sectioned outline) and renderShowLanding (c=pbrowse)
-// share a frame: back link, header (title + ID badge + count),
-// optional crumb trail. The frame helper below renders both; each
-// caller adds the bits that are specific to its mode (filter input
-// for renderDrill; nothing extra for renderShowLanding) and hands
-// the body off to its loader.
+// share a frame. Top of the drill body is a single pill-bar that
+// folds the old standalone Back link + standalone crumb trail into
+// one row: a circular chevron-only Back affordance leads, followed
+// by an inline trail `Browse › <Tab> › <Ancestor> › <Current>`
+// where the trailing segment is the bolded, non-link current node.
+// Below the bar sits the page title (h1 + small muted <sid> suffix);
+// below that a thin count strap (kept for loadInto's total-count
+// write). Each caller (renderDrill / renderShowLanding) adds the
+// mode-specific bits (filter input for renderDrill).
+
+// Trail label override for the entry-point tab tokens. The first
+// crumb on any rooted drill is the tab — the spec wants its label
+// to read as the tab name (`Genre` / `Location` / `Language`), not
+// the cached API title ("Music" / "By Location" / "By Language").
+// Matched against the bare anchor portion of a crumb token; tokens
+// with an `:lXXX` filter suffix fall through to the cache /
+// catalogue path so e.g. `lang:l109` still resolves to "German".
+const TAB_LABEL_BY_TOKEN = Object.freeze({
+  music: 'Genre',
+  r0:    'Location',
+  lang:  'Language',
+});
 
 function buildDrillFrame(parts, crumbs) {
   const stack = Array.isArray(crumbs) ? crumbs.slice(0, MAX_CRUMBS) : [];
+  const currentToken = crumbTokenFor(parts);
 
-  const back = document.createElement('a');
-  back.className = 'browse-back';
-  back.href = backHrefFor(stack);
-  back.appendChild(icon('back', 12));
-  const backLabel = document.createElement('span');
-  backLabel.textContent = ' Back';
-  back.appendChild(backLabel);
+  // Pill bar: circular chevron Back + inline trail.
+  const bar = renderPillBar(parts, stack);
 
+  // Page title row: h1 (resolved name) + small muted sid suffix.
+  // titleEl starts as the cached label (or compact parts form);
+  // loadInto upgrades it to head.title once the response lands.
+  const titleRow = document.createElement('div');
+  titleRow.className = 'browse-title-row';
+  const titleEl = document.createElement('h1');
+  titleEl.className = 'browse-title';
+  titleEl.textContent = initialHeaderTitle(parts, currentToken);
+  const crumbId = document.createElement('span');
+  crumbId.className = 'browse-title__sid';
+  crumbId.textContent = crumbLabelFor(parts);
+  titleRow.appendChild(titleEl);
+  titleRow.appendChild(crumbId);
+
+  // Thin count strap below the title — keeps the .section-h__meta
+  // slot loadInto writes the total-entry count into. Title + sid are
+  // gone (they're in the h1 above); the strap stays so the user gets
+  // an at-a-glance "N entries" cue under the page title.
   const header = document.createElement('div');
   header.className = 'section-h browse-section-h';
-  const headerLeft = document.createElement('span');
-  headerLeft.className = 'section-h__title browse-crumb';
-
-  // Page header: title text + a muted ID badge for the verbatim parts.
-  // The title starts as the cached label (if any) or the parts compact
-  // form; loadInto upgrades it to head.title once the response lands.
-  const currentToken = crumbTokenFor(parts);
-  const titleEl = document.createElement('span');
-  titleEl.className = 'browse-crumb__title';
-  titleEl.textContent = initialHeaderTitle(parts, currentToken);
-  headerLeft.appendChild(titleEl);
-
-  const crumbId = document.createElement('span');
-  crumbId.className = 'browse-crumb__id';
-  crumbId.textContent = crumbLabelFor(parts);
-  headerLeft.appendChild(crumbId);
-
   const headerCount = document.createElement('span');
   headerCount.className = 'section-h__meta';
-  header.appendChild(headerLeft);
   header.appendChild(headerCount);
-
-  // Optional crumb-trail strip: one anchor per ancestor in the stack.
-  // Labels come from the cache; gaps are filled lazily via Describe
-  // (see hydrateCrumbLabels). Omitted entirely when there are no
-  // crumbs (we're at depth 1).
-  const trail = stack.length > 0 ? renderCrumbTrail(stack) : null;
 
   // Child links embed the current crumb stack extended by the current
   // node's token. Capped at MAX_CRUMBS by trimming the head, preserving
@@ -360,7 +367,11 @@ function buildDrillFrame(parts, crumbs) {
     : childStack;
 
   return {
-    stack, currentToken, titleEl, crumbId, headerCount, header, trail, back,
+    stack, currentToken, titleEl, crumbId, headerCount, header,
+    bar, titleRow,
+    // Sub-handles for hydrateCrumbLabels + Back-link aria-label patch.
+    trailEl: bar._trail,
+    backEl:  bar._back,
     childCrumbs: trimmed,
   };
 }
@@ -381,8 +392,8 @@ function renderDrill(root, parts, crumbs) {
 
   mount(root, html`
     <section data-view="browse" data-mode="drill">
-      <p class="breadcrumb">${frame.back}</p>
-      ${frame.trail}
+      ${frame.bar}
+      ${frame.titleRow}
       ${filterWrap}
       ${frame.header}
       ${body}
@@ -393,8 +404,9 @@ function renderDrill(root, parts, crumbs) {
 
   // Cold-load: any crumb whose label isn't already cached gets
   // hydrated in parallel (concurrency cap DESCRIBE_CONCURRENCY).
-  // Updates the trail in-place as labels resolve.
-  if (frame.trail) hydrateCrumbLabels(frame.stack, frame.trail);
+  // Updates the trail in-place as labels resolve, and re-stamps the
+  // Back-link aria-label when the popped-target's label resolves.
+  if (frame.trailEl) hydrateCrumbLabels(frame.stack, frame.trailEl, frame.backEl);
 
   // Re-patch the filter-aware badge + breadcrumb anchors whenever the
   // lcode catalogue lands after this view mounted. The boot-time
@@ -403,7 +415,7 @@ function renderDrill(root, parts, crumbs) {
   // initial render happens first, so without this hook the user would
   // see `c=music · filter=l109` with no "(German)" suffix until the
   // next navigation. (#89, #90)
-  registerLcodeRepatch(parts, frame.crumbId, frame.trail, frame.stack);
+  registerLcodeRepatch(parts, frame.crumbId, frame.trailEl, frame.stack, frame.backEl);
 
   // tuneinBrowse accepts a parts object as the c-style top-level form
   // (`{c: 'music', filter: 'l216'}`) or a bare id string. The c+filter
@@ -420,7 +432,7 @@ function renderDrill(root, parts, crumbs) {
 // anchor whose token carries an unresolved language filter. `{ once:
 // true }`; no teardown on view unmount because the DOM-patch is a
 // no-op when the elements are gone.
-function registerLcodeRepatch(parts, crumbIdEl, trailEl, stack) {
+function registerLcodeRepatch(parts, crumbIdEl, trailEl, stack, backEl) {
   if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
   const hasFilterableToken = (typeof parts.filter === 'string' && /^l\d+$/.test(parts.filter))
     || (Array.isArray(stack) && stack.some((tok) => /:l\d+$/.test(tok || '')));
@@ -429,7 +441,7 @@ function registerLcodeRepatch(parts, crumbIdEl, trailEl, stack) {
     if (crumbIdEl && typeof crumbIdEl.textContent === 'string') {
       crumbIdEl.textContent = crumbLabelFor(parts);
     }
-    if (trailEl) hydrateCrumbLabels(stack, trailEl);
+    if (trailEl) hydrateCrumbLabels(stack, trailEl, backEl);
   }, { once: true });
 }
 
@@ -450,8 +462,8 @@ function renderShowLanding(root, parts, crumbs) {
 
   mount(root, html`
     <section data-view="browse" data-mode="show-landing">
-      <p class="breadcrumb">${frame.back}</p>
-      ${frame.trail}
+      ${frame.bar}
+      ${frame.titleRow}
       ${frame.header}
       ${body}
     </section>
@@ -459,7 +471,7 @@ function renderShowLanding(root, parts, crumbs) {
 
   setChildCrumbs(frame.childCrumbs);
 
-  if (frame.trail) hydrateCrumbLabels(frame.stack, frame.trail);
+  if (frame.trailEl) hydrateCrumbLabels(frame.stack, frame.trailEl, frame.backEl);
 
   loadShowLanding(body, parts.id, frame.headerCount, {
     titleEl: frame.titleEl,
@@ -538,54 +550,159 @@ function loadInto(body, promise, headerCount, head) {
     });
 }
 
-// ---- crumb trail (between Back link and section header) ------------
+// ---- pill bar + inline trail (top of every drill body) -------------
 //
-// One anchor per crumb in the stack, oldest → newest. Each anchor's
-// href reconstructs the destination's own crumb stack: a click on
-// crumb[i] lands on a page whose own `from=` is crumb[0..i].
-// Labels come from the cache; unknown labels render as the raw token
-// (which doubles as the ID badge fallback per the issue spec).
+// The pill bar replaces the old standalone Back link + standalone
+// crumb trail with a single horizontal row: a circular chevron-only
+// Back affordance leads, followed by an inline breadcrumb
+// `Browse › <Tab> › <Ancestor> › <Current>`. The current segment is
+// the bolded, non-link tail; earlier segments stay anchors whose
+// hashes match the ones the old trail emitted, so Back/forward
+// history continues to pop the same stack.
+//
+// Composition for the trail:
+//   1. literal `Browse` (entry-point anchor → `#/browse`)
+//   2. one anchor per crumb in the stack — stack[0] gets the
+//      TAB_LABEL_BY_TOKEN override when its bare anchor matches
+//      a tab token (`music` / `r0` / `lang`); other crumbs read
+//      from the cache / lcode catalogue / raw-token fallback
+//      ladder.
+//   3. the current node as a bolded non-link `<span>` with
+//      `aria-current="page"`.
 
-export function renderCrumbTrail(stack) {
-  const trail = document.createElement('nav');
-  trail.className = 'browse-trail';
-  trail.setAttribute('aria-label', 'Breadcrumb');
-  // Defence-in-depth dedupe of consecutive identical tokens (#89). The
-  // emitter shouldn't produce them after the filter-aware crumbTokenFor
-  // fix landed, but an old URL pasted from an earlier session could
-  // still carry `from=lang,lang,lang` — render it as a single anchor
-  // rather than three identical ones.
-  const dedup = [];
-  for (const token of stack) {
-    if (dedup.length === 0 || dedup[dedup.length - 1] !== token) dedup.push(token);
+export function renderPillBar(parts, stack) {
+  const bar = document.createElement('div');
+  bar.className = 'browse-bar';
+
+  // Back chevron — circular pill, glyph only. aria-label carries the
+  // destination derived from backHrefFor (so it stays in sync with
+  // the popped target). When the destination is the root tabs view,
+  // we read "Back to Browse"; otherwise the destination crumb's
+  // label is used.
+  const back = document.createElement('a');
+  back.className = 'browse-bar__back';
+  back.href = backHrefFor(stack);
+  back.setAttribute('aria-label', backAriaLabel(stack));
+  // Marker for hydrateCrumbLabels to re-stamp the aria-label once the
+  // destination crumb's title resolves.
+  if (Array.isArray(stack) && stack.length > 0) {
+    back.dataset.backToken = stack[stack.length - 1];
   }
+  back.appendChild(icon('chevron-left', 16));
+  bar.appendChild(back);
+
+  const trail = renderCrumbTrail(stack, parts);
+  bar.appendChild(trail);
+
+  // Sub-handle accessors for the drill frame (hydrateCrumbLabels
+  // mutates the trail anchors + the back aria-label in place).
+  bar._back = back;
+  bar._trail = trail;
+  return bar;
+}
+
+// Build the inline trail inside the pill bar. Always leads with the
+// literal `Browse` entry-point anchor; the bolded current segment is
+// appended when `currentParts` is provided (the drill case). Tests
+// can call with `currentParts = null` to render just the lineage —
+// the legacy ancestor-only shape used by the old standalone trail.
+
+export function renderCrumbTrail(stack, currentParts) {
+  const trail = document.createElement('nav');
+  trail.className = 'browse-bar__trail';
+  trail.setAttribute('aria-label', 'Breadcrumb');
+
+  // Defence-in-depth dedupe of consecutive identical tokens (#89). An
+  // old URL pasted from an earlier session could carry
+  // `from=lang,lang,lang` — render it as a single anchor rather than
+  // three identical ones.
+  const dedup = [];
+  if (Array.isArray(stack)) {
+    for (const token of stack) {
+      if (dedup.length === 0 || dedup[dedup.length - 1] !== token) dedup.push(token);
+    }
+  }
+
+  // 1. literal Browse anchor — every trail starts here.
+  const browseA = document.createElement('a');
+  browseA.className = 'browse-bar__crumb';
+  browseA.setAttribute('href', '#/browse');
+  browseA.dataset.crumbRole = 'root';
+  browseA.textContent = 'Browse';
+  trail.appendChild(browseA);
+
+  // 2. one anchor per stack entry. stack[0] is the tab; its bare
+  // anchor maps via TAB_LABEL_BY_TOKEN.
   for (let i = 0; i < dedup.length; i++) {
+    trail.appendChild(makeSeparator());
     const token = dedup[i];
     const parts = partsFromCrumb(token);
     const a = document.createElement('a');
-    a.className = 'browse-trail__crumb';
+    a.className = 'browse-bar__crumb';
     a.dataset.crumbToken = token;
+    if (i === 0) a.dataset.crumbPosition = 'first';
     if (parts) {
-      // Each ancestor's own crumb stack is the prefix up to (and not
-      // including) itself, so a click on crumb[i] navigates to that
-      // node with from=dedup[0..i-1].
       a.href = drillHashFor(parts, dedup.slice(0, i));
     } else {
       a.className += ' is-disabled';
     }
-    a.textContent = initialCrumbLabel(token, parts);
+    a.textContent = initialCrumbLabel(token, parts, i === 0);
     trail.appendChild(a);
   }
+
+  // 3. current segment — bolded non-link tail. Skipped when no
+  // current parts are supplied (the legacy ancestor-only shape).
+  if (currentParts) {
+    trail.appendChild(makeSeparator());
+    const cur = document.createElement('span');
+    cur.className = 'browse-bar__crumb is-current';
+    cur.setAttribute('aria-current', 'page');
+    // The current segment is the drill's title; it's a separate seam
+    // from the cache labels (which are keyed by crumb token, not by
+    // the current page). Read the same h1-equivalent text we use for
+    // the page title row.
+    const curToken = crumbTokenFor(currentParts);
+    cur.textContent = initialHeaderTitle(currentParts, curToken);
+    if (curToken) cur.dataset.crumbToken = curToken;
+    trail.appendChild(cur);
+  }
+
   return trail;
 }
 
+function makeSeparator() {
+  const sep = document.createElement('span');
+  sep.className = 'browse-bar__sep';
+  sep.setAttribute('aria-hidden', 'true');
+  sep.textContent = '›'; // ›
+  return sep;
+}
+
 // Pick the best already-known label for a crumb token without doing
-// any network work. Order of preference: cached label under
-// `tunein.label.<token>` (from a previous resolve), in-memory lcode
-// catalogue (free for `<anchor>:l<NNN>` tokens), then raw token. The
-// async hydrateCrumbLabels path upgrades any token still rendered as
-// raw once its Describe / Browse lookup completes.
-function initialCrumbLabel(token, parts) {
+// any network work. Order of preference for ancestors:
+//   - tab-token override (only at stack[0] — the entry-point tab)
+//   - cached label under `tunein.label.<token>` (from a previous
+//     resolve)
+//   - in-memory lcode catalogue (free for `<anchor>:l<NNN>` tokens)
+//   - raw token fallback
+// The async hydrateCrumbLabels path upgrades any token still
+// rendered as raw once its Describe / Browse lookup completes.
+function initialCrumbLabel(token, parts, isFirstInStack) {
+  // The first crumb in the stack is the entry-point tab — render it
+  // with the tab's display label (`Genre` / `Location` / `Language`)
+  // rather than the cached API title ("Music" / "By Location" / "By
+  // Language"). Filter-bearing tokens (`lang:lXXX`) intentionally
+  // fall through to the catalogue path so they read as the language
+  // name, not "Language".
+  if (isFirstInStack) {
+    const bareAnchor = parts && typeof parts.id === 'string'
+      ? parts.id
+      : (parts && typeof parts.c === 'string' ? parts.c : '');
+    const isFilterBearing = parts && typeof parts.filter === 'string' && parts.filter !== '';
+    if (!isFilterBearing && bareAnchor && TAB_LABEL_BY_TOKEN[bareAnchor]) {
+      return TAB_LABEL_BY_TOKEN[bareAnchor];
+    }
+  }
   const cached = cache.get(`tunein.label.${token}`);
   if (typeof cached === 'string' && cached !== '') return cached;
   if (parts && typeof parts.filter === 'string' && /^l\d+$/.test(parts.filter)) {
@@ -593,6 +710,22 @@ function initialCrumbLabel(token, parts) {
     if (name) return name;
   }
   return token;
+}
+
+// Compose the Back chevron's aria-label from the popped destination.
+// Empty stack → root tabs view ("Back to Browse"). Otherwise the
+// destination is the last crumb in the stack; prefer the resolved
+// label (cache / catalogue) and fall back to the raw token.
+function backAriaLabel(stack) {
+  if (!Array.isArray(stack) || stack.length === 0) return 'Back to Browse';
+  const destToken = stack[stack.length - 1];
+  if (!destToken) return 'Back to Browse';
+  const destParts = partsFromCrumb(destToken);
+  // The last crumb in the stack is the trail's tail-before-current —
+  // it's an ancestor, not the entry-point tab, so isFirstInStack is
+  // only relevant when stack length is 1.
+  const label = initialCrumbLabel(destToken, destParts, stack.length === 1);
+  return `Back to ${label}`;
 }
 
 // For every crumb in `stack` that lacks a cached label, fetch its
@@ -615,7 +748,7 @@ function initialCrumbLabel(token, parts) {
 //
 // Tokens whose resolved title is blank stay rendered as raw IDs —
 // the documented final fallback from the issue spec.
-async function hydrateCrumbLabels(stack, trailEl) {
+async function hydrateCrumbLabels(stack, trailEl, backEl) {
   if (!Array.isArray(stack) || stack.length === 0) return;
   const todo = [];
   for (const token of stack) {
@@ -631,7 +764,7 @@ async function hydrateCrumbLabels(stack, trailEl) {
       // Wait for any one to finish before issuing the next.
       await Promise.race(inFlight);
     }
-    const p = resolveLabelAndApply(token, trailEl).finally(() => inFlight.delete(p));
+    const p = resolveLabelAndApply(token, trailEl, backEl, stack).finally(() => inFlight.delete(p));
     inFlight.add(p);
   }
   // Drain the remaining wave so failures surface in dev tools.
@@ -641,7 +774,7 @@ async function hydrateCrumbLabels(stack, trailEl) {
 // Resolve a single crumb token to a human-readable label and patch
 // the trail. Picks the appropriate endpoint per prefix; falls through
 // silently when no label can be discovered.
-async function resolveLabelAndApply(token, trailEl) {
+async function resolveLabelAndApply(token, trailEl, backEl, stack) {
   // Filter-bearing tokens (`<anchor>:l<NNN>`) resolve from the in-
   // memory lcode catalogue without any network round-trip (#89, #90).
   // We bypass the Describe / Browse fallbacks entirely — the
@@ -651,10 +784,8 @@ async function resolveLabelAndApply(token, trailEl) {
     const name = lcodeLabel(parts.filter);
     if (name) {
       cache.set(`tunein.label.${token}`, name, TTL_LABEL);
-      if (trailEl && typeof trailEl.querySelector === 'function') {
-        const a = trailEl.querySelector(`[data-crumb-token="${cssEscape(token)}"]`);
-        if (a) a.textContent = name;
-      }
+      patchTrailCrumb(trailEl, token, name);
+      patchBackAria(backEl, stack, token, name);
     }
     return;
   }
@@ -686,11 +817,50 @@ async function resolveLabelAndApply(token, trailEl) {
   }
   if (!title) return;
   cache.set(`tunein.label.${token}`, title, TTL_LABEL);
-  // Patch the trail in-place. The trail DOM was built before this
-  // request started, so locate the crumb anchor by its data attribute.
+  patchTrailCrumb(trailEl, token, title);
+  patchBackAria(backEl, stack, token, title);
+}
+
+// Find the trail anchor for `token` and rewrite its textContent. The
+// first-in-stack tab override stays sticky — we don't overwrite the
+// tab label with whatever the API returns for its node.
+function patchTrailCrumb(trailEl, token, label) {
   if (!trailEl || typeof trailEl.querySelector !== 'function') return;
   const a = trailEl.querySelector(`[data-crumb-token="${cssEscape(token)}"]`);
-  if (a) a.textContent = title;
+  if (!a) return;
+  // Skip if the rendered label already reflects the tab-token override
+  // (stack[0] is allowed to read as `Genre` / `Location` / `Language`
+  // — the cache write happens for the cold-load path but doesn't
+  // overwrite the override visually).
+  if (a.dataset && a.dataset.crumbPosition === 'first') {
+    const parts = partsFromCrumb(token);
+    const bareAnchor = parts && typeof parts.id === 'string'
+      ? parts.id
+      : (parts && typeof parts.c === 'string' ? parts.c : '');
+    const isFilterBearing = parts && typeof parts.filter === 'string' && parts.filter !== '';
+    if (!isFilterBearing && bareAnchor && TAB_LABEL_BY_TOKEN[bareAnchor]) return;
+  }
+  a.textContent = label;
+}
+
+// Re-stamp the Back chevron's aria-label when the destination crumb's
+// label resolves. Only fires when the resolving token matches the
+// last crumb in the stack (which is the popped destination). Honour
+// the tab-token override for a single-crumb stack so the popped
+// destination reads as "Back to Genre" rather than "Back to Music".
+function patchBackAria(backEl, stack, token, label) {
+  if (!backEl) return;
+  if (!Array.isArray(stack) || stack.length === 0) return;
+  if (stack[stack.length - 1] !== token) return;
+  if (stack.length === 1) {
+    const parts = partsFromCrumb(token);
+    const bareAnchor = parts && typeof parts.id === 'string'
+      ? parts.id
+      : (parts && typeof parts.c === 'string' ? parts.c : '');
+    const isFilterBearing = parts && typeof parts.filter === 'string' && parts.filter !== '';
+    if (!isFilterBearing && bareAnchor && TAB_LABEL_BY_TOKEN[bareAnchor]) return;
+  }
+  backEl.setAttribute('aria-label', `Back to ${label}`);
 }
 
 // CSS.escape isn't available in xmldom (test) and the crumb tokens are

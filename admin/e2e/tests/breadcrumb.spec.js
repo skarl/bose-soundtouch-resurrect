@@ -1,9 +1,15 @@
 // Slice #74 — Breadcrumb + crumb stack.
 //
 // Drilling N levels deep records each parent in the URL hash via a
-// `from=<list>` parameter. The page header reads the API's `head.title`
-// (not the URL id), and the drill stack survives a reload. The
-// inline back link (`a.browse-back`) pops one level.
+// `from=<list>` parameter. The page title row reads the API's
+// `head.title` (not the URL id), and the drill stack survives a
+// reload. The pill-bar's circular Back chevron (`a.browse-bar__back`)
+// pops one level. Selectors target the post-#103 pill-bar DOM:
+//
+//   .browse-bar          — wrapping pill row
+//   .browse-bar__back    — circular Back chevron
+//   .browse-title        — h1 page title row
+//   .browse-title__sid   — small muted sid suffix in the title row
 
 import { test, expect } from './_setup.js';
 
@@ -14,8 +20,8 @@ test('drilling 3 levels records from=<list>; refresh + Back preserve / pop the s
   await page.waitForSelector('[data-view="browse"][data-mode="drill"]', { timeout: 15_000 });
   await expect(page.locator('.browse-loading')).toHaveCount(0, { timeout: 15_000 });
 
-  // Level-1 page header reads head.title from the API ("Music").
-  const level1Title = (await page.locator('.browse-crumb__title').first().innerText()).trim();
+  // Level-1 page title reads head.title from the API ("Music").
+  const level1Title = (await page.locator('.browse-title').first().innerText()).trim();
   expect(level1Title.length).toBeGreaterThan(0);
 
   // Level 2 — Folk Music (c100000948) is a stable, reliably-populated
@@ -32,8 +38,8 @@ test('drilling 3 levels records from=<list>; refresh + Back preserve / pop the s
   );
   await expect(page.locator('.browse-loading')).toHaveCount(0, { timeout: 15_000 });
 
-  // Level-2 page header reads head.title — "Folk".
-  const level2Title = (await page.locator('.browse-crumb__title').first().innerText()).trim();
+  // Level-2 page title reads head.title — "Folk".
+  const level2Title = (await page.locator('.browse-title').first().innerText()).trim();
   expect(level2Title.length).toBeGreaterThan(0);
   expect(level2Title).not.toBe(level1Title);
 
@@ -60,13 +66,13 @@ test('drilling 3 levels records from=<list>; refresh + Back preserve / pop the s
   const level3Hash = await page.evaluate(() => location.hash);
   expect(level3Hash).toMatch(/from=[^&]+(?:,|%2C)[^&]+/i);
 
-  // Page header reads head.title — non-empty, distinct from the
-  // verbatim crumb id badge.
-  const level3Title = (await page.locator('.browse-crumb__title').first().innerText()).trim();
+  // Page title reads head.title — non-empty, distinct from the
+  // verbatim sid suffix in the title row.
+  const level3Title = (await page.locator('.browse-title').first().innerText()).trim();
   expect(level3Title.length).toBeGreaterThan(0);
-  // The title is the API head.title (human name); the .browse-crumb__id
-  // sibling carries the verbatim id/parts.
-  const level3IdBadge = (await page.locator('.browse-crumb__id').first().innerText()).trim();
+  // The title is the API head.title (human name); the
+  // .browse-title__sid sibling carries the verbatim id/parts.
+  const level3IdBadge = (await page.locator('.browse-title__sid').first().innerText()).trim();
   expect(level3IdBadge.length).toBeGreaterThan(0);
   expect(level3Title).not.toBe(level3IdBadge);
 
@@ -76,13 +82,13 @@ test('drilling 3 levels records from=<list>; refresh + Back preserve / pop the s
   const afterReloadHash = await page.evaluate(() => location.hash);
   expect(afterReloadHash).toMatch(/from=[^&]+(?:,|%2C)[^&]+/i);
 
-  // Click Back (the inline back link). The .browse-back anchor pops one
-  // level off the from= chain.
-  const back = page.locator('a.browse-back').first();
+  // Click Back (the circular chevron in the pill bar). The pill-bar
+  // back anchor pops one level off the from= chain.
+  const back = page.locator('a.browse-bar__back').first();
   await expect(back).toBeVisible();
   await back.click();
 
-  // Hash + header have shifted one level up.
+  // Hash + title have shifted one level up.
   await page.waitForFunction((h) => location.hash !== h, afterReloadHash, { timeout: 10_000 });
   const newHash = await page.evaluate(() => location.hash);
   expect(newHash).not.toBe(afterReloadHash);

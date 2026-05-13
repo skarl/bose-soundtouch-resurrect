@@ -2978,66 +2978,105 @@ select.settings-input {
   cursor: default;
 }
 
-/* Drill-mode breadcrumb header bits. */
-.browse-crumb {
-  font-family: 'Geist Mono', ui-monospace, monospace;
-  text-transform: none;
-  letter-spacing: 0;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.browse-crumb__title {
-  font-family: var(--font-sans, system-ui, sans-serif);
-  font-weight: 600;
-  color: var(--text, inherit);
-}
-
-.browse-crumb__id {
-  color: var(--text-dim, var(--fg-muted));
-  font-size: 0.85em;
-}
-
-/* Crumb trail (ancestor chain, between Back and section header). */
-.browse-trail {
+/* Drill-mode pill bar — chevron Back + inline trail in one row. */
+/* Replaces the old standalone Back link + standalone crumb trail.
+   The bar mounts only on drill views; the root tabs view stays bare. */
+.browse-bar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  margin: 4px 0 6px;
-  font-size: 13px;
-  color: var(--text-dim, var(--fg-muted));
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 4px 4px;
+  margin: 0 0 8px;
+  background: var(--surface);
+  border-radius: 999px;
+  min-height: 32px;
 }
 
-.browse-trail__crumb {
+/* Circular Back affordance — glyph only, no text. The aria-label
+   carries the popped destination (`Back to <name>`). */
+.browse-bar__back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface-hi);
+  color: var(--accent);
+  text-decoration: none;
+  flex: 0 0 auto;
+}
+
+.browse-bar__back:hover { background: var(--stream-sel); }
+
+.browse-bar__back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Inline trail inside the pill bar — anchors separated by `›`
+   characters carried by their own .browse-bar__sep spans. */
+.browse-bar__trail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.browse-bar__crumb {
   text-decoration: none;
   color: var(--accent);
 }
 
-.browse-trail__crumb:hover { text-decoration: underline; }
+.browse-bar__crumb:hover { text-decoration: underline; }
 
-.browse-trail__crumb + .browse-trail__crumb::before {
-  content: '›';
-  margin: 0 6px 0 0;
-  color: var(--text-dim, var(--fg-muted));
-}
-
-.browse-trail__crumb.is-disabled {
-  color: var(--text-dim, var(--fg-muted));
+.browse-bar__crumb.is-disabled {
+  color: var(--fg-muted);
   cursor: default;
   pointer-events: none;
 }
 
-.browse-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  text-decoration: none;
-  color: var(--accent);
-  font-size: 13px;
+/* Current segment — bolded non-link tail (aria-current="page"). */
+.browse-bar__crumb.is-current {
+  color: var(--fg);
+  font-weight: 600;
+  cursor: default;
 }
 
-.browse-back:hover { text-decoration: underline; }
+.browse-bar__crumb.is-current:hover { text-decoration: none; }
+
+.browse-bar__sep {
+  color: var(--fg-muted);
+  user-select: none;
+}
+
+/* Page title row — h1 + small muted sid suffix. Replaces the old
+   `.browse-crumb__title` + `.browse-crumb__id` pair that the drill
+   section-h used to carry. */
+.browse-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  min-width: 0;
+}
+
+.browse-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--fg);
+  min-width: 0;
+}
+
+.browse-title__sid {
+  color: var(--fg-muted);
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 0.8rem;
+}
 
 /* Search empty state — single stacked column. The earlier two-column
    grid was the polish that didn't match the mockup. */
