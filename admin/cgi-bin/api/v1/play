@@ -140,6 +140,14 @@ fi
 
 body_id=$(json_string_field id <"$body_file")
 body_url=$(json_string_field url <"$body_file")
+body_name=$(json_string_field name <"$body_file")
+
+# Resolved station name takes precedence over the guide_id. Without it
+# the Bose firmware uses whatever we put in <itemName> as the persistent
+# now-playing label, which surfaces in the mini-player + now-playing
+# view. Fall back to the guide_id so a caller that forgets the field
+# still gets a non-empty itemName.
+display_name=${body_name:-$body_id}
 
 # Validate id — must be s|p|t-prefixed digits (station / show / topic).
 case "$body_id" in
@@ -204,7 +212,8 @@ if [ ! -f "$target" ]; then
         printf '"streamUrl":"%s",' "$url_esc"
         printf '"streams":[{"bufferingTimeout":20,"connectingTimeout":10,"hasPlaylist":true,"isRealtime":true,"streamUrl":"%s","maxTimeout":60}]' "$url_esc"
         printf '},"imageUrl":"","isFavorite":false,'
-        printf '"name":"%s",' "$body_id"
+        name_for_json=$(json_escape "$display_name")
+        printf '"name":"%s",' "$name_for_json"
         printf '"streamType":"liveRadio"}'
     } >"$tmp" || emit_error '500 Internal Server Error' 'write-failed'
 
@@ -214,9 +223,11 @@ fi
 
 # Compose the ContentItem and POST to /select. The firmware resolves
 # `location` to margeServer, fetches the JSON we just wrote, and tunes
-# to streamUrl. itemName here is just the guide_id; the admin shows
-# the row's actual text in its toast.
-name_xml=$(xml_escape "$body_id")
+# to streamUrl. <itemName> here is the resolved station name — the
+# firmware uses it for the persistent now-playing label that surfaces
+# in the mini-player + now-playing view. Falls back to the guide_id
+# only when the caller didn't supply a name.
+name_xml=$(xml_escape "$display_name")
 location="/v1/playback/station/$body_id"
 sp_body="<ContentItem source=\"TUNEIN\" type=\"stationurl\" location=\"${location}\" sourceAccount=\"\" isPresetable=\"true\"><itemName>${name_xml}</itemName></ContentItem>"
 

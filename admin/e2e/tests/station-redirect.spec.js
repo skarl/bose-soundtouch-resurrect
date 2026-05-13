@@ -44,11 +44,16 @@ test('#/station/p73 redirects to the show landing and renders the show-landing c
   await expect(page.locator('.browse-loading')).toHaveCount(0, { timeout: 15_000 });
 
   // Jazz at Lincoln Center — per Bo's live Describe.ashx?id=p73.
+  // Issue #87 replaced the stationRow misuse on the hero with a non-
+  // anchor showHero element. The hero carries data-show-landing="1"
+  // and renders the show name in .station-row__name (CSS parity).
   const landing = page.locator('.browse-section[data-section="showLanding"]');
   await expect(landing).toBeVisible({ timeout: 10_000 });
-  const showRow = landing.locator('a.station-row[data-sid="p73"]');
-  await expect(showRow).toBeVisible();
-  await expect(showRow.locator('.station-row__name')).toHaveText('Jazz at Lincoln Center');
+  const hero = landing.locator('[data-show-landing="1"]');
+  await expect(hero).toBeVisible();
+  // Hero is a non-anchor — body tap is naturally inert.
+  await expect(hero).not.toHaveJSProperty('tagName', 'A');
+  await expect(hero.locator('.station-row__name')).toHaveText('Jazz at Lincoln Center');
 });
 
 test('#/station/t12345 redirects to a browse drill (URL transition only)', async ({ page }) => {

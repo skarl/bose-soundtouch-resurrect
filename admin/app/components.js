@@ -758,7 +758,7 @@ function playButton(sid, label) {
     const cached = cache.get(cacheKey);
 
     try {
-      const result = await playGuideId(sid, cached);
+      const result = await playGuideId(sid, label, cached);
       if (result && result.ok) {
         if (typeof result.url === 'string' && result.url) {
           cache.set(cacheKey, result.url, TTL_STREAM);

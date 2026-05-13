@@ -541,6 +541,10 @@ test('stationRow: clicking Play calls playGuideId, sets is-loading then clears, 
   assert.equal(calls[0].opts.method, 'POST');
   const payload = JSON.parse(calls[0].opts.body);
   assert.equal(payload.id, 's24862');
+  // The resolved station name rides along so the CGI can write it into
+  // <itemName> on /select (drives the persistent mini-player label).
+  // Regression guard for the #78 follow-up.
+  assert.equal(payload.name, 'Radio Test');
   // First-call has no cached URL.
   assert.equal(payload.url, undefined);
 
