@@ -3,23 +3,19 @@
 // Final-mile polish that didn't fit cleanly into earlier slices:
 //   - "Browse all of <country>" anchor on c=local responses, surfacing
 //     the localCountry link as a prominent card above the local audio list.
-//   - Tiny-country annotation when a country surfaces ≤5 stations
-//     (Vatican / Liechtenstein / Andorra). The live r-list API doesn't
-//     emit `station_count` metadata on country rows, so we MITM the
-//     Browse response to inject one (the SPA fixture under
-//     admin/test/fixtures/api/r-europe-countries.tunein.json is the
-//     canonical shape).
 //   - Every `<img>` rendered in the SPA has loading="lazy".
 //   - `related` arrays render as chip rows on the browse drill page.
 //   - Station-detail call-to-action reads "Play" (not "Audition" /
 //     "Testplay" — see project memory).
+//
+// The tiny-country annotation originally shipped in slice #82 has been
+// retired (issue #85): the live Browse.ashx r-list response does not
+// emit `count` / `station_count` / `item_count` on country rows, so
+// the threshold render path could never fire against a real Bo. The
+// spec below asserts the retirement against a real Bo drill into a
+// tiny country (Vatican City, r101312).
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
 import { test, expect, gotoBrowse } from './_setup.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 test('Local Radio (c=local) surfaces a "Browse all of <country>" card', async ({ page }) => {
   // c=local is the canonical entry to Local Radio. Its response
@@ -36,40 +32,28 @@ test('Local Radio (c=local) surfaces a "Browse all of <country>" card', async ({
   expect(label).toMatch(/^Browse all of\s+/);
 });
 
-test('tiny-country drills carry the tiny-country annotation (MITMed station_count)', async ({ page }) => {
-  // The live r-list API doesn't emit station_count on country rows,
-  // so this assertion would never fire against a real Bo response.
-  // MITM the Browse fetch for the European-countries node with the
-  // already-canonical fixture from the unit suite — same data shape
-  // the slice was authored against.
-  const fixturePath = join(__dirname, '..', '..', 'test', 'fixtures', 'api',
-    'r-europe-countries.tunein.json');
-  const fixture = readFileSync(fixturePath, 'utf8');
-
-  await page.route('**/cgi-bin/api/v1/tunein/browse?id=r-europe-countries**', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: fixture }));
-  // The fixture uses guide_ids r101193 / r101160 / r101110 / r101172 /
-  // r100346; we navigate via a synthetic id and serve the fixture.
-  await page.route('**/cgi-bin/api/v1/tunein/browse?id=r-tiny-countries-mitm', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: fixture }));
-
-  await page.goto('/#/browse?id=r-tiny-countries-mitm', { waitUntil: 'load' });
+test('tiny-country annotation is retired — Vatican drill renders without any .browse-row__annot', async ({ page }) => {
+  // Issue #85: the threshold render path was retired because the live
+  // Browse.ashx r-list response carries only element/type/text/URL/
+  // guide_id on country rows. No count / station_count / item_count
+  // is emitted, so the annotation could never fire on a real Bo
+  // egress. This spec drills into Vatican City (r101312, currently
+  // one station on the wire) on Bo and asserts no annotation node
+  // leaks into the rendered drill — proving the dead code path is
+  // gone end-to-end, not just in unit tests.
+  await gotoBrowse(page, 'r101312');
   await page.waitForSelector('[data-view="browse"][data-mode="drill"]', { timeout: 15_000 });
   await expect(page.locator('.browse-loading')).toHaveCount(0, { timeout: 15_000 });
 
-  // The annotation lives on rows whose count is <= 5 (browse.js
-  // TINY_COUNTRY_THRESHOLD). The fixture has Vatican (1), Liechtenstein
-  // (3), Andorra (5) under that threshold; the annotation must mount
-  // on each.
-  const annotations = page.locator('.browse-row__annot[data-tiny-country="1"]');
-  await expect(annotations.first()).toBeVisible({ timeout: 5_000 });
-  expect(await annotations.count()).toBeGreaterThanOrEqual(3);
+  // The drill must actually render — at least one audio row from the
+  // Vatican station list. If Bo returns an empty body the rest of the
+  // assertion is meaningless.
+  await expect(page.locator('.station-row').first()).toBeVisible({ timeout: 10_000 });
 
-  // Each annotation's text is " · N station(s)".
-  const texts = await annotations.allInnerTexts();
-  for (const t of texts) {
-    expect(t).toMatch(/·\s+\d+\s+stations?$/);
-  }
+  // No annotation node anywhere on the page — neither the class nor
+  // the data-attribute survives.
+  await expect(page.locator('.browse-row__annot')).toHaveCount(0);
+  await expect(page.locator('[data-tiny-country]')).toHaveCount(0);
 });
 
 test('every <img> on the browse view has loading="lazy"', async ({ page }) => {

@@ -52,7 +52,7 @@ const COVERAGE = [
   ['#79', 'row-polish.spec.js',    'Reliability badges, 2-line subtitles, clickable genre chips'],
   ['#80', 'search.spec.js',        '"Folk Alley" → p-prefix row; toggle excludes podcasts'],
   ['#81', 'show-drill.spec.js',    'Show drill renders topic rows; topic Play triggers /play'],
-  ['#82', 'local-polish.spec.js',  'Browse-all card, tiny-country, lazy <img>, related chips, "Play" CTA'],
+  ['#82', 'local-polish.spec.js',  'Browse-all card, retired-annotation guard (#85), lazy <img>, related chips, "Play" CTA'],
 ];
 
 test('orchestrator: emit 0.4.2 smoke report', async ({ page }) => {

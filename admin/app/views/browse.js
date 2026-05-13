@@ -32,13 +32,6 @@ import {
 } from '../tunein-outline.js';
 import { createPager } from '../tunein-pager.js';
 
-// Threshold below which a country-drill row prefers the inline
-// "· N stations" annotation over the right-aligned count badge.
-// Vatican / Liechtenstein / Andorra / Monaco are the documented
-// examples in issue #82; bumped to 5 to absorb similarly-small slots
-// like San Marino without re-litigating per-row.
-const TINY_COUNTRY_THRESHOLD = 5;
-
 // Section keys that the c=pbrowse show-drill response uses. The
 // `liveShow` container holds the currently-airing show as a single
 // playable p-prefix row; `topics` holds recent episodes as t-prefix
@@ -1258,30 +1251,19 @@ function drillRow(entry, norm, _kind) {
   label.textContent = norm.primary || badgeText || '(unnamed)';
   row.appendChild(label);
 
-  // Some Browse.ashx entries surface a child count via station_count /
-  // count / item_count.
-  //
-  // Two presentations:
-  //   - ≤5 stations → inline "· N station(s)" annotation glued next
-  //     to the row's label, signalling tiny countries (Vatican,
-  //     Liechtenstein, Andorra, …) before the user wastes a drill.
-  //   - >5 stations → right-aligned count badge as before.
-  // Threshold is the UX heuristic called out in issue #82.
+  // Some Browse.ashx entries surface a child count via count /
+  // station_count / item_count. When present, render the
+  // right-aligned count badge. Country rows on the live r-list
+  // wire do NOT emit any of these keys (verified end-to-end via
+  // Bo's CGI proxy against r0 → Europe → r101312 / r100373 /
+  // r100290 / r101274 / r100346 — see issue #85), so this branch
+  // mainly fires for genre / podcast nodes that do carry counts.
   const count = countOf(entry);
   if (count != null) {
-    if (count <= TINY_COUNTRY_THRESHOLD) {
-      const annot = document.createElement('span');
-      annot.className = 'browse-row__annot';
-      annot.setAttribute('data-tiny-country', '1');
-      const word = count === 1 ? 'station' : 'stations';
-      annot.textContent = ` · ${count} ${word}`;
-      row.appendChild(annot);
-    } else {
-      const c = document.createElement('span');
-      c.className = 'browse-row__count';
-      c.textContent = count.toLocaleString();
-      row.appendChild(c);
-    }
+    const c = document.createElement('span');
+    c.className = 'browse-row__count';
+    c.textContent = count.toLocaleString();
+    row.appendChild(c);
   }
 
   if (drillable) {

@@ -1265,8 +1265,10 @@ test('renderOutline (#81): topics row without topic_duration falls back to subte
   assert.equal(loc.textContent, 'A description with no duration.');
 });
 
-// --- Slice #82: Local Radio surface, tiny-country, related-as-chips,
-//                lazy-img -----------------------------------------------
+// --- Slice #82: Local Radio surface, related-as-chips, lazy-img -----
+// (The tiny-country annotation tests have been retired per issue #85
+// — the live wire never carries the count signal those tests relied
+// on; see the local-polish e2e spec for the live retirement guard.)
 
 test('renderOutline (#82): c=local response lifts the localCountry link as a prominent card at the top', async () => {
   const fs = await import('node:fs');
@@ -1307,89 +1309,6 @@ test('renderOutline (#82): c=local response lifts the localCountry link as a pro
   // .browse-row with data-key="localCountry" leaks into the audio list).
   // The card is the only representation.
   assert.equal(total, 3, `total counts audio rows only, got ${total}`);
-});
-
-test('renderEntry (#82): country row with station_count <= 5 emits an inline annotation, not a count badge', () => {
-  // Vatican: 1 station — annotation reads "· 1 station".
-  const vatican = renderEntry({
-    text: 'Vatican City',
-    URL:  'http://opml.radiotime.com/Browse.ashx?id=r101193',
-    guide_id: 'r101193',
-    station_count: 1,
-  });
-  const vAnnot = findFirstByClass(vatican, 'browse-row__annot');
-  assert.ok(vAnnot, 'Vatican row carries the tiny-country annotation');
-  assert.equal(vAnnot.getAttribute('data-tiny-country'), '1');
-  assert.equal(vAnnot.textContent.trim(), '· 1 station',
-    `expected "· 1 station", got "${vAnnot.textContent}"`);
-  // No right-aligned count badge at this size — the inline path took
-  // over so the row reads cleanly.
-  assert.equal(findFirstByClass(vatican, 'browse-row__count'), null,
-    'no separate count badge for tiny-country rows');
-
-  // Liechtenstein: 3 stations — plural form.
-  const liech = renderEntry({
-    text: 'Liechtenstein',
-    URL:  'http://opml.radiotime.com/Browse.ashx?id=r101160',
-    guide_id: 'r101160',
-    station_count: 3,
-  });
-  const lAnnot = findFirstByClass(liech, 'browse-row__annot');
-  assert.ok(lAnnot, 'Liechtenstein row carries the annotation');
-  assert.equal(lAnnot.textContent.trim(), '· 3 stations');
-
-  // Andorra: 5 stations — boundary case (threshold is ≤5).
-  const andorra = renderEntry({
-    text: 'Andorra',
-    URL:  'http://opml.radiotime.com/Browse.ashx?id=r101110',
-    guide_id: 'r101110',
-    station_count: 5,
-  });
-  const aAnnot = findFirstByClass(andorra, 'browse-row__annot');
-  assert.ok(aAnnot, 'Andorra (5 stations) is still tiny-country');
-  assert.equal(aAnnot.textContent.trim(), '· 5 stations');
-});
-
-test('renderEntry (#82): country row with station_count > 5 keeps the right-aligned count badge', () => {
-  // Monaco: 8 stations — above the threshold, keeps the badge.
-  const monaco = renderEntry({
-    text: 'Monaco',
-    URL:  'http://opml.radiotime.com/Browse.ashx?id=r101172',
-    guide_id: 'r101172',
-    station_count: 8,
-  });
-  const annot = findFirstByClass(monaco, 'browse-row__annot');
-  assert.equal(annot, null, 'no inline annotation above the threshold');
-  const c = findFirstByClass(monaco, 'browse-row__count');
-  assert.ok(c, 'count badge mounts for >5');
-  assert.equal(c.textContent, '8');
-});
-
-test('renderOutline (#82): mixed country list — tiny rows get annotation, large rows get count badge', async () => {
-  const fs = await import('node:fs');
-  const path = await import('node:path');
-  const countries = JSON.parse(
-    fs.readFileSync(path.resolve('admin/test/fixtures/api/r-europe-countries.tunein.json'), 'utf8'),
-  );
-  const body = doc.createElement('div');
-  renderOutline(body, countries);
-
-  const rows = findAllBy(body, (el) => hasClass(el, 'browse-row'));
-  assert.equal(rows.length, 5, 'five country rows render');
-
-  // Vatican / Liechtenstein / Andorra → annotation.
-  const tiny = rows.slice(0, 3);
-  for (const r of tiny) {
-    const a = findFirstByClass(r, 'browse-row__annot');
-    assert.ok(a, `tiny row gets annotation: ${findFirstByClass(r, 'browse-row__label').textContent}`);
-  }
-  // Monaco (8) / Germany (38420) → count badge.
-  for (const r of rows.slice(3)) {
-    const a = findFirstByClass(r, 'browse-row__annot');
-    assert.equal(a, null, `large country has no annotation`);
-    const c = findFirstByClass(r, 'browse-row__count');
-    assert.ok(c, `large country has count badge`);
-  }
 });
 
 test('renderOutline (#82): related section renders ALL children as chips, no stacked row cards', async () => {

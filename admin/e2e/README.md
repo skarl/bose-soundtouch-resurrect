@@ -61,7 +61,7 @@ single-spec dev runs (e.g. `npx playwright test tests/play.spec.js
 | `row-polish.spec.js`   | #79 | Reliability badges with colour classes, 2-line subtitles, clickable genre chips. |
 | `search.spec.js`       | #80 | "Folk Alley" yields a p-prefix row with inline Play; toggling "Include podcasts" off removes p-prefix rows. |
 | `show-drill.spec.js`   | #81 | Show drill renders topic rows; tapping a topic's Play icon fires the /play CGI. |
-| `local-polish.spec.js` | #82 | "Browse all of <country>" card, tiny-country annotation, every `<img loading="lazy">`, `related` chips, station-detail CTA reads "Play". |
+| `local-polish.spec.js` | #82 / #85 | "Browse all of <country>" card, retired-annotation guard on a live tiny-country drill (#85), every `<img loading="lazy">`, `related` chips, station-detail CTA reads "Play". |
 | `full-smoke.spec.js`   | —   | Orchestrator entry — writes `test-results/0.4.2-smoke-report.md` summarising the run. |
 
 ## Patterns
