@@ -7,7 +7,7 @@
 // genre chips, and two-line subtitles render the same way as in browse.
 //
 // Empty state shows two stacked sections: "Recently viewed" (from
-// state.caches.recentlyViewed, last 10 entries) and "Popular near you"
+// state.ui.visitedStations, last 10 entries) and "Popular near you"
 // (Browse.ashx?c=local).
 //
 // "Include podcasts" toggle near the search input — default ON; when
@@ -569,8 +569,8 @@ export default defineView({
     }
 
     function renderRecentlyViewed(state) {
-      const recents = Array.isArray(state.caches.recentlyViewed)
-        ? state.caches.recentlyViewed
+      const recents = Array.isArray(state.ui?.visitedStations)
+        ? state.ui.visitedStations
         : [];
       recentListEl.replaceChildren();
       if (recents.length === 0) {
@@ -655,7 +655,7 @@ export default defineView({
     }
 
     return {
-      caches(state) {
+      ui(state) {
         if (!isMounted()) return;
         renderRecentlyViewed(state);
       },

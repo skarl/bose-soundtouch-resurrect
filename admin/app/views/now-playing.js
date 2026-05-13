@@ -16,6 +16,7 @@ import { setArt } from '../art.js';
 import { hashHue } from '../tint.js';
 import * as actions from '../actions/index.js';
 import { equalizer, slider } from '../components.js';
+import { renderNowPlayingTitle } from '../np-title.js';
 import { icon } from '../icons.js';
 import { formatVolumeValueText, rovingFocus } from '../a11y.js';
 import {
@@ -79,9 +80,11 @@ function cacheTopicNames(json) {
   for (const e of body) visit(e);
 }
 
+// Thin shim so the existing renderName callsites stay one-arg. The
+// canonical helper lives in np-title.js and is shared with the shell
+// mini-player.
 function renderName(np) {
-  if (!np) return '';
-  return (np.item && np.item.name) || np.track || '';
+  return renderNowPlayingTitle(np);
 }
 
 // Deduplicate track vs artist vs station name (case-insensitive) and
@@ -254,7 +257,7 @@ export default defineView({
     }
 
     function syncPrevNext(np) {
-      const guideId = extractGuideIdFromLocation(np && np.item && np.item.location);
+      const guideId = extractGuideIdFromLocation(np?.item?.location);
       let ctx = {};
       if (guideId && guideId.charAt(0) === 't') {
         const parent = cache.get(parentKey(guideId));
@@ -297,12 +300,12 @@ export default defineView({
     }
 
     function applyNowPlaying(np) {
-      const standby = np && np.source === 'STANDBY';
+      const standby = np?.source === 'STANDBY';
       cardEl.hidden     = standby;
       asleepEl.hidden   = !standby;
       // Transport sits inside the card now; hiding the card hides it.
 
-      eqEl.setPlaying(!!(np && np.playStatus === 'PLAY_STATE'));
+      eqEl.setPlaying(np?.playStatus === 'PLAY_STATE');
 
       // Always sync the transport classifier — even in STANDBY the
       // buttons need their `disabled` attribute set correctly so
@@ -562,11 +565,13 @@ export default defineView({
       const cached = cache.get(topicNameKey(topicId));
       if (typeof cached === 'string' && cached) return cached;
       const np = store.state.speaker.nowPlaying;
-      if (np && np.item && np.item.location
-          && extractGuideIdFromLocation(np.item.location) === topicId
-          && np.item.name
-          && np.item.name !== topicId) {
-        return np.item.name;
+      const location = np?.item?.location ?? null;
+      const itemName = np?.item?.name ?? null;
+      if (location
+          && extractGuideIdFromLocation(location) === topicId
+          && itemName
+          && itemName !== topicId) {
+        return itemName;
       }
       return null;
     }
@@ -610,7 +615,7 @@ export default defineView({
       if (skipInFlight) return;
 
       const np = store.state.speaker.nowPlaying;
-      const guideId = extractGuideIdFromLocation(np && np.item && np.item.location);
+      const guideId = extractGuideIdFromLocation(np?.item?.location ?? null);
       const isTopic = guideId && guideId.charAt(0) === 't';
 
       if (!isTopic) {

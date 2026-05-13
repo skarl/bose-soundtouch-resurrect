@@ -5,7 +5,7 @@
 //      "loading metadata...", disabled assign buttons).
 //   2. Fetch Describe.ashx via tuneinStation(sid) → fill name,
 //      slogan, location/language/format meta. Adds the station to
-//      state.caches.recentlyViewed (search.js's empty state reads it).
+//      state.ui.visitedStations (search.js's empty state reads it).
 //   3. Fetch Tune.ashx via probe(sid) → cache-aware orchestrator in
 //      app/probe.js. Re-entry within the 10-minute TTL skips the fetch.
 //      The Probe result carries tuneinJson so assign + audition can
@@ -20,7 +20,7 @@
 
 import { html, mount, defineView } from '../dom.js';
 import { tuneinStation, presetsList } from '../api.js';
-import { store, addRecentlyViewed } from '../state.js';
+import { store, addVisitedStation } from '../state.js';
 import { showToast } from '../toast.js';
 import { setArt } from '../art.js';
 import { stationGradient } from '../tint.js';
@@ -513,12 +513,12 @@ export default defineView({
         const name = (body && body.name) || sid;
         stationName = name;
         stationArt  = pickArt(body);
-        addRecentlyViewed({ sid, name, art: stationArt });
+        addVisitedStation({ sid, name, art: stationArt });
       })
       .catch((err) => {
         if (env.signal.aborted) return;
         applyMetadataError(root, err);
-        addRecentlyViewed({ sid, name: sid });
+        addVisitedStation({ sid, name: sid });
       });
 
     // probe() is cache-aware — re-entry within the 10-minute TTL skips

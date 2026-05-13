@@ -12,6 +12,7 @@ import { setArt } from './art.js';
 import * as actions from './actions/index.js';
 import * as theme from './theme.js';
 import { transportPhase } from './transport-state.js';
+import { renderNowPlayingTitle } from './np-title.js';
 
 // --- pill state computation ----------------------------------------
 
@@ -25,12 +26,12 @@ const WS_DEGRADED_STATES = {
 };
 
 export function computePillState(state) {
-  const mode = (state && state.ws && state.ws.mode) || 'offline';
+  const mode = state?.ws?.mode || 'offline';
   if (mode !== 'ws') return WS_DEGRADED_STATES[mode] || WS_DEGRADED_STATES.offline;
 
-  const np = state && state.speaker && state.speaker.nowPlaying;
-  if (np && np.source === 'STANDBY') return { tone: 'ok',   text: 'standby' };
-  if (np && np.playStatus === 'PLAY_STATE') return { tone: 'live', text: 'live' };
+  const np = state?.speaker?.nowPlaying;
+  if (np?.source === 'STANDBY') return { tone: 'ok',   text: 'standby' };
+  if (np?.playStatus === 'PLAY_STATE') return { tone: 'live', text: 'live' };
   return { tone: 'ok', text: 'paused' };
 }
 
@@ -171,8 +172,7 @@ function renderRail(railEl, store) {
   function applyPill() {
     const next = computePillState(store.state);
     pillEl.update({ tone: next.tone, text: next.text, pulse: next.tone === 'live' });
-    const np = store.state.speaker.nowPlaying;
-    const standby = np && np.source === 'STANDBY';
+    const standby = store.state.speaker.nowPlaying?.source === 'STANDBY';
     powerBtn.title = standby ? 'Wake' : 'Sleep';
     powerBtn.setAttribute('aria-label', standby ? 'Wake speaker' : 'Send speaker to standby');
     powerBtn.dataset.standby = standby ? 'true' : 'false';
@@ -225,8 +225,7 @@ function renderHeader(headerEl, store) {
   function applyPill() {
     const next = computePillState(store.state);
     pillEl.update({ tone: next.tone, text: next.text, pulse: next.tone === 'live' });
-    const np = store.state.speaker.nowPlaying;
-    const standby = np && np.source === 'STANDBY';
+    const standby = store.state.speaker.nowPlaying?.source === 'STANDBY';
     powerBtn.title = standby ? 'Wake' : 'Sleep';
     powerBtn.setAttribute('aria-label', standby ? 'Wake speaker' : 'Send speaker to standby');
     powerBtn.dataset.standby = standby ? 'true' : 'false';
@@ -339,7 +338,7 @@ function renderMini(miniEl, store) {
 
   function applyContent() {
     const np = store.state.speaker.nowPlaying;
-    isStandby = !!(np && np.source === 'STANDBY');
+    isStandby = np?.source === 'STANDBY';
 
     if (isStandby) {
       title.textContent = 'Speaker asleep';
@@ -352,12 +351,12 @@ function renderMini(miniEl, store) {
       return;
     }
 
-    const itemName = (np && np.item && np.item.name) || np?.track || '';
-    const artist   = (np && np.artist) || '';
+    const itemName = renderNowPlayingTitle(np);
+    const artist   = np?.artist || '';
     title.textContent = itemName || 'Idle';
     subtitle.textContent = artist;
 
-    const url = np && typeof np.art === 'string' && np.art.startsWith('http') ? np.art : '';
+    const url = typeof np?.art === 'string' && np.art.startsWith('http') ? np.art : '';
     setArt(img, url, itemName);
 
     // Phase-aware glyph + a11y label. transportPhase folds STANDBY,

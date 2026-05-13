@@ -1,6 +1,6 @@
 // Tests for app/views/search.js — pure helpers (partitionSearchBody,
 // popularStations, searchRow) plus the empty-state pipeline backed by
-// state.caches.recentlyViewed.
+// state.ui.visitedStations.
 //
 // The view's mount() uses the html`...` template tag which leans on
 // real DOMParser/Template internals that xmldom doesn't ship; we test
@@ -396,46 +396,46 @@ test('search css: .search-input-wrap exists and the input is borderless', async 
 
 // --- recently-viewed cache: cap at 10, dedupe by sid, latest-first --
 //
-// state.js exposes the cache + the addRecentlyViewed mutator; the
+// state.js exposes the cache + the addVisitedStation mutator; the
 // search view's empty state reads it. No DOM needed for these.
 
-test('addRecentlyViewed: dedupe by sid, latest-first ordering', async () => {
-  const { store, addRecentlyViewed } = await import('../app/state.js');
-  store.state.caches.recentlyViewed = [];
+test('addVisitedStation: dedupe by sid, latest-first ordering', async () => {
+  const { store, addVisitedStation } = await import('../app/state.js');
+  store.state.ui.visitedStations = [];
 
-  addRecentlyViewed({ sid: 's1', name: 'A' });
-  addRecentlyViewed({ sid: 's2', name: 'B' });
-  addRecentlyViewed({ sid: 's1', name: 'A again' });
+  addVisitedStation({ sid: 's1', name: 'A' });
+  addVisitedStation({ sid: 's2', name: 'B' });
+  addVisitedStation({ sid: 's1', name: 'A again' });
 
-  const list = store.state.caches.recentlyViewed;
+  const list = store.state.ui.visitedStations;
   assert.equal(list.length, 2, 'sid dedupe collapses repeats');
   assert.equal(list[0].sid, 's1');
   assert.equal(list[0].name, 'A again', 'newer entry wins');
   assert.equal(list[1].sid, 's2');
 });
 
-test('addRecentlyViewed: caps the list at 10 entries', async () => {
-  const { store, addRecentlyViewed } = await import('../app/state.js');
-  store.state.caches.recentlyViewed = [];
+test('addVisitedStation: caps the list at 10 entries', async () => {
+  const { store, addVisitedStation } = await import('../app/state.js');
+  store.state.ui.visitedStations = [];
 
   for (let i = 0; i < 15; i++) {
-    addRecentlyViewed({ sid: `s${i}`, name: `Station ${i}` });
+    addVisitedStation({ sid: `s${i}`, name: `Station ${i}` });
   }
 
-  const list = store.state.caches.recentlyViewed;
+  const list = store.state.ui.visitedStations;
   assert.equal(list.length, 10);
   // Latest first → s14 down to s5.
   assert.equal(list[0].sid, 's14');
   assert.equal(list[9].sid, 's5');
 });
 
-test('addRecentlyViewed: rejects entries missing sid or name', async () => {
-  const { store, addRecentlyViewed } = await import('../app/state.js');
-  store.state.caches.recentlyViewed = [];
+test('addVisitedStation: rejects entries missing sid or name', async () => {
+  const { store, addVisitedStation } = await import('../app/state.js');
+  store.state.ui.visitedStations = [];
 
-  addRecentlyViewed({ sid: '', name: 'no sid' });
-  addRecentlyViewed({ sid: 's1', name: '' });
-  addRecentlyViewed({ sid: 's1' });
+  addVisitedStation({ sid: '', name: 'no sid' });
+  addVisitedStation({ sid: 's1', name: '' });
+  addVisitedStation({ sid: 's1' });
 
-  assert.equal(store.state.caches.recentlyViewed.length, 0);
+  assert.equal(store.state.ui.visitedStations.length, 0);
 });
