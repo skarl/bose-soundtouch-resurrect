@@ -123,6 +123,7 @@ const {
   _resetBrowseStateForTest,
   _ensureCoordinatorForTest,
   _applyDomFilterForTest,
+  _renderShowLandingForTest,
 } = await import('../app/views/browse.js');
 
 function classOf(el) { return el.getAttribute('class') || ''; }
@@ -1383,4 +1384,142 @@ test('every <img> in the rendered drill DOM has loading="lazy" (issue #82)', asy
     assert.equal(img.getAttribute('loading'), 'lazy',
       `every <img> opts into native lazy-load — missing on src="${img.getAttribute('src')}"`);
   }
+});
+
+// --- Issue #84: c=pbrowse fallback — Describe + Browse(bare-id) ------
+//
+// `Browse.ashx?c=pbrowse&id=p<N>` is regionally gated from Bo's egress
+// and returns `head.status="400"` with `body:[]`. The SPA's
+// show-drill dispatch was rewired to use `Describe.ashx?id=p<N>` for
+// the show landing card, plus `Browse.ashx?id=p<N>` (no c=pbrowse)
+// for any related sections (Genres / Networks). The unit tests below
+// drive _renderShowLandingForTest with the resolved fixtures so the
+// rendering pipeline is exercised without faking fetch.
+
+test('#84 show landing: Describe renders a show card with title, hosts, genre chip, description', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const describe = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/p17-describe.tunein.json'), 'utf8'),
+  );
+  const browse = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/p17-browse.tunein.json'), 'utf8'),
+  );
+
+  const body = doc.createElement('div');
+  _renderShowLandingForTest(body, describe, browse, null, null);
+
+  // The show-landing section is the first child.
+  const landings = findAllBy(body, (el) => el.getAttribute('data-section') === 'showLanding');
+  assert.equal(landings.length, 1, 'one show-landing section');
+
+  // The card holds a station-row marked as a show landing.
+  const showRow = findAllBy(landings[0], (el) => el.getAttribute('data-show-landing') === '1');
+  assert.equal(showRow.length, 1, 'one show-landing row');
+  assert.equal(showRow[0].getAttribute('data-sid'), 'p17');
+
+  // Title text drives the row name.
+  const name = findFirstByClass(showRow[0], 'station-row__name');
+  assert.ok(name, 'show row has a name slot');
+  assert.equal(name.textContent, 'Fresh Air');
+
+  // Hosts populate the secondary line (location slot).
+  const loc = findFirstByClass(showRow[0], 'station-row__loc');
+  assert.ok(loc, 'show row has a meta location chunk for hosts');
+  assert.equal(loc.textContent, 'Terry Gross');
+
+  // Genre chip drills via canonical URL.
+  const chip = findFirstByClass(showRow[0], 'station-row__chip--genre');
+  assert.ok(chip, 'genre chip mounted from Describe.genre_id');
+  assert.equal(chip.getAttribute('data-genre-id'), 'g168');
+
+  // p-prefix auto-attaches a Play icon.
+  const play = findFirstByClass(showRow[0], 'station-row__play');
+  assert.ok(play, 'show row has an inline Play icon for the p-prefix guide_id');
+
+  // The description block follows the row inside the same section.
+  const desc = findFirstByClass(landings[0], 'browse-show-description');
+  assert.ok(desc, 'description block mounted');
+  // Multi-paragraph description splits into multiple <p> chunks.
+  const paras = findAllBy(desc, (el) => el.tagName === 'p');
+  assert.ok(paras.length >= 1, 'at least one description paragraph');
+  assert.match(paras[0].textContent, /Peabody Award/,
+    'first paragraph carries the Describe.description text');
+});
+
+test('#84 show landing: Browse(bare-id) Genres + Networks render as related sections below the card', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const describe = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/p17-describe.tunein.json'), 'utf8'),
+  );
+  const browse = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/p17-browse.tunein.json'), 'utf8'),
+  );
+
+  const body = doc.createElement('div');
+  _renderShowLandingForTest(body, describe, browse, null, null);
+
+  // After the show-landing section, the Genres + Networks sections
+  // from Browse should be present.
+  const sections = findAllBy(body, (el) => el.getAttribute('data-section') != null);
+  const keys = sections.map((s) => s.getAttribute('data-section'));
+  assert.deepEqual(keys, ['showLanding', 'genres', 'affiliates'],
+    'showLanding first, then Genres, then Networks');
+
+  // Genres section carries the four drill rows from the fixture.
+  const genresSection = sections[1];
+  const genreRows = findAllBy(genresSection, (el) => hasClass(el, 'browse-row'));
+  assert.equal(genreRows.length, 4, 'four genre drill rows');
+});
+
+test('#84 show landing: missing Describe show element renders a graceful empty-state', () => {
+  const describeEmpty = { head: { status: '200' }, body: [] };
+  const body = doc.createElement('div');
+  _renderShowLandingForTest(body, describeEmpty, null, null, null);
+
+  // No show-landing section emitted.
+  const landings = findAllBy(body, (el) => el.getAttribute('data-section') === 'showLanding');
+  assert.equal(landings.length, 0);
+
+  // Empty-state message surfaces.
+  const empty = findFirstByClass(body, 'browse-empty');
+  assert.ok(empty, 'empty-state message mounted when Describe is empty');
+  assert.match(empty.textContent, /aren.t available/);
+});
+
+test('#84 show landing: empty Browse body still renders the show card (Browse is best-effort)', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const describe = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/p17-describe.tunein.json'), 'utf8'),
+  );
+  // p4727070-style: Browse returns 200 with body:[].
+  const browseEmpty = { head: { title: 'Fresh Air', status: '200' }, body: [] };
+
+  const body = doc.createElement('div');
+  _renderShowLandingForTest(body, describe, browseEmpty, null, null);
+
+  // Show card still mounts even when Browse(bare-id) returns nothing.
+  const landings = findAllBy(body, (el) => el.getAttribute('data-section') === 'showLanding');
+  assert.equal(landings.length, 1);
+  // No other sections (no related genres/affiliates available).
+  const sections = findAllBy(body, (el) => el.getAttribute('data-section') != null);
+  assert.equal(sections.length, 1);
+});
+
+test('#84 show landing: null Browse (fetch failed) still renders the show card', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const describe = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/p17-describe.tunein.json'), 'utf8'),
+  );
+
+  const body = doc.createElement('div');
+  // null Browse = network failure swallowed by loadShowLanding's
+  // best-effort .catch(). The body still gets the show card.
+  _renderShowLandingForTest(body, describe, null, null, null);
+
+  const landings = findAllBy(body, (el) => el.getAttribute('data-section') === 'showLanding');
+  assert.equal(landings.length, 1);
 });

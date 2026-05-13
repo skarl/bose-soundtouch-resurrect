@@ -1,0 +1,66 @@
+{
+  "head": {
+    "title": "Fresh Air",
+    "status": "200"
+  },
+  "body": [
+    {
+      "element": "outline",
+      "text": "Genres",
+      "key": "genres",
+      "children": [
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "Interviews",
+          "URL": "http://opml.radiotime.com/Browse.ashx?id=g168",
+          "guide_id": "g168",
+          "key": "talk"
+        },
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "Public Radio",
+          "URL": "http://opml.radiotime.com/Browse.ashx?id=g266",
+          "guide_id": "g266",
+          "key": "talk"
+        },
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "Arts & Culture Podcasts",
+          "URL": "http://opml.radiotime.com/Browse.ashx?id=g3430",
+          "guide_id": "g3430",
+          "key": "talk"
+        },
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "Talk Show Replays",
+          "URL": "http://opml.radiotime.com/Browse.ashx?id=g3434",
+          "guide_id": "g3434",
+          "key": "talk"
+        }
+      ]
+    },
+    {
+      "element": "outline",
+      "text": "Networks",
+      "key": "affiliates",
+      "children": [
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "NPR",
+          "URL": "http://opml.radiotime.com/Browse.ashx?id=a33300"
+        },
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "WHYY",
+          "URL": "http://opml.radiotime.com/Browse.ashx?id=a38280"
+        }
+      ]
+    }
+  ]
+}

@@ -1,68 +1,95 @@
-// Slice #81 — Show drill (c=pbrowse).
+// Issue #84 — show-drill landing (real Bo, no MITM).
 //
-// The SPA enters the show drill via `#/browse?c=pbrowse&id=p<NN>`,
-// which composes Browse.ashx?c=pbrowse&id=p<NN>. Upstream the response
-// carries a `liveShow` section (currently-airing show as a p-prefix
-// row) and a `topics` section (recent episodes as t-prefix rows). Both
-// row kinds render via stationRow, which auto-attaches an inline Play
-// icon for p/s/t guide_ids (components.js isPlayableSid).
+// Upstream's `Browse.ashx?c=pbrowse&id=p<N>` is regionally gated from
+// Bo's egress (returns `head.status:"400", fault:"Invalid root
+// category"` with `body:[]`). The 0.4.2-tunein SPA's show-drill
+// dispatch was rewired in issue #84 to compose `Describe.ashx?id=p<N>`
+// (show metadata) + `Browse.ashx?id=p<N>` (related Genres / Networks
+// sections) instead. Both alternate routes return 200 with usable
+// payloads against Bo's CGI proxy.
 //
-// **NOTE:** Direct c=pbrowse requests to opml.radiotime.com from
-// Bo's IP currently return HTTP 200 with
-// `{head: {status: "400", fault: "Invalid root category"}, body: []}`
-// — a genuine upstream regional gating, NOT an SPA bug. The slice's
-// rendering logic is exercised here against the canonical p17 fixture
-// (the same data shape used by the unit-suite slice-#81 test), so the
-// e2e suite still proves the DOM contract end-to-end on every run.
+// This spec drives the real SPA, makes the real CGI calls to Bo, and
+// asserts the user-visible show-landing surface: title, host meta,
+// genre chip, description block, and the inline Play icon on the
+// p-prefix guide_id. No MITM — the test fails if Bo's CGI surface
+// regresses on either Describe or Browse for a p-id.
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
 import { test, expect } from './_setup.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-test('show drill renders liveShow + topics with inline Play; topic Play fires /play CGI', async ({ page }) => {
-  const fixturePath = join(__dirname, '..', '..', 'test', 'fixtures', 'api',
-    'p17-pbrowse.tunein.json');
-  const fixture = readFileSync(fixturePath, 'utf8');
-
-  // MITM the c=pbrowse fetch with the canonical liveShow+topics
-  // fixture. We don't intercept other tunein/browse calls so the page
-  // shell's startup describes/init still hit the real Bo.
-  await page.route('**/cgi-bin/api/v1/tunein/browse?**c=pbrowse**', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: fixture }));
-
+test('show drill landing renders Describe-driven show card with title, hosts, genre chip, Play', async ({ page }) => {
+  // p17 = Fresh Air (NPR / WHYY). Stable, documented in Describe.ashx
+  // by TuneIn; their canonical talk-show id.
   await page.goto('/#/browse?c=pbrowse&id=p17', { waitUntil: 'load' });
-  await page.waitForSelector('[data-view="browse"][data-mode="drill"]', { timeout: 15_000 });
+
+  // The view distinguishes show-landing from generic drill via the
+  // data-mode attribute on the outer section.
+  await page.waitForSelector('[data-view="browse"][data-mode="show-landing"]', { timeout: 15_000 });
   await expect(page.locator('.browse-loading')).toHaveCount(0, { timeout: 15_000 });
 
-  // liveShow section renders as a section card.
-  const liveShow = page.locator('.browse-section[data-section="liveShow"]');
-  await expect(liveShow).toBeVisible({ timeout: 10_000 });
-  // Single p-prefix row inside, with inline Play.
-  const liveRow = liveShow.locator('a.station-row[data-sid^="p"]');
-  await expect(liveRow).toBeVisible();
-  await expect(liveRow.locator('.station-row__play')).toBeVisible();
+  // Show-landing section is the load-bearing card.
+  const landing = page.locator('.browse-section[data-section="showLanding"]');
+  await expect(landing).toBeVisible({ timeout: 10_000 });
 
-  // topics section — at least one t-prefix row.
-  const topics = page.locator('.browse-section[data-section="topics"]');
-  await expect(topics).toBeVisible({ timeout: 10_000 });
-  const topicRows = topics.locator('a.station-row[data-sid^="t"]');
-  expect(await topicRows.count()).toBeGreaterThanOrEqual(1);
+  // Show row carries the p-prefix guide_id + the show landing marker.
+  const showRow = landing.locator('a.station-row[data-show-landing="1"][data-sid="p17"]');
+  await expect(showRow).toBeVisible();
 
-  // Each topic row carries an inline Play icon.
-  const firstTopic = topicRows.first();
-  const topicPlay = firstTopic.locator('.station-row__play');
-  await expect(topicPlay).toBeVisible();
+  // The row name reads "Fresh Air" — Describe-driven.
+  await expect(showRow.locator('.station-row__name')).toHaveText('Fresh Air');
 
-  // Tap the topic Play → /play CGI fires. We assert the network
-  // round-trip; the actual /play envelope from Bo is OK — the topic
-  // guide_ids (t<digits>) are valid Tune.ashx targets.
+  // p-prefix lights up the inline Play icon (auto-attached by
+  // stationRow's isPlayableSid check).
+  await expect(showRow.locator('.station-row__play')).toBeVisible();
+
+  // Hosts populate the secondary meta line ("Terry Gross").
+  await expect(showRow.locator('.station-row__loc')).toContainText('Terry Gross');
+
+  // Genre chip drills to #/browse?id=g168 (Interviews).
+  const chip = showRow.locator('.station-row__chip--genre');
+  await expect(chip).toBeVisible();
+  await expect(chip).toHaveAttribute('data-genre-id', 'g168');
+
+  // Description block follows the row, carrying paragraph chunks.
+  const desc = landing.locator('.browse-show-description');
+  await expect(desc).toBeVisible();
+  const paragraphs = desc.locator('p');
+  expect(await paragraphs.count()).toBeGreaterThanOrEqual(1);
+});
+
+test('show drill landing surfaces Browse(bare-id) Genres + Networks sections below the card', async ({ page }) => {
+  await page.goto('/#/browse?c=pbrowse&id=p17', { waitUntil: 'load' });
+  await page.waitForSelector('[data-view="browse"][data-mode="show-landing"]', { timeout: 15_000 });
+  await expect(page.locator('.browse-loading')).toHaveCount(0, { timeout: 15_000 });
+
+  // Genres + Networks sections come from Browse.ashx?id=p17 (no
+  // c=pbrowse). The keys are stable across the show — Genres always
+  // surfaces under key="genres", Networks under key="affiliates".
+  const genres = page.locator('.browse-section[data-section="genres"]');
+  await expect(genres).toBeVisible({ timeout: 10_000 });
+  expect(await genres.locator('a.browse-row').count()).toBeGreaterThanOrEqual(1);
+
+  const networks = page.locator('.browse-section[data-section="affiliates"]');
+  await expect(networks).toBeVisible();
+  expect(await networks.locator('a.browse-row').count()).toBeGreaterThanOrEqual(1);
+});
+
+test('show drill landing Play icon fires /play CGI with the show guide_id', async ({ page }) => {
+  await page.goto('/#/browse?c=pbrowse&id=p17', { waitUntil: 'load' });
+  await page.waitForSelector('[data-view="browse"][data-mode="show-landing"]', { timeout: 15_000 });
+  await expect(page.locator('.browse-loading')).toHaveCount(0, { timeout: 15_000 });
+
+  const showRow = page.locator('a.station-row[data-show-landing="1"][data-sid="p17"]');
+  const play = showRow.locator('.station-row__play');
+  await expect(play).toBeVisible();
+
+  // Tap Play → /play CGI fires. The actual upstream Tune.ashx call
+  // returns audio streams for p-prefix ids (confirmed by curl evidence
+  // in /tmp/issue-84/bo-direct-tune-p17.json during issue #84
+  // investigation); we only assert the round-trip here.
   const playReqPromise = page.waitForRequest(
     (r) => r.url().includes('/cgi-bin/api/v1/play') && r.method() === 'POST',
     { timeout: 10_000 },
   );
-  await topicPlay.click();
+  await play.click();
   await playReqPromise;
 });

@@ -116,13 +116,37 @@ export default defineView({
     const drillParts = pickDrillParts(query);
     const crumbs = parseCrumbs(query.from);
     if (drillParts) {
-      renderDrill(root, drillParts, crumbs);
+      // Show-drill landing — the c=pbrowse query carries a program id
+      // (p-prefix). Upstream's c=pbrowse endpoint is regionally gated
+      // (returns "Invalid root category" with status:"400" from Bo's
+      // egress; see issue #84). Dispatch to a Describe + Browse
+      // (bare-id) composite so the user still lands on a meaningful
+      // show page — title, host, description, location, genre — plus
+      // any related sections (Genres / Networks) the bare-id Browse
+      // returns. The *Now airing: <show>* link in stationRow (slice
+      // #79) keeps composing c=pbrowse URLs; the dispatch here is the
+      // only seam that needs the rewrite.
+      if (isShowDrillParts(drillParts)) {
+        renderShowLanding(root, drillParts, crumbs);
+      } else {
+        renderDrill(root, drillParts, crumbs);
+      }
     } else {
       renderRoot(root);
     }
     return {};
   },
 });
+
+// True when the URL carries `c=pbrowse&id=p<digits>` — the route
+// composed by stationRow's "Now airing: <show>" tertiary link and by
+// any TuneIn outline whose `URL` field embeds the upstream show-drill
+// shape. The id check guards against accidental drills where `c` is
+// `pbrowse` but the id is some other prefix.
+function isShowDrillParts(parts) {
+  if (!parts || parts.c !== 'pbrowse') return false;
+  return typeof parts.id === 'string' && /^p\d+$/.test(parts.id);
+}
 
 // Parse the comma-separated `from=` query parameter into an array of
 // crumb tokens. Empty / missing input returns []. Trims, drops empty
@@ -363,6 +387,267 @@ function renderDrill(root, parts, crumbs) {
     titleEl,
     crumbToken: currentToken,
   });
+}
+
+// ---- show-landing view (c=pbrowse&id=p<N>) --------------------------
+//
+// The upstream `Browse.ashx?c=pbrowse&id=p<N>` endpoint is regionally
+// gated and returns `head.status="400"` with `body:[]` from Bo's
+// egress (issue #84). Curl evidence captured against Bo on 2026-05-13:
+//
+//   /tunein/browse?c=pbrowse&id=p17 →
+//     {"head":{"status":"400","fault":"Invalid root category"},"body":[]}
+//   /tunein/browse?id=p17 →
+//     {"head":{"title":"Fresh Air","status":"200"},"body":[
+//       {"text":"Genres","key":"genres","children":[...]},
+//       {"text":"Networks","key":"affiliates","children":[...]}]}
+//   /tunein/describe?id=p17 →
+//     {"head":{"status":"200"},"body":[{"element":"show",
+//       "title":"Fresh Air","hosts":"Terry Gross",
+//       "description":"...","logo":"...","location":"Philadelphia, PA",
+//       "genre_id":"g168","genre_name":"Interviews",...}]}
+//
+// renderShowLanding composes the two working routes: Describe drives
+// a "show landing" card at the top (title, hosts, description, genre
+// chip, logo, +Play CTA on the p-prefix guide_id), and Browse(bare
+// id) renders any related sections (Genres / Networks). The combined
+// surface stays semantically a show drill — the user can play the
+// show via the inline Play icon, follow its genre chip, or jump to
+// the related affiliate network.
+function renderShowLanding(root, parts, crumbs) {
+  const stack = Array.isArray(crumbs) ? crumbs.slice(0, MAX_CRUMBS) : [];
+
+  const back = document.createElement('a');
+  back.className = 'browse-back';
+  back.href = backHrefFor(stack);
+  back.appendChild(icon('back', 12));
+  const backLabel = document.createElement('span');
+  backLabel.textContent = ' Back';
+  back.appendChild(backLabel);
+
+  const header = document.createElement('div');
+  header.className = 'section-h browse-section-h';
+  const headerLeft = document.createElement('span');
+  headerLeft.className = 'section-h__title browse-crumb';
+
+  const currentToken = crumbTokenFor(parts);
+  const titleEl = document.createElement('span');
+  titleEl.className = 'browse-crumb__title';
+  titleEl.textContent = initialHeaderTitle(parts, currentToken);
+  headerLeft.appendChild(titleEl);
+
+  const crumbId = document.createElement('span');
+  crumbId.className = 'browse-crumb__id';
+  crumbId.textContent = crumbLabelFor(parts);
+  headerLeft.appendChild(crumbId);
+
+  const headerCount = document.createElement('span');
+  headerCount.className = 'section-h__meta';
+  header.appendChild(headerLeft);
+  header.appendChild(headerCount);
+
+  const trail = stack.length > 0 ? renderCrumbTrail(stack) : null;
+
+  // Show landing does not surface a filter input — there's no list
+  // tall enough to need one. Skip the filter input entirely.
+  const body = document.createElement('div');
+  body.className = 'browse-body';
+  body.setAttribute('data-mode', 'show-landing');
+  body.setAttribute('aria-live', 'polite');
+
+  mount(root, html`
+    <section data-view="browse" data-mode="show-landing">
+      <p class="breadcrumb">${back}</p>
+      ${trail}
+      ${header}
+      ${body}
+    </section>
+  `);
+
+  const childStack = currentToken ? [...stack, currentToken] : stack.slice();
+  _childCrumbs = childStack.length > MAX_CRUMBS
+    ? childStack.slice(childStack.length - MAX_CRUMBS)
+    : childStack;
+
+  if (trail) hydrateCrumbLabels(stack, trail);
+
+  loadShowLanding(body, parts.id, headerCount, { titleEl, crumbToken: currentToken });
+}
+
+// Drive the two-fetch composite. Describe is the load-bearing call (it
+// drives the show card); Browse-by-bare-id is best-effort — its
+// failure does not block the show card from rendering. Both fetches
+// fire in parallel; we wait on Describe synchronously and treat
+// Browse's failure as "no related sections".
+function loadShowLanding(body, showId, headerCount, head) {
+  body.replaceChildren();
+  body.appendChild(skeleton());
+  if (headerCount) headerCount.textContent = '';
+
+  const describePromise = tuneinDescribe({ id: showId });
+  // Browse(bare id) is best-effort — we swallow its rejection so the
+  // describe-driven card still renders even if Browse 4xxs.
+  const browsePromise = tuneinBrowse(showId).catch(() => null);
+
+  Promise.all([describePromise, browsePromise])
+    .then(([describeJson, browseJson]) => {
+      renderShowLandingBody(body, describeJson, browseJson, headerCount, head);
+    })
+    .catch((err) => {
+      body.replaceChildren();
+      body.appendChild(errorNode(err));
+    });
+}
+
+// Synchronous body-rendering core. Takes the resolved Describe and
+// Browse payloads and walks them into the body. Exported (as the
+// test-only `_renderShowLandingForTest`) so tests can drive the path
+// without faking fetch.
+export function _renderShowLandingForTest(body, describeJson, browseJson, headerCount, head) {
+  return renderShowLandingBody(body, describeJson, browseJson, headerCount, head);
+}
+
+function renderShowLandingBody(body, describeJson, browseJson, headerCount, head) {
+  // Clear any prior children (skeleton). Use replaceChildren when the
+  // host DOM supports it; fall back to a manual removeChild loop for
+  // the xmldom test shim which lacks replaceChildren.
+  if (typeof body.replaceChildren === 'function') {
+    body.replaceChildren();
+  } else {
+    while (body.firstChild) body.removeChild(body.firstChild);
+  }
+  const show = pickShowFromDescribe(describeJson);
+  if (!show) {
+    // Describe came back without a usable show element — render an
+    // empty-state so the user sees something other than a stuck
+    // skeleton. The text stays plain so the user understands the gap
+    // rather than a phantom failure.
+    body.appendChild(emptyNode('Show details aren’t available right now.'));
+    return;
+  }
+
+  body.appendChild(renderShowLandingCard(show));
+
+  const headTitle = pickShowTitle(describeJson, browseJson);
+  if (head && head.titleEl && headTitle) head.titleEl.textContent = headTitle;
+  if (head && head.crumbToken && headTitle) {
+    cache.set(`tunein.label.${head.crumbToken}`, headTitle, TTL_LABEL);
+  }
+
+  // Browse(bare id) is best-effort. When it returns a body, render
+  // any sections it carries; flat or empty bodies (e.g. p4727070
+  // returns 200 with body:[]) emit nothing extra.
+  let relatedCount = 0;
+  if (browseJson && Array.isArray(browseJson.body) && browseJson.body.length > 0) {
+    for (const entry of browseJson.body) {
+      if (Array.isArray(entry.children) && entry.children.length > 0) {
+        const rendered = renderSection(entry);
+        if (rendered) {
+          relatedCount += rendered.visibleCount;
+          body.appendChild(rendered.element);
+        }
+      }
+    }
+  }
+
+  if (headerCount) {
+    // The header count reflects related entries only — the show card
+    // itself isn't a "row" in the same sense.
+    headerCount.textContent = relatedCount > 0
+      ? `${relatedCount.toLocaleString()} ${pluralize(relatedCount)}`
+      : '';
+  }
+}
+
+// Pick the `element:"show"` entry from a Describe response. Returns
+// null when the response is malformed or carries no show element.
+function pickShowFromDescribe(json) {
+  if (!json || !Array.isArray(json.body)) return null;
+  for (const entry of json.body) {
+    if (entry && entry.element === 'show') return entry;
+  }
+  return null;
+}
+
+// Prefer Describe's title (richer, e.g. "Fresh Air") over Browse's
+// head.title (often identical). Fall back to Browse's head.title when
+// Describe lacks one.
+function pickShowTitle(describeJson, browseJson) {
+  const show = pickShowFromDescribe(describeJson);
+  if (show && typeof show.title === 'string' && show.title !== '') return show.title;
+  if (browseJson && browseJson.head && typeof browseJson.head.title === 'string' &&
+      browseJson.head.title !== '') {
+    return browseJson.head.title;
+  }
+  return '';
+}
+
+// Render the show landing card. The card is composed via the same
+// stationRow primitive used elsewhere — feeding the show id (p-prefix)
+// lights up the inline Play icon (#78's isPlayableSid auto-attach).
+// Genre + description fold into the chips / tertiary slots so the
+// card reads as "this is the show, here's what it is, tap to play".
+function renderShowLandingCard(show) {
+  const wrap = document.createElement('section');
+  wrap.className = 'browse-section browse-section--show-landing';
+  wrap.setAttribute('data-section', 'showLanding');
+
+  const card = document.createElement('div');
+  card.className = 'browse-card';
+
+  const sid = typeof show.guide_id === 'string' ? show.guide_id : '';
+  const title = typeof show.title === 'string' ? show.title : sid;
+  const hosts = typeof show.hosts === 'string' && show.hosts !== ''
+    ? show.hosts : '';
+  const location = typeof show.location === 'string' ? show.location : '';
+  const description = typeof show.description === 'string' ? show.description : '';
+  const logo = typeof show.logo === 'string' ? show.logo : '';
+  const genreId = typeof show.genre_id === 'string' ? show.genre_id : '';
+
+  // Compose the chips array so stationRow's existing chip pipeline
+  // surfaces the genre as a tappable pill (drills to #/browse?id=<gNN>).
+  const chips = genreId ? [{ kind: 'genre', id: genreId }] : [];
+
+  // Hosts are the most useful secondary line (e.g. "Terry Gross").
+  // When hosts are absent, fall back to location ("Kent, OH").
+  const secondary = hosts || location;
+
+  const row = stationRow({
+    sid,
+    name: title,
+    art:  logo,
+    location: secondary,
+    chips,
+  });
+  // Mark the row so tests / CSS can target it specifically.
+  row.setAttribute('data-show-landing', '1');
+  row.classList.add('is-last');
+  card.appendChild(row);
+
+  wrap.appendChild(card);
+
+  // Description lives below the row as a paragraph block. TuneIn ships
+  // multi-paragraph descriptions separated by \r\n; preserve paragraph
+  // breaks by emitting one <p> per non-empty chunk.
+  if (description !== '') {
+    const desc = document.createElement('div');
+    desc.className = 'browse-show-description';
+    const chunks = description.split(/\r?\n\r?\n|\r\r/).map((c) => c.trim()).filter(Boolean);
+    if (chunks.length === 0) {
+      const p = document.createElement('p');
+      p.textContent = description;
+      desc.appendChild(p);
+    } else {
+      for (const chunk of chunks) {
+        const p = document.createElement('p');
+        p.textContent = chunk;
+        desc.appendChild(p);
+      }
+    }
+    wrap.appendChild(desc);
+  }
+
+  return wrap;
 }
 
 // Compose the Back-button href. Pops the rightmost crumb and navigates
