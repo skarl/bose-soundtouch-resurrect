@@ -1021,6 +1021,15 @@ function renderFlatSection(entries) {
   wrap.className = 'browse-section';
   wrap.setAttribute('data-section', 'flat');
 
+  // c=topics&id=p<N> drills surface as a flat body of t-prefix audio
+  // outlines (no sectioned envelope). The Prev/Next classifier on the
+  // now-playing view depends on the parent + topics-list cache being
+  // primed before the user taps Play — the sectioned-only hook in
+  // renderTopicsCard is unreachable on Bo's egress (c=pbrowse is gated;
+  // see issue #84). Prime here so flat-body drills also feed the cache.
+  // The helper filters internally — non-topic flat bodies write nothing.
+  primeTuneinSkipCaches(visible);
+
   if (visible.length > 0) {
     wrap.appendChild(renderCard(visible));
   }
