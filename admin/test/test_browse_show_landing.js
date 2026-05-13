@@ -1,0 +1,240 @@
+// Tests for app/views/browse/show-landing.js — the c=pbrowse
+// Describe + Browse(bare-id) composite. test_browse.js already
+// exercises the high-level _renderShowLandingForTest path; these
+// per-submodule tests pin the seam contracts so the module remains
+// independently testable.
+//
+// Run: node --test admin/test
+
+import { test } from 'node:test';
+import { strict as assert } from 'node:assert';
+
+import { doc, ev } from './fixtures/dom-shim.js';
+void ev;
+
+const {
+  _renderShowLandingForTest,
+  renderLiveShowCard,
+  renderTopicsCard,
+  renderTopicRow,
+} = await import('../app/views/browse/show-landing.js');
+
+function classOf(el) { return el.getAttribute('class') || ''; }
+function hasClass(el, cls) {
+  return classOf(el).split(/\s+/).includes(cls);
+}
+function findFirstByClass(root, cls) {
+  if (!root) return null;
+  if (root.nodeType === 1 && hasClass(root, cls)) return root;
+  for (const c of root.childNodes || []) {
+    if (c && c.nodeType === 1) {
+      const found = findFirstByClass(c, cls);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+function findAllBy(root, predicate) {
+  const out = [];
+  function walk(node) {
+    if (!node) return;
+    if (node.nodeType === 1 && predicate(node)) out.push(node);
+    for (const c of node.childNodes || []) walk(c);
+  }
+  walk(root);
+  return out;
+}
+
+// --- renderLiveShowCard ---------------------------------------------
+
+test('renderLiveShowCard mounts one row per entry, marks the last is-last', () => {
+  const card = renderLiveShowCard([
+    { type: 'link', item: 'show', guide_id: 'p17', text: 'Fresh Air' },
+  ]);
+  assert.ok(hasClass(card, 'browse-card'));
+  const rows = findAllBy(card, (el) => hasClass(el, 'station-row'));
+  assert.equal(rows.length, 1);
+  assert.ok(hasClass(rows[0], 'is-last'));
+  // p-prefix lights up the inline Play icon (showHero auto-attach).
+  const play = findFirstByClass(rows[0], 'station-row__play');
+  assert.ok(play, 'liveShow row has the Play icon');
+});
+
+test('renderLiveShowCard hero row is a non-anchor body (showHero, not stationRow)', () => {
+  // The live-show card is the airing-show subject, not a drill target —
+  // the row body never carries an <a> href. #87 regression guard.
+  const card = renderLiveShowCard([
+    { type: 'link', item: 'show', guide_id: 'p17', text: 'Fresh Air' },
+  ]);
+  const rows = findAllBy(card, (el) => hasClass(el, 'station-row'));
+  assert.notEqual(rows[0].tagName, 'a',
+    'live show hero is not an <a> — the page subject has no drill target');
+});
+
+// --- renderTopicRow / renderTopicsCard ------------------------------
+
+test('renderTopicRow renders the t-prefix row with formatted duration on the meta line', () => {
+  const row = renderTopicRow({
+    type: 'link', item: 'topic', guide_id: 't1001', text: 'Episode 1',
+    URL: 'http://opml.radiotime.com/Tune.ashx?id=t1001&sid=p17',
+    topic_duration: '3600',
+  });
+  assert.ok(hasClass(row, 'station-row'));
+  assert.equal(row.getAttribute('data-sid'), 't1001');
+  const loc = findFirstByClass(row, 'station-row__loc');
+  assert.ok(loc, 'meta location chunk holds the formatted duration');
+  assert.equal(loc.textContent, '1:00:00');
+});
+
+test('renderTopicRow falls back to subtext when topic_duration is absent', () => {
+  const row = renderTopicRow({
+    type: 'link', item: 'topic', guide_id: 't1002', text: 'Episode 2',
+    subtext: 'A short summary',
+  });
+  const loc = findFirstByClass(row, 'station-row__loc');
+  assert.equal(loc.textContent, 'A short summary');
+});
+
+test('renderTopicRow formats sub-hour durations as M:SS', () => {
+  const row = renderTopicRow({
+    type: 'link', item: 'topic', guide_id: 't1003', text: 'Short Episode',
+    topic_duration: 1830,  // 30:30
+  });
+  const loc = findFirstByClass(row, 'station-row__loc');
+  assert.equal(loc.textContent, '30:30');
+});
+
+test('renderTopicRow tolerates malformed topic_duration without crashing', () => {
+  const row = renderTopicRow({
+    type: 'link', item: 'topic', guide_id: 't1004', text: 'Malformed',
+    subtext: 'fallback',
+    topic_duration: 'not-a-number',
+  });
+  const loc = findFirstByClass(row, 'station-row__loc');
+  // Unparseable duration falls through to the subtext.
+  assert.equal(loc.textContent, 'fallback');
+});
+
+test('renderTopicsCard primes the parent + topics-list cache (#88) on render', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  // Clear any state from earlier tests so the assertion is on this call.
+  tc.cache.invalidate('tunein.parent.t8001');
+  tc.cache.invalidate('tunein.parent.t8002');
+  tc.cache.invalidate('tunein.topics.p99');
+
+  renderTopicsCard([
+    {
+      type: 'link', item: 'topic', guide_id: 't8001', text: 'A',
+      URL: 'http://opml.radiotime.com/Tune.ashx?id=t8001&sid=p99&render=json',
+    },
+    {
+      type: 'link', item: 'topic', guide_id: 't8002', text: 'B',
+      URL: 'http://opml.radiotime.com/Tune.ashx?id=t8002&sid=p99&render=json',
+    },
+  ]);
+
+  assert.equal(tc.cache.get('tunein.parent.t8001'), 'p99');
+  assert.equal(tc.cache.get('tunein.parent.t8002'), 'p99');
+  assert.deepEqual(tc.cache.get('tunein.topics.p99'), ['t8001', 't8002']);
+
+  tc.cache.invalidate('tunein.parent.t8001');
+  tc.cache.invalidate('tunein.parent.t8002');
+  tc.cache.invalidate('tunein.topics.p99');
+});
+
+// --- _renderShowLandingForTest (Describe + Browse composite) --------
+
+test('_renderShowLandingForTest writes the resolved show title into head.titleEl', () => {
+  const describe = {
+    head: { status: '200' },
+    body: [{
+      element: 'show',
+      guide_id: 'p17',
+      title: 'Fresh Air',
+      hosts: 'Terry Gross',
+      description: 'A Peabody Award winner.',
+      genre_id: 'g168',
+    }],
+  };
+  const body = doc.createElement('div');
+  const titleEl = doc.createElement('span');
+  _renderShowLandingForTest(body, describe, null, null, { titleEl, crumbToken: 'p17' });
+  assert.equal(titleEl.textContent, 'Fresh Air',
+    'titleEl is upgraded to the Describe title once the body lands');
+});
+
+test('_renderShowLandingForTest renders the show-landing section with data-section="showLanding"', () => {
+  const describe = {
+    head: { status: '200' },
+    body: [{
+      element: 'show', guide_id: 'p17', title: 'Fresh Air',
+    }],
+  };
+  const body = doc.createElement('div');
+  _renderShowLandingForTest(body, describe, null, null, null);
+  const landing = findAllBy(body, (el) => el.getAttribute('data-section') === 'showLanding');
+  assert.equal(landing.length, 1);
+});
+
+test('_renderShowLandingForTest skips description block when description is empty', () => {
+  const describe = {
+    head: { status: '200' },
+    body: [{
+      element: 'show', guide_id: 'p17', title: 'Empty Description Show',
+      description: '',
+    }],
+  };
+  const body = doc.createElement('div');
+  _renderShowLandingForTest(body, describe, null, null, null);
+  const desc = findFirstByClass(body, 'browse-show-description');
+  assert.equal(desc, null, 'no description block when description is empty');
+});
+
+test('_renderShowLandingForTest splits multi-paragraph description into multiple <p>', () => {
+  const describe = {
+    head: { status: '200' },
+    body: [{
+      element: 'show', guide_id: 'p17', title: 'Multi Paragraph',
+      description: 'First paragraph.\r\n\r\nSecond paragraph.\r\n\r\nThird paragraph.',
+    }],
+  };
+  const body = doc.createElement('div');
+  _renderShowLandingForTest(body, describe, null, null, null);
+  const desc = findFirstByClass(body, 'browse-show-description');
+  const paras = findAllBy(desc, (el) => el.tagName === 'p');
+  assert.equal(paras.length, 3);
+  assert.equal(paras[0].textContent, 'First paragraph.');
+  assert.equal(paras[2].textContent, 'Third paragraph.');
+});
+
+test('_renderShowLandingForTest renders the headerCount based on related entries (Browse body)', () => {
+  const describe = {
+    head: { status: '200' },
+    body: [{ element: 'show', guide_id: 'p17', title: 'Fresh Air' }],
+  };
+  const browse = {
+    head: { title: 'Fresh Air', status: '200' },
+    body: [
+      {
+        text: 'Genres', key: 'genres',
+        children: [
+          { text: 'Talk', URL: 'http://opml.radiotime.com/Browse.ashx?c=talk' },
+          { text: 'Interviews', URL: 'http://opml.radiotime.com/Browse.ashx?id=g168' },
+        ],
+      },
+    ],
+  };
+  const body = doc.createElement('div');
+  const headerCount = doc.createElement('span');
+  _renderShowLandingForTest(body, describe, browse, headerCount, null);
+  // 2 genre children — header count reflects related-only count.
+  assert.match(headerCount.textContent, /^2 entries$/);
+});
+
+test('_renderShowLandingForTest renders the empty-state when Describe has no show element', () => {
+  const body = doc.createElement('div');
+  _renderShowLandingForTest(body, { head: { status: '200' }, body: [] }, null, null, null);
+  const empty = findFirstByClass(body, 'browse-empty');
+  assert.ok(empty);
+  assert.match(empty.textContent, /aren.t available/);
+});
