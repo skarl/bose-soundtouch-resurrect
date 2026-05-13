@@ -1523,3 +1523,149 @@ test('#84 show landing: null Browse (fetch failed) still renders the show card',
   const landings = findAllBy(body, (el) => el.getAttribute('data-section') === 'showLanding');
   assert.equal(landings.length, 1);
 });
+
+// --- Issue #87: show landing hero is not a stationRow ------------------
+//
+// `renderShowLandingCard` (#84) and `renderLiveShowCard` (#81) used to
+// mount the show-self card via stationRow — an anchor primitive
+// designed for listing rows. The card is the page subject, not a
+// drillable entry: tapping the body has no useful destination (and a
+// self-link is dead weight even with #86's router fix). #87 swaps both
+// call sites onto showHero, a non-anchor primitive with the same
+// visual treatment plus the inline Play icon for p/s/t guide_ids.
+
+test('#87 show landing hero: root is a non-anchor element with no href', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const describe = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/p17-describe.tunein.json'), 'utf8'),
+  );
+
+  const body = doc.createElement('div');
+  _renderShowLandingForTest(body, describe, null, null, null);
+
+  const heroes = findAllBy(body, (el) => el.getAttribute('data-show-landing') === '1');
+  assert.equal(heroes.length, 1, 'one show-landing hero');
+  const hero = heroes[0];
+
+  assert.notEqual(hero.tagName, 'a',
+    'show-landing hero is not an <a> — the page subject has no drill target');
+  assert.equal(hero.getAttribute('href'), null,
+    'show-landing hero has no href on the body — the play icon is the primary affordance');
+  // We deliberately keep .station-row on the hero so the existing CSS
+  // (sizing, gap, hover background) applies without a new ruleset.
+  // .station-row--hero is the modifier that flags this as a hero.
+  assert.ok(hasClass(hero, 'station-row'), 'hero reuses the station-row sizing CSS');
+  assert.ok(hasClass(hero, 'station-row--hero'), 'hero carries the --hero modifier class');
+});
+
+test('#87 show landing hero: renders art + name + secondary line + chip + Play icon', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const describe = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/p17-describe.tunein.json'), 'utf8'),
+  );
+
+  const body = doc.createElement('div');
+  _renderShowLandingForTest(body, describe, null, null, null);
+
+  const hero = findAllBy(body, (el) => el.getAttribute('data-show-landing') === '1')[0];
+  assert.ok(hero, 'hero present');
+
+  const art = findFirstByClass(hero, 'station-art');
+  assert.ok(art, 'art slot mounted');
+
+  const name = findFirstByClass(hero, 'station-row__name');
+  assert.ok(name, 'name slot mounted');
+  assert.equal(name.textContent, 'Fresh Air');
+
+  const loc = findFirstByClass(hero, 'station-row__loc');
+  assert.ok(loc, 'secondary line mounted');
+  assert.equal(loc.textContent, 'Terry Gross');
+
+  const chip = findFirstByClass(hero, 'station-row__chip--genre');
+  assert.ok(chip, 'genre chip mounted');
+  assert.equal(chip.getAttribute('data-genre-id'), 'g168');
+  // Chip remains a clickable anchor even though the hero body is not.
+  assert.equal(chip.tagName, 'a', 'chip stays an anchor — only the outer body loses its anchor');
+
+  const play = findFirstByClass(hero, 'station-row__play');
+  assert.ok(play, 'p-prefix guide_id auto-attaches the inline Play icon');
+});
+
+test('#87 show landing hero: clicking Play calls playGuideId (mock) and toasts success', async () => {
+  // Re-use the same fetch-mock pattern as the stationRow Play test.
+  const realFetch = globalThis.fetch;
+  const calls = [];
+  let resolveFetch;
+  const pendingFetch = new Promise((res) => { resolveFetch = res; });
+  globalThis.fetch = (url, opts) => {
+    calls.push({ url, opts });
+    return pendingFetch;
+  };
+
+  playCache.invalidate('tunein.stream.p17');
+
+  try {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const describe = JSON.parse(
+      fs.readFileSync(path.resolve('admin/test/fixtures/api/p17-describe.tunein.json'), 'utf8'),
+    );
+
+    const body = doc.createElement('div');
+    _renderShowLandingForTest(body, describe, null, null, null);
+
+    const hero = findAllBy(body, (el) => el.getAttribute('data-show-landing') === '1')[0];
+    const play = findFirstByClass(hero, 'station-row__play');
+    assert.ok(play, 'Play button mounted on the hero');
+
+    dispatchClick(play);
+    await Promise.resolve();
+    assert.ok(
+      (play.getAttribute('class') || '').includes('is-loading'),
+      'hero Play button enters is-loading state',
+    );
+
+    assert.equal(calls.length, 1, 'one /play POST issued');
+    assert.match(calls[0].url, /\/cgi-bin\/api\/v1\/play$/);
+    assert.equal(calls[0].opts.method, 'POST');
+    const payload = JSON.parse(calls[0].opts.body);
+    assert.equal(payload.id, 'p17');
+
+    resolveFetch({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, url: 'http://stream.example/p17.aac' }),
+    });
+    await flushMicrotasks();
+
+    assert.ok(
+      !(play.getAttribute('class') || '').includes('is-loading'),
+      'hero Play button leaves is-loading after success',
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+    playCache.invalidate('tunein.stream.p17');
+  }
+});
+
+test('#87 show landing hero: chip click stays an anchor with the canonical genre drill href', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const describe = JSON.parse(
+    fs.readFileSync(path.resolve('admin/test/fixtures/api/p17-describe.tunein.json'), 'utf8'),
+  );
+
+  const body = doc.createElement('div');
+  _renderShowLandingForTest(body, describe, null, null, null);
+
+  const hero = findAllBy(body, (el) => el.getAttribute('data-show-landing') === '1')[0];
+  const chip = findFirstByClass(hero, 'station-row__chip--genre');
+  assert.ok(chip, 'chip mounted');
+  // Chip is its own clickable target — tapping it drills to the genre
+  // even though the surrounding hero body has no anchor.
+  assert.equal(chip.tagName, 'a');
+  assert.match(chip.getAttribute('href'), /^#\/browse\?/);
+  assert.match(chip.getAttribute('href'), /id=g168/);
+});
