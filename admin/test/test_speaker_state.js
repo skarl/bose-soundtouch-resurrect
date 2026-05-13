@@ -115,12 +115,16 @@ test('reconcile: all fulfilled → single store.touch("speaker")', () =>
   }),
 );
 
-test('network: registry entry is fetch-only (no eventTag) and the fetcher applies via reconcile', () => {
+test('network: registry entry wires connectionStateUpdated as a hint-only event', () => {
   const entry = FIELDS.find((f) => f.name === 'network');
   assert.ok(entry, 'network entry exists in FIELDS');
   assert.equal(typeof entry.fetcher, 'function', 'network has a real fetcher');
-  assert.equal(entry.eventTag, undefined, 'no WS eventTag — connectionStateUpdated is wired separately');
-  assert.equal(entry.parseInline, undefined, 'no inline parser without an eventTag');
+  // #94: the Wi-Fi flap event has no inline payload, so the entry pairs
+  // an eventTag with a parseInline that returns null — the dispatch
+  // path falls through to the fetcher, same shape as `presets`.
+  assert.equal(entry.eventTag, 'connectionStateUpdated');
+  assert.equal(typeof entry.parseInline, 'function');
+  assert.equal(entry.parseInline({}), null);
 });
 
 test('reconcile: network fetcher rejection leaves speaker.network=null, others still apply', () =>
@@ -196,6 +200,24 @@ test('dispatch: hint-only event (presetsUpdated) → falls back to fetcher and a
 
     assert.ok(Array.isArray(store.state.speaker.presets), 'presets set via fetcher fallback');
     assert.equal(store.state.speaker.presets.length, 1);
+    assert.equal(store._touched.length, 1, 'single touch');
+  }),
+);
+
+test('dispatch: <connectionStateUpdated/> → network fetcher fires (#94)', () =>
+  withFetchers({ network: async () => FAKE_NETWORK }, async () => {
+    // The firmware emits this on every Wi-Fi link transition. There's
+    // no inline payload, so parseInline returns null and dispatch
+    // falls through to getNetworkInfo. Without this wiring the
+    // Settings → Network panel held stale SSID / IP / signal until a
+    // WS reconnect happened to refetch on its own.
+    const doc = new DOMParser().parseFromString('<connectionStateUpdated/>', 'application/xml');
+    const child = doc.documentElement;
+
+    const store = makeStore();
+    await dispatch(child, store);
+
+    assert.deepEqual(store.state.speaker.network, FAKE_NETWORK, 'network refetched from event');
     assert.equal(store._touched.length, 1, 'single touch');
   }),
 );

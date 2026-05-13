@@ -40,6 +40,9 @@ import { controllerFor as sliderControllerFor } from './sliders.js';
 //   fetcher      — () => Promise<value>
 //   eventTag?    — child tag inside <updates> that carries this field's event
 //   parseInline  — (el) => value | null. Null means hint-only: fall back to fetcher().
+//                  Fields with no native inline payload (network → on a
+//                  <connectionStateUpdated/> we just refetch) ship the
+//                  hint-only parseInline that always returns null.
 //   apply?       — (state, value) => void. Default: state.speaker[name] = value
 //                  Slider fields (volume/bass/balance) delegate to the slider
 //                  controller, which owns the apply-merge + confirm in one place.
@@ -127,10 +130,17 @@ export const FIELDS = [
     },
   },
   { name: 'bluetooth',     fetcher: getBluetoothInfo },
-  // No reliable WS event for /networkInfo — connectionStateUpdated
-  // covers the Wi-Fi flap separately (state.ws). Refetched on settings
-  // view-entry; user-driven via the section's Refresh button.
-  { name: 'network',       fetcher: getNetworkInfo },
+  // /networkInfo has no native inline event payload, but the firmware
+  // emits <connectionStateUpdated/> whenever the Wi-Fi link flips
+  // (associate, deassociate, IP change, signal-strength threshold).
+  // Hint-only parseInline returns null, so the dispatch path falls
+  // through to the fetcher — same shape as `presets`.
+  {
+    name: 'network',
+    fetcher: getNetworkInfo,
+    eventTag: 'connectionStateUpdated',
+    parseInline() { return null; },
+  },
   {
     name: 'recents',
     fetcher: getRecents,
