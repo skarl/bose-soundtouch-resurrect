@@ -7,18 +7,27 @@
 # Body (JSON):
 #   { "id": "<guide_id>" }
 #   { "id": "<guide_id>", "url": "<pre-resolved-stream-url>" }
+#   { "id": "<guide_id>", "name": "<resolved-label>" }
 # guide_id matches s|p|t<digits>. When `url` is supplied (e.g. cached
 # by the client from a recent /play of the same id) the CGI skips its
 # own Tune.ashx roundtrip but still applies the placeholder filter and
-# still POSTs /select.
+# still POSTs /select. When `name` is supplied the CGI uses it as the
+# <itemName> on /select AND as the per-station JSON's `name` field —
+# without it the mini-player surfaces the raw guide_id (see #78).
 #
-# Returns:
+# Returns (since 0.4.2):
 #   { "ok": true, "url": "<resolved-or-supplied-url>" } on success
-#   { "ok": false, "error": "off-air" }     when Tune.ashx returned the
-#                                           nostream placeholder
-#   { "ok": false, "error": "not-available" } when Tune.ashx returned
-#                                           the notcompatible placeholder
-#   { "ok": false, "error": "<reason>" }    other failures
+#   { "ok": false, "error": { "code": "OFF_AIR", "message": "..." } }
+#     on Tune.ashx nostream placeholder
+#   { "ok": false, "error": { "code": "NOT_AVAILABLE", "message": "..." } }
+#     on Tune.ashx notcompatible placeholder
+#   { "ok": false, "error": { "code": "<SHOUTY>", "message": "..." } }
+#     other failures (TUNE_FAILED, NO_STREAM, INVALID_ID, ...)
+#
+# Pre-0.4.2 callers saw a flat `{ok, error:"<kebab>"}` envelope; the
+# SPA's cgiErrorMessage() helper transparently absorbs both shapes so
+# the legacy string form still resolves to a usable toast during the
+# rollout window.
 #
 # Architecture note — relationship to /preview:
 #
@@ -50,93 +59,38 @@
 
 set -u
 
-SPEAKER_BASE='http://localhost:8090'
+# shellcheck source=../../lib/playback.sh
+. "$(dirname "$0")/../../lib/playback.sh"
+
 TUNEIN_BASE='http://opml.radiotime.com'
 MAGIC_TUNE='formats=mp3,aac&lang=de-de&render=json'
-RESOLVER_DIR='/mnt/nv/resolver/bmx/tunein/v1/playback/station'
 UA='Bose_Lisa/27.0.6'
-TMPDIR_FALLBACK="${TMPDIR:-/tmp}"
 
-emit_error() {
-    printf 'Status: %s\r\n' "$1"
-    printf 'Content-Type: application/json; charset=utf-8\r\n'
-    printf 'Cache-Control: no-store\r\n'
-    printf 'Access-Control-Allow-Origin: *\r\n'
-    printf '\r\n'
-    printf '{"ok":false,"error":"%s"}\n' "$2"
-    exit 0
-}
-
-emit_ok() {
-    # Surface the resolved stream URL so the admin can cache it under
-    # tunein.stream.<guide_id> and feed it back on subsequent plays.
-    url_for_envelope=$(json_escape "$1")
-    printf 'Status: 200 OK\r\n'
-    printf 'Content-Type: application/json; charset=utf-8\r\n'
-    printf 'Cache-Control: no-store\r\n'
-    printf 'Access-Control-Allow-Origin: *\r\n'
-    printf 'Access-Control-Allow-Methods: POST, OPTIONS\r\n'
-    printf 'Access-Control-Allow-Headers: Content-Type\r\n'
-    printf '\r\n'
-    printf '{"ok":true,"url":"%s"}\n' "$url_for_envelope"
-    exit 0
+emit_ok_url() {
+    pb_url=$(json_escape "$1")
+    emit_ok_headers 'POST, OPTIONS'
+    printf '{"ok":true,"url":"%s"}\n' "$pb_url"
 }
 
 # CORS preflight — answer and exit before any work.
-if [ "${REQUEST_METHOD:-GET}" = 'OPTIONS' ]; then
-    printf 'Status: 204 No Content\r\n'
-    printf 'Access-Control-Allow-Origin: *\r\n'
-    printf 'Access-Control-Allow-Methods: POST, OPTIONS\r\n'
-    printf 'Access-Control-Allow-Headers: Content-Type\r\n'
-    printf '\r\n'
-    exit 0
-fi
+if handle_cors_preflight 'POST, OPTIONS'; then exit 0; fi
 
 case "${REQUEST_METHOD:-GET}" in
     POST) ;;
-    *) emit_error '405 Method Not Allowed' 'method-not-allowed' ;;
+    *)
+        emit_error '405 Method Not Allowed' METHOD_NOT_ALLOWED \
+            'POST only'
+        exit 0
+        ;;
 esac
 
-# Origin guard — same pattern as the other mutating CGIs. Same-origin
-# and curl-style (no Origin) pass; anything else is rejected.
-case "${HTTP_ORIGIN:-}" in
-    "http://${HTTP_HOST}"|"https://${HTTP_HOST}"|"") ;;
-    *) emit_error '403 Forbidden' 'csrf-blocked' ;;
-esac
-
-# Pull a flat string field from a JSON body.
-json_string_field() {
-    sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" \
-        | head -n 1
-}
-
-# XML-escape for embedding text inside an attribute / element value.
-xml_escape() {
-    printf '%s' "$1" \
-        | sed -e 's/&/\&amp;/g' \
-              -e 's/</\&lt;/g' \
-              -e 's/>/\&gt;/g' \
-              -e 's/"/\&quot;/g' \
-              -e "s/'/\\&apos;/g"
-}
-
-# JSON-escape for embedding a URL into the per-station JSON we write.
-# The Tune.ashx URLs are simple http(s):// strings; we only need to
-# escape backslashes and double quotes for the JSON value.
-json_escape() {
-    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
-}
+# Same Origin+Referer guard as the speaker CGI.
+csrf_guard || exit 0
 
 # Slurp the request body to a tempfile.
-body_file="$TMPDIR_FALLBACK/play.$$.body"
-trap 'rm -f "$body_file" "$body_file.tune" "$body_file.json.tmp" "$body_file.sp.body" "$body_file.sp.resp"' EXIT INT TERM
-
-cl="${CONTENT_LENGTH:-0}"
-if [ "$cl" -gt 0 ] 2>/dev/null; then
-    dd bs=1 count="$cl" of="$body_file" 2>/dev/null
-else
-    : >"$body_file"
-fi
+body_file="$PLAYBACK_TMPDIR/play.$$.body"
+trap 'rm -f "$body_file" "$body_file.tune" "$body_file.json.tmp" "$body_file.sp.resp"' EXIT INT TERM
+slurp_body "$body_file"
 
 body_id=$(json_string_field id <"$body_file")
 body_url=$(json_string_field url <"$body_file")
@@ -152,7 +106,11 @@ display_name=${body_name:-$body_id}
 # Validate id — must be s|p|t-prefixed digits (station / show / topic).
 case "$body_id" in
     s[0-9]*|p[0-9]*|t[0-9]*) ;;
-    *) emit_error '400 Bad Request' 'invalid-id' ;;
+    *)
+        emit_error '400 Bad Request' INVALID_ID \
+            'id must match ^[spt][0-9]+$'
+        exit 0
+        ;;
 esac
 
 # Resolve via Tune.ashx unless the caller supplied a cached URL.
@@ -168,7 +126,9 @@ else
         -A "$UA" "$tune_url")
 
     if [ -z "$tune_status" ] || [ "$tune_status" = "000" ] || [ "$tune_status" -ge 400 ] 2>/dev/null; then
-        emit_error '502 Bad Gateway' 'tune-failed'
+        emit_error '502 Bad Gateway' TUNE_FAILED \
+            "Tune.ashx returned HTTP $tune_status"
+        exit 0
     fi
 
     # Pluck the first `"url": "..."` value. The body is a JSON array of
@@ -178,18 +138,28 @@ else
         <"$tune_file" | head -n 1)
 
     if [ -z "$first_url" ]; then
-        emit_error '502 Bad Gateway' 'no-stream'
+        emit_error '502 Bad Gateway' NO_STREAM \
+            'Tune.ashx response contained no stream URL'
+        exit 0
     fi
 fi
 
 # Defence-in-depth: filter the two known placeholder URLs at the CGI
 # even though the admin caches resolved URLs separately. nostream is
 # the station-is-off-air signal; notcompatible is the geo/partner gate.
+# These are 200 OK with ok:false (not a transport failure) so the
+# admin can render a useful toast without retrying.
 case "$first_url" in
     *nostream.enUS.mp3*)
-        emit_error '200 OK' 'off-air' ;;
+        emit_error '200 OK' OFF_AIR \
+            'station is off-air right now'
+        exit 0
+        ;;
     *notcompatible.enUS.mp3*)
-        emit_error '200 OK' 'not-available' ;;
+        emit_error '200 OK' NOT_AVAILABLE \
+            'stream not available in this region'
+        exit 0
+        ;;
 esac
 
 # Stage a minimal per-station Bose JSON ONLY if the resolver doesn't
@@ -198,9 +168,10 @@ esac
 # minimal entry that satisfies the firmware lookup. The JSON shape is
 # the same one resolver/build.py:make_bose emits, minus the metadata
 # fields we don't have here (imageUrl, isFavorite, rich name).
-target="$RESOLVER_DIR/$body_id"
+target="$PLAYBACK_RESOLVER_DIR/$body_id"
 if [ ! -f "$target" ]; then
     url_esc=$(json_escape "$first_url")
+    name_for_json=$(json_escape "$display_name")
     tmp="$body_file.json.tmp"
     {
         printf '{"_links":{'
@@ -212,13 +183,20 @@ if [ ! -f "$target" ]; then
         printf '"streamUrl":"%s",' "$url_esc"
         printf '"streams":[{"bufferingTimeout":20,"connectingTimeout":10,"hasPlaylist":true,"isRealtime":true,"streamUrl":"%s","maxTimeout":60}]' "$url_esc"
         printf '},"imageUrl":"","isFavorite":false,'
-        name_for_json=$(json_escape "$display_name")
         printf '"name":"%s",' "$name_for_json"
         printf '"streamType":"liveRadio"}'
-    } >"$tmp" || emit_error '500 Internal Server Error' 'write-failed'
+    } >"$tmp" || {
+        emit_error '500 Internal Server Error' WRITE_FAILED \
+            "couldn't write resolver JSON"
+        exit 0
+    }
 
-    mkdir -p "$RESOLVER_DIR" 2>/dev/null
-    mv "$tmp" "$target" || emit_error '500 Internal Server Error' 'rename-failed'
+    mkdir -p "$PLAYBACK_RESOLVER_DIR" 2>/dev/null
+    mv "$tmp" "$target" || {
+        emit_error '500 Internal Server Error' RENAME_FAILED \
+            "couldn't move resolver JSON into place"
+        exit 0
+    }
 fi
 
 # Compose the ContentItem and POST to /select. The firmware resolves
@@ -228,23 +206,20 @@ fi
 # in the mini-player + now-playing view. Falls back to the guide_id
 # only when the caller didn't supply a name.
 name_xml=$(xml_escape "$display_name")
-location="/v1/playback/station/$body_id"
-sp_body="<ContentItem source=\"TUNEIN\" type=\"stationurl\" location=\"${location}\" sourceAccount=\"\" isPresetable=\"true\"><itemName>${name_xml}</itemName></ContentItem>"
+sp_body=$(build_content_item "$body_id" "$name_xml")
 
-sp_body_file="$body_file.sp.body"
 sp_resp_file="$body_file.sp.resp"
-printf '%s' "$sp_body" >"$sp_body_file"
+sp_status=$(select_post "$sp_body" "$sp_resp_file")
 
-sp_status=$(/usr/bin/curl -s -o "$sp_resp_file" -w '%{http_code}' \
-    -X POST -H 'Content-Type: application/xml' \
-    --data-binary "@$sp_body_file" \
-    "${SPEAKER_BASE}/select")
-
-if [ -z "$sp_status" ] || [ "$sp_status" = "000" ] || [ "$sp_status" -ge 400 ] 2>/dev/null; then
-    emit_error '502 Bad Gateway' 'select-failed'
+if select_failed_check "$sp_status" "$sp_resp_file"; then
+    if [ "$sp_status" = "000" ] || [ -z "$sp_status" ]; then
+        emit_error '502 Bad Gateway' SELECT_FAILED \
+            "speaker /select did not respond"
+    else
+        emit_error '502 Bad Gateway' SELECT_REJECTED \
+            "speaker rejected /select (HTTP $sp_status)"
+    fi
+    exit 0
 fi
-if grep -q '<error' "$sp_resp_file" 2>/dev/null; then
-    emit_error '502 Bad Gateway' 'select-rejected'
-fi
 
-emit_ok "$first_url"
+emit_ok_url "$first_url"

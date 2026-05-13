@@ -25,6 +25,7 @@ import { canonicaliseBrowseUrl } from './tunein-url.js';
 import { cache, TTL_STREAM, TTL_LABEL } from './tunein-cache.js';
 import { parentKey as tuneinParentKey, extractParentShowId } from './transport-state.js';
 import { playGuideId } from './api.js';
+import { cgiErrorMessage } from './error-messages.js';
 import { showToast } from './toast.js';
 import { icon } from './icons.js';
 
@@ -173,8 +174,7 @@ function playButton(sid, label) {
         showToast(`Playing on Bo: ${label}`);
       } else {
         cache.invalidate(cacheKey);
-        const code = result && result.error;
-        showToast(messageFor(code));
+        showToast(cgiErrorMessage(result));
       }
     } catch (_err) {
       cache.invalidate(cacheKey);
@@ -193,16 +193,3 @@ function playButton(sid, label) {
   return btn;
 }
 
-const PLAY_ERROR_MESSAGES = {
-  'off-air':         'Off-air right now',
-  'not-available':   'Not available in your region',
-  'invalid-id':      'Cannot play this row',
-  'no-stream':       'No stream available',
-  'tune-failed':     'TuneIn lookup failed',
-  'select-failed':   'Speaker rejected the stream',
-  'select-rejected': 'Speaker rejected the stream',
-};
-
-function messageFor(code) {
-  return PLAY_ERROR_MESSAGES[code] || 'Could not play this row';
-}

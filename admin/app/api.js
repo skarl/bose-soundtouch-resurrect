@@ -198,10 +198,16 @@ export async function previewStream(payload) {
 // guide_id via Tune.ashx on-device, filters the two known placeholder
 // URLs, and asks the speaker to /select the resolved stream. Returns
 // the CGI envelope verbatim:
-//   { ok: true, url: "<resolved-stream-url>" }    on success
-//   { ok: false, error: "off-air" }               nostream placeholder
-//   { ok: false, error: "not-available" }         notcompatible placeholder
-//   { ok: false, error: "invalid-id" }            etc.
+//   { ok: true,  url: "<resolved-stream-url>" }                  on success
+//   { ok: false, error: { code: "OFF_AIR",        message } }    nostream
+//   { ok: false, error: { code: "NOT_AVAILABLE",  message } }    notcompatible
+//   { ok: false, error: { code: "INVALID_ID",     message } }    etc.
+//
+// The pre-0.4.2 /play CGI emitted a flat `{ok, error: "off-air"}`
+// envelope with lowercase-kebab codes. The new envelope nests
+// `{code, message}` to match /preview and /presets. cgiErrorMessage()
+// in admin/app/error-messages.js absorbs both shapes so legacy speaker
+// builds keep producing usable toasts during the rollout window.
 //
 // Transport errors throw; structured `{ok:false, error}` envelopes
 // resolve normally so the caller can route the error to a toast.

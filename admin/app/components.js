@@ -10,6 +10,7 @@ import { icon } from './icons.js';
 import * as theme from './theme.js';
 import { canonicaliseBrowseUrl } from './tunein-url.js';
 import { playGuideId } from './api.js';
+import { cgiErrorMessage } from './error-messages.js';
 import { cache, TTL_STREAM, TTL_LABEL } from './tunein-cache.js';
 import { showToast } from './toast.js';
 import { parentKey as tuneinParentKey, extractParentShowId } from './transport-state.js';
@@ -751,8 +752,7 @@ function playButton(sid, label) {
         // Stale cache entry that resolved to a placeholder — drop it so
         // the next click re-resolves cleanly.
         cache.invalidate(cacheKey);
-        const code = result && result.error;
-        showToast(messageFor(code));
+        showToast(cgiErrorMessage(result));
       }
     } catch (err) {
       cache.invalidate(cacheKey);
@@ -771,16 +771,3 @@ function playButton(sid, label) {
   return btn;
 }
 
-const PLAY_ERROR_MESSAGES = {
-  'off-air':         'Off-air right now',
-  'not-available':   'Not available in your region',
-  'invalid-id':      'Cannot play this row',
-  'no-stream':       'No stream available',
-  'tune-failed':     'TuneIn lookup failed',
-  'select-failed':   'Speaker rejected the stream',
-  'select-rejected': 'Speaker rejected the stream',
-};
-
-function messageFor(code) {
-  return PLAY_ERROR_MESSAGES[code] || 'Could not play this row';
-}

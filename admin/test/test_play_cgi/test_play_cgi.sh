@@ -8,11 +8,15 @@
 # Cases:
 #   1. Valid id resolves and selects (200, ok:true). now_playing reflects
 #      the TUNEIN/stationurl ContentItem within a few seconds.
-#   2. Missing id returns 400 with ok:false / invalid-id.
-#   3. Bogus prefix (g22) returns 400 with ok:false / invalid-id.
-#   4. GET method returns 405 with ok:false / method-not-allowed.
+#   2. Missing id returns 400 with ok:false and error.code=INVALID_ID.
+#   3. Bogus prefix (g22) returns 400 with ok:false and error.code=INVALID_ID.
+#   4. GET method returns 405 with ok:false and error.code=METHOD_NOT_ALLOWED.
 #   5. Off-air or not-available stations return 200 ok:false with the
 #      structured error code (defence-in-depth placeholder filter).
+#
+# All envelopes since 0.4.2 use `{ok, error:{code,message}}` with SHOUTY
+# codes — same shape /preview and /presets emit. See
+# admin/cgi-bin/lib/playback.sh for the helpers.
 #
 # Exits non-zero on any failure so it composes with deploy verification.
 
@@ -60,8 +64,8 @@ check "speaker /now_playing location matches the id we played" \
 printf '\n=== /play: placeholder URLs surface as structured errors ===\n'
 body=$(curl -fsS -X POST -H 'Content-Type: application/json' \
     -d "{\"id\":\"$OFFAIR_ID\"}" "$BASE" || true)
-check "POST $OFFAIR_ID returns ok:false / off-air-or-not-available" \
-    sh -c 'printf "%s" "$0" | grep -qE "\"error\":\"(off-air|not-available|no-stream)\""' "$body"
+check "POST $OFFAIR_ID returns ok:false / OFF_AIR-or-NOT_AVAILABLE-or-NO_STREAM" \
+    sh -c 'printf "%s" "$0" | grep -qE "\"code\":\"(OFF_AIR|NOT_AVAILABLE|NO_STREAM)\""' "$body"
 
 printf '\n=== /play: cached url skips Tune.ashx but still filters placeholders ===\n'
 # A real URL is just passed through (and selected); the round-trip
@@ -78,31 +82,38 @@ check "cached-url path echoes the supplied URL back" \
 body=$(curl -fsS -X POST -H 'Content-Type: application/json' \
     -d "{\"id\":\"$GOOD_ID\",\"url\":\"http://cdn-cms.tunein.com/service/Audio/nostream.enUS.mp3\"}" \
     "$BASE" || true)
-check "cached placeholder URL is filtered (off-air)" \
-    sh -c 'printf "%s" "$0" | grep -q "\"error\":\"off-air\""' "$body"
+check "cached placeholder URL is filtered (OFF_AIR)" \
+    sh -c 'printf "%s" "$0" | grep -q "\"code\":\"OFF_AIR\""' "$body"
 
 printf '\n=== /play: missing id returns 400 ===\n'
 code=$(curl -s -o /tmp/test_play_cgi.body -w '%{http_code}' \
     -X POST -H 'Content-Type: application/json' -d '{}' "$BASE")
 check "POST {} returns HTTP 400" \
     sh -c '[ "$0" = "400" ]' "$code"
-check "missing-id body carries invalid-id error" \
-    sh -c 'grep -q "\"error\":\"invalid-id\"" /tmp/test_play_cgi.body'
+check "missing-id body carries INVALID_ID error" \
+    sh -c 'grep -q "\"code\":\"INVALID_ID\"" /tmp/test_play_cgi.body'
 
 printf '\n=== /play: bogus prefix returns 400 ===\n'
 code=$(curl -s -o /tmp/test_play_cgi.body -w '%{http_code}' \
     -X POST -H 'Content-Type: application/json' -d '{"id":"g22"}' "$BASE")
 check "POST id=g22 returns HTTP 400" \
     sh -c '[ "$0" = "400" ]' "$code"
-check "bogus-prefix body carries invalid-id error" \
-    sh -c 'grep -q "\"error\":\"invalid-id\"" /tmp/test_play_cgi.body'
+check "bogus-prefix body carries INVALID_ID error" \
+    sh -c 'grep -q "\"code\":\"INVALID_ID\"" /tmp/test_play_cgi.body'
 
 printf '\n=== /play: GET method rejected ===\n'
 code=$(curl -s -o /tmp/test_play_cgi.body -w '%{http_code}' "$BASE")
 check "GET returns HTTP 405" \
     sh -c '[ "$0" = "405" ]' "$code"
-check "GET body carries method-not-allowed error" \
-    sh -c 'grep -q "\"error\":\"method-not-allowed\"" /tmp/test_play_cgi.body'
+check "GET body carries METHOD_NOT_ALLOWED error" \
+    sh -c 'grep -q "\"code\":\"METHOD_NOT_ALLOWED\"" /tmp/test_play_cgi.body'
+
+printf '\n=== /play: envelope shape — error is always an object ===\n'
+# The new envelope is `{ok:false, error:{code:"...",message:"..."}}`.
+# Reject the legacy flat `{ok:false, error:"<kebab>"}` shape so we
+# catch CGI regressions that drop back to the pre-0.4.2 form.
+check "error field is an object, never a bare string" \
+    sh -c 'grep -q "\"error\":{" /tmp/test_play_cgi.body'
 
 rm -f /tmp/test_play_cgi.body
 

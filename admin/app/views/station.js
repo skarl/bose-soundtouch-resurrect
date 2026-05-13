@@ -27,6 +27,7 @@ import { stationGradient } from '../tint.js';
 import { pill } from '../components.js';
 import { probe, assignToPreset, buildBosePayload } from '../probe.js';
 import { previewStream } from '../actions/index.js';
+import { cgiErrorMessage } from '../error-messages.js';
 
 const ASSIGN_SLOTS = 6;
 
@@ -292,8 +293,7 @@ export default defineView({
       try {
         const envelope = await previewStream({ id: actx.sid, name: liveName, json: bose });
         if (!envelope || envelope.ok !== true) {
-          const code = envelope && envelope.error && envelope.error.code;
-          showToast(`Playback failed${code ? ': ' + code : ''}`);
+          showToast(`Playback failed: ${cgiErrorMessage(envelope)}`);
           return;
         }
         showToast(`Playing on Bo: ${liveName}`);
@@ -493,9 +493,7 @@ export default defineView({
         return;
       }
 
-      const errObj = (envelope && envelope.error) || { code: 'UNKNOWN' };
-      const detail = errObj.message ? `${errObj.code}: ${errObj.message}` : errObj.code;
-      showToast(`Save failed (${detail})`);
+      showToast(`Save failed: ${cgiErrorMessage(envelope)}`);
       presetsList().then((envv) => {
         if (envv && envv.ok && Array.isArray(envv.data)) store.update('speaker', (s) => { s.speaker.presets = envv.data; });
       }).catch(() => { /* keep the toast as the user-facing signal */ });
