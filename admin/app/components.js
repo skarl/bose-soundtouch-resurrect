@@ -13,6 +13,9 @@ import { playGuideId } from './api.js';
 import { cache, TTL_STREAM, TTL_LABEL } from './tunein-cache.js';
 import { showToast } from './toast.js';
 import { parentKey as tuneinParentKey, extractParentShowId } from './transport-state.js';
+import { parseSid, isPlayableSid } from './tunein-sid.js';
+
+export { isPlayableSid };
 
 // pill({ tone, pulse, text }) — generic status badge.
 // Tones map to .pill--{tone}; the optional pulse dot is a tiny child span.
@@ -381,27 +384,13 @@ export function confirm(message, options = {}) {
 }
 
 // hrefForSid — derive the row/card anchor href from the TuneIn guide_id
-// prefix. The router only mounts the station detail view for `s` sids
-// (preset assignment + probe live there); `p` (show) and `t` (topic) sids
-// resolve through Browse.ashx, so their natural detail page is the
-// browse drill. The `p` route carries `c=pbrowse` so the browse view's
-// show-landing dispatch (#84) takes over and renders the Describe-driven
-// show card — without `c=pbrowse` the bare-id path falls into the
-// generic drill, which renders the show's Genres / Networks but not
-// the show metadata itself. Anything else — missing sid, unknown prefix
-// — collapses to "#" (an explicit no-op anchor) rather than emitting a
-// route that would 404. Closing this seam in the row primitive itself
-// catches every call site at once; the alternative (override-at-each-
-// caller) is exactly what regressed in #86.
+// prefix. Thin shim over `parseSid().detailHref` (in tunein-sid.js,
+// the single source of truth for prefix routing). The "#" fallback is
+// the explicit no-op anchor for missing/invalid sids — closing this
+// seam in the row primitive itself catches every call site at once;
+// the alternative (override-at-each-caller) is what regressed in #86.
 function hrefForSid(sid) {
-  if (typeof sid !== 'string' || sid.length < 2) return '#';
-  const enc = encodeURIComponent(sid);
-  switch (sid.charAt(0)) {
-    case 's': return `#/station/${enc}`;
-    case 'p': return `#/browse?c=pbrowse&id=${enc}`;
-    case 't': return `#/browse?id=${enc}`;
-    default:  return '#';
-  }
+  return parseSid(sid).detailHref || '#';
 }
 
 // Build a clickable card for a TuneIn station. `sid` is the only
@@ -707,26 +696,6 @@ function tertiaryLine(spec) {
   }
   // Unknown spec shape — render an empty span so callers don't crash.
   return el;
-}
-
-// The Play icon only attaches to rows whose classified type plays
-// directly. The TuneIn guide_id prefixes are documented in
-// docs/tunein-api.md § 4; s/p/t are the only ones that resolve to a
-// stream. Everything else (g/c/r/m/a/l/n) is drill-only.
-const PLAYABLE_PREFIXES = ['s', 'p', 't'];
-
-export function isPlayableSid(sid) {
-  if (typeof sid !== 'string' || sid.length < 2) return false;
-  const prefix = sid.charAt(0);
-  if (!PLAYABLE_PREFIXES.includes(prefix)) return false;
-  // Cheap digit-tail check — avoids treating arbitrary text starting
-  // with s/p/t (e.g. `style`) as a playable guide_id if a future caller
-  // forgets to validate.
-  for (let i = 1; i < sid.length; i++) {
-    const c = sid.charCodeAt(i);
-    if (c < 48 || c > 57) return false;
-  }
-  return true;
 }
 
 // Build the inline Play button. The button is a <span role="button">

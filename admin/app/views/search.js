@@ -35,10 +35,10 @@ import { stationRow } from '../components.js';
 import { icon } from '../icons.js';
 import { classifyOutline, normaliseRow } from '../tunein-outline.js';
 import { canonicaliseBrowseUrl, extractDrillKey } from '../tunein-url.js';
+import { parseSid } from '../tunein-sid.js';
 
 export const DEBOUNCE_MS = 300;
 export const SEARCH_PLACEHOLDER = 'Search TuneIn — try "jazz", "bbc", "ffh"';
-const STATION_GUIDE_ID = /^s\d+$/;
 
 // sessionStorage key for the "Include podcasts" toggle. Default ON when
 // missing.
@@ -86,7 +86,7 @@ export function popularStations(json) {
     }
     if (entry.type === 'audio'
         && typeof entry.guide_id === 'string'
-        && STATION_GUIDE_ID.test(entry.guide_id)) {
+        && parseSid(entry.guide_id).prefix === 's') {
       out.push(entry);
     }
   };

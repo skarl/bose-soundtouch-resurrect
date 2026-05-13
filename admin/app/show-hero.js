@@ -19,7 +19,8 @@
 // without a new ruleset. The .station-row--hero modifier is there for
 // future divergence and as a CSS / test handle.
 
-import { stationArt, isPlayableSid } from './components.js';
+import { stationArt } from './components.js';
+import { isPlayableSid } from './tunein-sid.js';
 import { canonicaliseBrowseUrl } from './tunein-url.js';
 import { cache, TTL_STREAM, TTL_LABEL } from './tunein-cache.js';
 import { parentKey as tuneinParentKey, extractParentShowId } from './transport-state.js';

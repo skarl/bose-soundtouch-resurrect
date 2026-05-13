@@ -13,6 +13,7 @@ import preset     from './views/preset.js';
 import settings   from './views/settings.js';
 
 import { installVersionDriftCheck } from './version.js';
+import { parseSid } from './tunein-sid.js';
 import { getSpeakerInfo, tuneinDescribe } from './api.js';
 import { mountShell } from './shell.js';
 import * as ws from './ws.js';
@@ -49,19 +50,14 @@ const notFound = defineView({
 // not create a separate back-button entry — the bad URL never enters
 // the history stack.
 function redirectHashForStation(id) {
-  if (typeof id !== 'string' || id.length < 2) return null;
-  const prefix = id.charAt(0);
-  // `p` carries `c=pbrowse` so the browse view's show-landing dispatch
-  // (#84) renders the Describe-driven show card. `t` uses the bare-id
-  // drill — topics don't have a dedicated landing surface, but the
-  // body must never dead-end on the /station/ route.
-  if (prefix === 'p') {
-    return `#/browse?c=pbrowse&id=${encodeURIComponent(id)}`;
-  }
-  if (prefix === 't') {
-    return `#/browse?id=${encodeURIComponent(id)}`;
-  }
-  return null;
+  // Only p (show) and t (topic) prefixes redirect; s falls through to
+  // the strict station-detail matcher upstream of this view, and
+  // unknown prefixes (or garbage) render the explicit not-found surface
+  // below. The destination is the prefix's detailHref from tunein-sid
+  // (the single source of truth for prefix routing).
+  const parsed = parseSid(id);
+  if (parsed.prefix !== 'p' && parsed.prefix !== 't') return null;
+  return parsed.detailHref;
 }
 
 const stationRedirect = defineView({
