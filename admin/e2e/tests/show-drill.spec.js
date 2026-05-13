@@ -13,6 +13,11 @@
 // genre chip, description block, and the inline Play icon on the
 // p-prefix guide_id. No MITM — the test fails if Bo's CGI surface
 // regresses on either Describe or Browse for a p-id.
+//
+// Issue #87 layered onto that: the show-landing card is the page
+// subject, not a listing row. The hero is mounted as a non-anchor
+// element (no body-level href, tap on the body is a no-op); the chip
+// and Play icon remain their own clickable surfaces.
 
 import { test, expect } from './_setup.js';
 
@@ -30,22 +35,25 @@ test('show drill landing renders Describe-driven show card with title, hosts, ge
   const landing = page.locator('.browse-section[data-section="showLanding"]');
   await expect(landing).toBeVisible({ timeout: 10_000 });
 
-  // Show row carries the p-prefix guide_id + the show landing marker.
-  const showRow = landing.locator('a.station-row[data-show-landing="1"][data-sid="p17"]');
-  await expect(showRow).toBeVisible();
+  // The hero carries the p-prefix guide_id + the show-landing marker.
+  // Note: the selector deliberately omits any tag prefix — #87 swapped
+  // the underlying element from <a> to <div>; asserting the
+  // non-anchor body lives in the dedicated test further down.
+  const hero = landing.locator('[data-show-landing="1"][data-sid="p17"]');
+  await expect(hero).toBeVisible();
 
-  // The row name reads "Fresh Air" — Describe-driven.
-  await expect(showRow.locator('.station-row__name')).toHaveText('Fresh Air');
+  // The hero name reads "Fresh Air" — Describe-driven.
+  await expect(hero.locator('.station-row__name')).toHaveText('Fresh Air');
 
-  // p-prefix lights up the inline Play icon (auto-attached by
-  // stationRow's isPlayableSid check).
-  await expect(showRow.locator('.station-row__play')).toBeVisible();
+  // p-prefix lights up the inline Play icon (auto-attached via
+  // isPlayableSid).
+  await expect(hero.locator('.station-row__play')).toBeVisible();
 
   // Hosts populate the secondary meta line ("Terry Gross").
-  await expect(showRow.locator('.station-row__loc')).toContainText('Terry Gross');
+  await expect(hero.locator('.station-row__loc')).toContainText('Terry Gross');
 
   // Genre chip drills to #/browse?id=g168 (Interviews).
-  const chip = showRow.locator('.station-row__chip--genre');
+  const chip = hero.locator('.station-row__chip--genre');
   await expect(chip).toBeVisible();
   await expect(chip).toHaveAttribute('data-genre-id', 'g168');
 
@@ -54,6 +62,34 @@ test('show drill landing renders Describe-driven show card with title, hosts, ge
   await expect(desc).toBeVisible();
   const paragraphs = desc.locator('p');
   expect(await paragraphs.count()).toBeGreaterThanOrEqual(1);
+});
+
+test('show drill landing hero is a non-anchor body — tap leaves location.hash unchanged (#87)', async ({ page }) => {
+  await page.goto('/#/browse?c=pbrowse&id=p17', { waitUntil: 'load' });
+  await page.waitForSelector('[data-view="browse"][data-mode="show-landing"]', { timeout: 15_000 });
+  await expect(page.locator('.browse-loading')).toHaveCount(0, { timeout: 15_000 });
+
+  const hero = page.locator('[data-section="showLanding"] [data-show-landing="1"]');
+  await expect(hero).toBeVisible();
+
+  // The hero's underlying element is not an anchor. The hero is the
+  // page subject (a hero block), not a listing row; tapping the body
+  // has no useful destination.
+  const tagName = await hero.evaluate((el) => el.tagName.toLowerCase());
+  expect(tagName).not.toBe('a');
+
+  // No href attribute on the hero body (neither anchor nor data-href).
+  await expect(hero).not.toHaveAttribute('href', /.*/);
+
+  // Tap the hero body (avoiding the chip and the Play icon) and assert
+  // the hash didn't navigate. The .station-row__name is the safest
+  // body-surface to click — it's not interactive on its own.
+  const hashBefore = await page.evaluate(() => location.hash);
+  await hero.locator('.station-row__name').click();
+  // Allow the router a beat to react — even though nothing should.
+  await page.waitForTimeout(250);
+  const hashAfter = await page.evaluate(() => location.hash);
+  expect(hashAfter).toBe(hashBefore);
 });
 
 test('show drill landing surfaces Browse(bare-id) Genres + Networks sections below the card', async ({ page }) => {
@@ -78,8 +114,10 @@ test('show drill landing Play icon fires /play CGI with the show guide_id', asyn
   await page.waitForSelector('[data-view="browse"][data-mode="show-landing"]', { timeout: 15_000 });
   await expect(page.locator('.browse-loading')).toHaveCount(0, { timeout: 15_000 });
 
-  const showRow = page.locator('a.station-row[data-show-landing="1"][data-sid="p17"]');
-  const play = showRow.locator('.station-row__play');
+  // Hero element — non-anchor in #87 — exposes the Play icon as its
+  // primary affordance.
+  const hero = page.locator('[data-section="showLanding"] [data-show-landing="1"][data-sid="p17"]');
+  const play = hero.locator('.station-row__play');
   await expect(play).toBeVisible();
 
   // Tap Play → /play CGI fires. The actual upstream Tune.ashx call
