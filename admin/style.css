@@ -525,8 +525,44 @@ main {
   filter: brightness(1.05);
 }
 
+/* Buffering state on the now-playing main play button — issue #88.
+ * The glyph swaps to a horizontal ellipsis (rendered as three dots
+ * inside the icon slot) and the whole control gets a subtle pulse so
+ * "I'm waiting" reads at a glance, distinct from both Play (filled
+ * triangle) and Pause (two bars). Pointer events are suppressed so a
+ * tap is a no-op while the speaker is still buffering. */
+.np-btn--play[data-phase="buffering"] {
+  pointer-events: none;
+  animation: np-btn-buffer-pulse 1100ms ease-in-out infinite;
+}
+
+@keyframes np-btn-buffer-pulse {
+  0%, 100% { opacity: 1;   transform: scale(1); }
+  50%      { opacity: 0.6; transform: scale(0.94); }
+}
+
+/* Prev / Next: native disabled attribute drives the visual state so
+ * keyboard nav + screen readers stay in sync (issue #88). */
+.np-btn[disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .np-btn { transition: none; }
+  .np-btn--play[data-phase="buffering"] { animation: none; }
+}
+
+/* Mini-player play button mirrors the now-playing buffering treatment.
+ * Same data-phase semantics so the helper can paint both surfaces
+ * identically. */
+.shell-mini__play[data-phase="buffering"] {
+  pointer-events: none;
+  animation: np-btn-buffer-pulse 1100ms ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-mini__play[data-phase="buffering"] { animation: none; }
 }
 
 /* Section header — used by both the source card and the presets block.
