@@ -47,12 +47,16 @@ import {
 
 export const apiBase = '/cgi-bin/api/v1';
 
-// Default per-method timeouts. Reads stay short so REST polling can't
-// stall behind a hung GET; writes match the server-side `curl --max-time 10`
-// on /select so the client gives the speaker the full window the CGI
-// allows before giving up.
+// Default per-method timeouts. Speaker reads stay short so REST polling
+// can't stall behind a hung GET; writes match the server-side
+// `curl --max-time 10` on /select. TuneIn proxy reads (Search /
+// Browse / Describe / Station / Probe via getJson) get a longer
+// window because each is a Bo → opml.radiotime.com round-trip that
+// can take several seconds under load — a 5s clamp surfaces the
+// unreachable overlay on routine drills.
 export const DEFAULT_READ_TIMEOUT_MS = 5000;
 export const DEFAULT_WRITE_TIMEOUT_MS = 10000;
+export const DEFAULT_TUNEIN_TIMEOUT_MS = 15000;
 
 // fetchWithTimeout — fetch() wrapped in an AbortController that fires
 // after `timeoutMs`. On timeout we throw a tagged Error (name
@@ -231,7 +235,7 @@ async function getJson(path, opts) {
   const res = await fetchWithTimeout(`${apiBase}${path}`, {
     headers: { Accept: 'application/json' },
     signal: opts && opts.signal,
-  }, DEFAULT_READ_TIMEOUT_MS);
+  }, DEFAULT_TUNEIN_TIMEOUT_MS);
   if (!res.ok) {
     throw new Error(`${path} failed: HTTP ${res.status}`);
   }
