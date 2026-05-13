@@ -28,57 +28,9 @@ import { pill } from '../components.js';
 import { probe, assignToPreset, buildBosePayload } from '../probe.js';
 import { previewStream } from '../actions/index.js';
 import { cgiErrorMessage } from '../error-messages.js';
+import { pickArt, bestStream, buildMetaText, fmtCodec, fmtReliability } from '../station-verdict.js';
 
 const ASSIGN_SLOTS = 6;
-
-// Pull the friendliest single image URL from a Describe.ashx body[0].
-// TuneIn's Describe sometimes provides `logo` (square preferred), and
-// Browse responses use `image`. Either may be HTTP or HTTPS.
-function pickArt(stationBody) {
-  if (!stationBody || typeof stationBody !== 'object') return '';
-  const url = stationBody.logo || stationBody.image || '';
-  return typeof url === 'string' ? url : '';
-}
-
-// Build the metadata strip text from a Describe body. Filters empty
-// fields so we don't render lonely separators.
-function buildMetaText(stationBody) {
-  if (!stationBody || typeof stationBody !== 'object') return '';
-  const parts = [];
-  if (stationBody.location) parts.push(stationBody.location);
-  if (stationBody.language) parts.push(stationBody.language);
-  if (stationBody.genre_name) parts.push(stationBody.genre_name);
-  if (stationBody.frequency && stationBody.band) {
-    parts.push(`${stationBody.frequency} ${stationBody.band}`);
-  } else if (stationBody.frequency) {
-    parts.push(String(stationBody.frequency));
-  }
-  return parts.join(' . ');
-}
-
-// Pick the "best" stream for the verdict pill: highest bitrate.
-// Defensive — bitrate may be a string or missing on real TuneIn data.
-function bestStream(streams) {
-  if (!Array.isArray(streams) || streams.length === 0) return null;
-  const score = (s) => {
-    const b = Number(s && s.bitrate);
-    return Number.isFinite(b) ? b : -1;
-  };
-  let best = streams[0];
-  for (const s of streams) if (score(s) > score(best)) best = s;
-  return best;
-}
-
-function fmtCodec(stream) {
-  if (!stream) return '';
-  const codec = stream.media_type || stream.formats || '';
-  return typeof codec === 'string' ? codec.toUpperCase() : '';
-}
-
-function fmtReliability(stream) {
-  const r = Number(stream && stream.reliability);
-  return Number.isFinite(r) && r > 0 ? `${r}%` : '';
-}
 
 function buildAssignGrid() {
   const wrap = document.createElement('div');

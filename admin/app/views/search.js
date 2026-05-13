@@ -35,11 +35,17 @@ import { stationRow } from '../components.js';
 import { icon } from '../icons.js';
 import { classifyOutline, normaliseRow } from '../tunein-outline.js';
 import { canonicaliseBrowseUrl, extractDrillKey } from '../tunein-url.js';
-import { parseSid } from '../tunein-sid.js';
 import { cache, TTL_LABEL } from '../tunein-cache.js';
+import {
+  DEBOUNCE_MS,
+  SEARCH_PLACEHOLDER,
+  searchResultStations,
+  popularStations,
+} from '../search-derive.js';
 
-export const DEBOUNCE_MS = 300;
-export const SEARCH_PLACEHOLDER = 'Search TuneIn — try "jazz", "bbc", "ffh"';
+// Re-export the extracted derivations so existing callers and the test
+// suite keep their import paths.
+export { DEBOUNCE_MS, SEARCH_PLACEHOLDER, searchResultStations, popularStations };
 
 // sessionStorage key for the "Include podcasts" toggle. Default ON when
 // missing.
@@ -70,29 +76,6 @@ export function partitionSearchBody(json) {
     rows.push(entry);
   }
   return { rows, unavailable };
-}
-
-// Pull station leaves out of a Browse.ashx?c=local body — recurses one
-// level so nested sections surface their leaves directly. The empty
-// state still wants station-only rows; popular-near-you isn't part of
-// the search-reframe (it's a curated suggestion list, not search).
-export function popularStations(json) {
-  const items = Array.isArray(json && json.body) ? json.body : [];
-  const out = [];
-  const visit = (entry) => {
-    if (!entry) return;
-    if (Array.isArray(entry.children)) {
-      for (const c of entry.children) visit(c);
-      return;
-    }
-    if (entry.type === 'audio'
-        && typeof entry.guide_id === 'string'
-        && parseSid(entry.guide_id).prefix === 's') {
-      out.push(entry);
-    }
-  };
-  for (const e of items) visit(e);
-  return out;
 }
 
 // Read the "Include podcasts" toggle from sessionStorage. Returns true
