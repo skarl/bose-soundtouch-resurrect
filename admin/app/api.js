@@ -26,23 +26,23 @@
 //   presetsList(), presetsAssign() — presets CGI envelope client
 
 import {
-  parseNowPlayingXml,
-  parseInfoXml,
-  parseVolumeXml,
-  parseBassXml,
-  parseBassCapabilitiesXml,
-  parseBalanceXml,
-  parseBalanceCapabilitiesXml,
-  parseDSPMonoStereoXml,
-  parseSourcesXml,
-  parseNetworkInfoXml,
-  parseCapabilitiesXml,
-  parseRecentsXml,
-  parseNameXml,
-  parseSystemTimeoutXml,
-  parseBluetoothInfoXml,
-  parseZoneXml,
-  parseListMediaServersXml,
+  parseNowPlayingEl,
+  parseInfoEl,
+  parseVolumeEl,
+  parseBassEl,
+  parseBassCapabilitiesEl,
+  parseBalanceEl,
+  parseBalanceCapabilitiesEl,
+  parseDSPMonoStereoEl,
+  parseSourcesEl,
+  parseNetworkInfoEl,
+  parseCapabilitiesEl,
+  parseRecentsEl,
+  parseNameEl,
+  parseSystemTimeoutEl,
+  parseBluetoothInfoEl,
+  parseZoneEl,
+  parseListMediaServersEl,
 } from './speaker-xml.js';
 
 export const apiBase = '/cgi-bin/api/v1';
@@ -182,12 +182,23 @@ async function detectUpstreamFailureFromHttpError(res) {
 // xmlGet / xmlPost are the single seam every speaker fetcher routes
 // through. URL composition, XML headers, no-store caching, and HTTP
 // error mapping live here once; per-endpoint functions become a
-// one-line binding of `path` + `parser`.
+// one-line binding of a `{path, tag, parseEl}` field descriptor.
+//
+// xmlGet takes the same shape as a FIELDS row (see speaker-state.js)
+// so REST reconcile and WS dispatch converge on a single per-field
+// parseEl. The descriptor accepts:
+//   { path, tag, parseEl }
+// and the function:
+//   1. fetches apiBase + path with XML headers + no-store caching
+//   2. parses the body via DOMParser and locates the first <tag>
+//   3. delegates the element to parseEl
+//   4. throws on non-2xx so upstream-failure notify glue (callers'
+//      try/catch + toast) is unchanged.
 
-async function xmlGet(path, parser) {
+export async function xmlGet(field) {
   let res;
   try {
-    res = await fetchWithTimeout(`${apiBase}${path}`, {
+    res = await fetchWithTimeout(`${apiBase}${field.path}`, {
       method: 'GET',
       headers: { Accept: 'application/xml, text/xml' },
       cache: 'no-store',
@@ -198,9 +209,15 @@ async function xmlGet(path, parser) {
   }
   if (!res.ok) {
     await detectUpstreamFailureFromHttpError(res);
-    throw new Error(`${path} failed: HTTP ${res.status}`);
+    throw new Error(`${field.path} failed: HTTP ${res.status}`);
   }
-  const value = parser(await res.text());
+  const text = await res.text();
+  if (typeof text !== 'string' || !text.trim()) return null;
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (!doc || doc.getElementsByTagName('parsererror').length > 0) return null;
+  const els = doc.getElementsByTagName(field.tag);
+  if (!els || !els[0]) return null;
+  const value = field.parseEl(els[0]);
   notifyUpstreamSuccess();
   return value;
 }
@@ -297,7 +314,7 @@ export function tuneinProbe(sid, opts) {
 // --- speaker proxy --------------------------------------------------
 
 export function speakerNowPlaying() {
-  return xmlGet('/speaker/now_playing', parseNowPlayingXml);
+  return xmlGet({ path: '/speaker/now_playing', tag: 'nowPlaying', parseEl: parseNowPlayingEl });
 }
 
 // getNowPlaying is the canonical name; speakerNowPlaying is kept as an
@@ -437,14 +454,14 @@ export async function speakerKey(name, state) {
 // GET /cgi-bin/api/v1/speaker/info → parsed info object.
 // Fields: deviceID, name, type, firmwareVersion (plus any others present).
 export function getSpeakerInfo() {
-  return xmlGet('/speaker/info', parseInfoXml);
+  return xmlGet({ path: '/speaker/info', tag: 'info', parseEl: parseInfoEl });
 }
 
 // --- volume ---------------------------------------------------------
 
 // GET /cgi-bin/api/v1/speaker/volume
 export function getVolume() {
-  return xmlGet('/speaker/volume', parseVolumeXml);
+  return xmlGet({ path: '/speaker/volume', tag: 'volume', parseEl: parseVolumeEl });
 }
 
 // POST /cgi-bin/api/v1/speaker/volume with body <volume>NN</volume>.
@@ -457,7 +474,7 @@ export function postVolume(level) {
 
 // GET /cgi-bin/api/v1/speaker/bass
 export function getBass() {
-  return xmlGet('/speaker/bass', parseBassXml);
+  return xmlGet({ path: '/speaker/bass', tag: 'bass', parseEl: parseBassEl });
 }
 
 // POST /cgi-bin/api/v1/speaker/bass with body <bass>NN</bass>.
@@ -467,14 +484,14 @@ export function postBass(level) {
 
 // GET /cgi-bin/api/v1/speaker/bassCapabilities
 export function getBassCapabilities() {
-  return xmlGet('/speaker/bassCapabilities', parseBassCapabilitiesXml);
+  return xmlGet({ path: '/speaker/bassCapabilities', tag: 'bassCapabilities', parseEl: parseBassCapabilitiesEl });
 }
 
 // --- balance --------------------------------------------------------
 
 // GET /cgi-bin/api/v1/speaker/balance
 export function getBalance() {
-  return xmlGet('/speaker/balance', parseBalanceXml);
+  return xmlGet({ path: '/speaker/balance', tag: 'balance', parseEl: parseBalanceEl });
 }
 
 // POST /cgi-bin/api/v1/speaker/balance with body <balance>NN</balance>.
@@ -484,14 +501,14 @@ export function postBalance(level) {
 
 // GET /cgi-bin/api/v1/speaker/balanceCapabilities
 export function getBalanceCapabilities() {
-  return xmlGet('/speaker/balanceCapabilities', parseBalanceCapabilitiesXml);
+  return xmlGet({ path: '/speaker/balanceCapabilities', tag: 'balanceCapabilities', parseEl: parseBalanceCapabilitiesEl });
 }
 
 // --- DSP mono/stereo ------------------------------------------------
 
 // GET /cgi-bin/api/v1/speaker/DSPMonoStereo
 export function getDSPMonoStereo() {
-  return xmlGet('/speaker/DSPMonoStereo', parseDSPMonoStereoXml);
+  return xmlGet({ path: '/speaker/DSPMonoStereo', tag: 'DSPMonoStereo', parseEl: parseDSPMonoStereoEl });
 }
 
 // POST /cgi-bin/api/v1/speaker/DSPMonoStereo with body
@@ -507,7 +524,7 @@ export function postDSPMonoStereo(mode) {
 // GET /cgi-bin/api/v1/speaker/sources → array of source objects.
 // Shape per element: { source, sourceAccount, status, isLocal, displayName }
 export function getSources() {
-  return xmlGet('/speaker/sources', parseSourcesXml);
+  return xmlGet({ path: '/speaker/sources', tag: 'sources', parseEl: parseSourcesEl });
 }
 
 // POST /cgi-bin/api/v1/speaker/select — switch to a streaming source.
@@ -537,7 +554,7 @@ export function postSelectLocalSource(name) {
 // back to the first interface so disconnected speakers still expose
 // their MAC.
 export function getNetworkInfo() {
-  return xmlGet('/speaker/networkInfo', parseNetworkInfoXml);
+  return xmlGet({ path: '/speaker/networkInfo', tag: 'networkInfo', parseEl: parseNetworkInfoEl });
 }
 
 // --- capabilities ---------------------------------------------------
@@ -546,7 +563,7 @@ export function getNetworkInfo() {
 // Surface used by the System settings section: bullet summary of feature
 // flags and the named <capability/> entries.
 export function getCapabilities() {
-  return xmlGet('/speaker/capabilities', parseCapabilitiesXml);
+  return xmlGet({ path: '/speaker/capabilities', tag: 'capabilities', parseEl: parseCapabilitiesEl });
 }
 
 // --- recents --------------------------------------------------------
@@ -556,7 +573,7 @@ export function getCapabilities() {
 //   { utcTime, source, sourceAccount, type, location, itemName, containerArt }
 // Returned in the order the firmware emits them (newest first on Bo).
 export function getRecents() {
-  return xmlGet('/speaker/recents', parseRecentsXml);
+  return xmlGet({ path: '/speaker/recents', tag: 'recents', parseEl: parseRecentsEl });
 }
 
 // --- speaker name / sleep timer / low-power / power -----------------
@@ -574,7 +591,7 @@ function xmlEscape(s) {
 }
 
 export function getName() {
-  return xmlGet('/speaker/name', parseNameXml);
+  return xmlGet({ path: '/speaker/name', tag: 'name', parseEl: parseNameEl });
 }
 
 export function postName(name) {
@@ -582,7 +599,7 @@ export function postName(name) {
 }
 
 export function getSystemTimeout() {
-  return xmlGet('/speaker/systemtimeout', parseSystemTimeoutXml);
+  return xmlGet({ path: '/speaker/systemtimeout', tag: 'systemtimeout', parseEl: parseSystemTimeoutEl });
 }
 
 // `minutes=0` is the firmware's "never" sentinel; we send enabled=false
@@ -602,8 +619,10 @@ export function postSystemTimeout(minutes) {
 // The speaker reports its paired-devices list; pairing-mode state is not in
 // this payload (no reliable WS event observed either), so the view uses a
 // transient client-side hint after enterBluetoothPairing().
+// Tag-case follows Bo's firmware: <BluetoothInfo BluetoothMACAddress="..."/>.
+// parseBluetoothInfoEl tolerates both cases on its input.
 export function getBluetoothInfo() {
-  return xmlGet('/speaker/bluetoothInfo', parseBluetoothInfoXml);
+  return xmlGet({ path: '/speaker/bluetoothInfo', tag: 'BluetoothInfo', parseEl: parseBluetoothInfoEl });
 }
 
 // POST /cgi-bin/api/v1/speaker/enterBluetoothPairing — one-shot. Bo's
@@ -622,7 +641,7 @@ export function postClearBluetoothPaired() {
 // GET /cgi-bin/api/v1/speaker/getZone → parsed zone object.
 // Bose firmware accepts only GET on /getZone (POST returns 400).
 export function getZone() {
-  return xmlGet('/speaker/getZone', parseZoneXml);
+  return xmlGet({ path: '/speaker/getZone', tag: 'zone', parseEl: parseZoneEl });
 }
 
 // POST /cgi-bin/api/v1/speaker/setZone — replace the current zone.
@@ -674,7 +693,11 @@ function buildZoneXml(zone, { includeSenderIP }) {
 //
 // Returns [] on no peers, null on parse failure.
 export function getListMediaServers() {
-  return xmlGet('/speaker/listMediaServers', parseListMediaServersXml);
+  return xmlGet({
+    path: '/speaker/listMediaServers',
+    tag: 'ListMediaServersResponse',
+    parseEl: parseListMediaServersEl,
+  });
 }
 
 // POST /presets/:slot with {id, slot, name, kind, json}.

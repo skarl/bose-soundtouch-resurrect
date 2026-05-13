@@ -1,8 +1,8 @@
 // multiroom — settings sub-view: deferred-feature stub.
 //
 // Multi-room requires a second SoundTouch on the LAN, which can't be
-// exercised on the test rig (Bo). State, parsers (parseZoneXml,
-// parseListMediaServersXml), actions (setZone / addZoneSlave /
+// exercised on the test rig (Bo). State, parsers (parseZoneEl,
+// parseListMediaServersEl), actions (setZone / addZoneSlave /
 // removeZoneSlave), and tests are all retained in the codebase so a
 // future release can revive the picker without re-deriving the seam.
 

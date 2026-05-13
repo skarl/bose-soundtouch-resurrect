@@ -1,20 +1,17 @@
 // Read-side XML parsing layer for the Bose SoundTouch admin SPA.
 //
-// Each speaker field exposes a parser pair:
-//   parseXxxXml(text) — entry point for REST fetchers in api.js; parses
-//                       a string body and delegates to parseXxxEl.
-//   parseXxxEl(el)    — entry point for the WS dispatch path in
-//                       speaker-state.js; parses an already-resolved DOM
-//                       element from inside an <updates> envelope.
+// Each speaker field exposes a single parser:
+//   parseXxxEl(el) — parses an already-resolved DOM element into the
+//                    field's domain shape. The element is supplied by
+//                    api.js#xmlGet (REST path) or by the WS dispatch
+//                    path in speaker-state.js (which descends into an
+//                    <updates> envelope child).
 //
-// Both forms converge on the same field mapping so REST and WS produce
-// identical shapes. Pure / fixture-testable — no fetch, no DOM mutation,
-// no module state. Uses getElementsByTagName throughout so the parsers
-// work in both browser (DOMParser) and @xmldom/xmldom (test runtime).
-//
-// Consumers:
-//   - admin/app/api.js          — REST getXxx() fetchers call parseXxxXml.
-//   - admin/app/speaker-state.js — FIELDS[].parseInline calls parseXxxEl.
+// REST and WS converge on the same parseEl per field so the two
+// transports produce identical shapes. Pure / fixture-testable — no
+// fetch, no DOM mutation, no module state. Uses getElementsByTagName
+// throughout so the parsers work in both browser (DOMParser) and
+// @xmldom/xmldom (test runtime).
 //
 // XML *builders* (xmlEscape, buildZoneXml, inline string-template XML in
 // postX functions) live in api.js — this module is read-only.
@@ -38,26 +35,13 @@
 //     <playStatus>PLAY_STATE</playStatus>
 //   </nowPlaying>
 //
-// Defensive: any field may be missing (STANDBY, AUX, BLUETOOTH, etc.).
-export function parseNowPlayingXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  // Browser signals parse failure via a <parsererror> child; @xmldom/xmldom
-  // (test runtime) does not have querySelector, so check getElementsByTagName.
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-
-  const nps = doc.getElementsByTagName('nowPlaying');
-  if (!nps || !nps[0]) return null;
-
-  return parseNowPlayingEl(nps[0]);
-}
-
-// Parse an already-resolved <nowPlaying> DOM element — used by the WS
-// dispatch path (nowPlayingUpdated handler) so both REST and WS converge
-// on the same field mapping.
+// Parse an already-resolved <nowPlaying> DOM element. Both REST and WS
+// converge on this parser; api.js#xmlGet supplies the element after
+// resolving it from a full /now_playing body, and the WS dispatch path
+// passes it down from the <nowPlayingUpdated> envelope child.
 // Uses getElementsByTagName so it works in both browser (DOMParser) and
 // @xmldom/xmldom (test runtime, which lacks querySelector).
+// Defensive: any field may be missing (STANDBY, AUX, BLUETOOTH, etc.).
 export function parseNowPlayingEl(np) {
   if (!np) return null;
 
@@ -118,19 +102,10 @@ export function parseNowPlayingEl(np) {
 //     </components>
 //   </info>
 //
-// Defensive: any field may be missing on unknown firmware revisions.
-export function parseInfoXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-  const els = doc.getElementsByTagName('info');
-  if (!els || !els[0]) return null;
-  return parseInfoEl(els[0]);
-}
-
 // Parse an already-resolved <info> DOM element.
 // Uses getElementsByTagName so it works in both browser (DOMParser) and
 // @xmldom/xmldom (test runtime, which lacks querySelector).
+// Defensive: any field may be missing on unknown firmware revisions.
 export function parseInfoEl(el) {
   if (!el) return null;
 
@@ -175,18 +150,8 @@ export function parseInfoEl(el) {
 //     <muteenabled>false</muteenabled>
 //   </volume>
 //
+// Parse an already-resolved <volume> DOM element.
 // Uses getElementsByTagName so it works in both browser and @xmldom/xmldom.
-export function parseVolumeXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-  const vols = doc.getElementsByTagName('volume');
-  if (!vols || !vols[0]) return null;
-  return parseVolumeEl(vols[0]);
-}
-
-// Parse an already-resolved <volume> DOM element — used by the WS
-// dispatch path (volumeUpdated handler).
 export function parseVolumeEl(el) {
   if (!el) return null;
   const g = (tag) => {
@@ -214,15 +179,6 @@ export function parseVolumeEl(el) {
 //     <targetbass>-1</targetbass>
 //     <actualbass>-1</actualbass>
 //   </bass>
-export function parseBassXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-  const els = doc.getElementsByTagName('bass');
-  if (!els || !els[0]) return null;
-  return parseBassEl(els[0]);
-}
-
 export function parseBassEl(el) {
   if (!el) return null;
   const g = (tag) => {
@@ -247,15 +203,6 @@ export function parseBassEl(el) {
 //     <bassMax>0</bassMax>
 //     <bassDefault>0</bassDefault>
 //   </bassCapabilities>
-export function parseBassCapabilitiesXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-  const els = doc.getElementsByTagName('bassCapabilities');
-  if (!els || !els[0]) return null;
-  return parseBassCapabilitiesEl(els[0]);
-}
-
 export function parseBassCapabilitiesEl(el) {
   if (!el) return null;
   const g = (tag) => {
@@ -283,15 +230,6 @@ export function parseBassCapabilitiesEl(el) {
 //     <targetbalance>0</targetbalance>
 //     <actualbalance>0</actualbalance>
 //   </balance>
-export function parseBalanceXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-  const els = doc.getElementsByTagName('balance');
-  if (!els || !els[0]) return null;
-  return parseBalanceEl(els[0]);
-}
-
 export function parseBalanceEl(el) {
   if (!el) return null;
   const g = (tag) => {
@@ -316,15 +254,6 @@ export function parseBalanceEl(el) {
 //     <balanceMax>7</balanceMax>
 //     <balanceDefault>0</balanceDefault>
 //   </balanceCapabilities>
-export function parseBalanceCapabilitiesXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-  const els = doc.getElementsByTagName('balanceCapabilities');
-  if (!els || !els[0]) return null;
-  return parseBalanceCapabilitiesEl(els[0]);
-}
-
 export function parseBalanceCapabilitiesEl(el) {
   if (!el) return null;
   const g = (tag) => {
@@ -351,15 +280,6 @@ export function parseBalanceCapabilitiesEl(el) {
 //   <DSPMonoStereo>
 //     <mono enabled="false"/>
 //   </DSPMonoStereo>
-export function parseDSPMonoStereoXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-  const els = doc.getElementsByTagName('DSPMonoStereo');
-  if (!els || !els[0]) return null;
-  return parseDSPMonoStereoEl(els[0]);
-}
-
 export function parseDSPMonoStereoEl(el) {
   if (!el) return null;
   const monoEls = el.getElementsByTagName('mono');
@@ -378,20 +298,7 @@ export function parseDSPMonoStereoEl(el) {
 //     <sourceItem source="TUNEIN" sourceAccount="" status="READY" isLocal="false">TuneIn</sourceItem>
 //     <sourceItem source="AUX" sourceAccount="AUX" status="READY" isLocal="true">AUX</sourceItem>
 //   </sources>
-export function parseSourcesXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-
-  const sourcesEls = doc.getElementsByTagName('sources');
-  if (!sourcesEls || !sourcesEls[0]) return null;
-
-  return parseSourcesEl(sourcesEls[0]);
-}
-
-// Parse an already-resolved <sources> DOM element — used by the WS
-// dispatch path. Uses getElementsByTagName for @xmldom/xmldom compat.
+// Uses getElementsByTagName for @xmldom/xmldom compat.
 export function parseSourcesEl(el) {
   if (!el) return null;
 
@@ -429,15 +336,7 @@ export function parseSourcesEl(el) {
 //                  state="NETWORK_WIFI_DISCONNECTED"/>
 //     </interfaces>
 //   </networkInfo>
-export function parseNetworkInfoXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-  const els = doc.getElementsByTagName('networkInfo');
-  if (!els || !els[0]) return null;
-  return parseNetworkInfoEl(els[0]);
-}
-
+//
 // Parse an already-resolved <networkInfo> DOM element.
 // Picks the first <interface> with an ipAddress (i.e. connected); falls
 // back to the first interface so the MAC is still visible offline.
@@ -491,15 +390,6 @@ export function parseNetworkInfoEl(el) {
 //     <bcoresetCapable>false</bcoresetCapable>
 //     <disablePowerSaving>true</disablePowerSaving>
 //   </capabilities>
-export function parseCapabilitiesXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-  const els = doc.getElementsByTagName('capabilities');
-  if (!els || !els[0]) return null;
-  return parseCapabilitiesEl(els[0]);
-}
-
 export function parseCapabilitiesEl(el) {
   if (!el) return null;
 
@@ -562,15 +452,6 @@ export function parseCapabilitiesEl(el) {
 //   </recents>
 //
 // `itemName` and `containerArt` may be absent on bare contentItem nodes.
-export function parseRecentsXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-  const els = doc.getElementsByTagName('recents');
-  if (!els || !els[0]) return null;
-  return parseRecentsEl(els[0]);
-}
-
 export function parseRecentsEl(el) {
   if (!el) return null;
   const items = el.getElementsByTagName('recent');
@@ -607,15 +488,6 @@ export function parseNameEl(el) {
   return { name: el.textContent.trim() };
 }
 
-export function parseNameXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-  const els = doc.getElementsByTagName('name');
-  if (!els || !els[0]) return null;
-  return parseNameEl(els[0]);
-}
-
 // --- sleep timer / system timeout -----------------------------------
 
 // Reference shape (from /systemtimeout):
@@ -638,15 +510,6 @@ export function parseSystemTimeoutEl(el) {
   };
 }
 
-export function parseSystemTimeoutXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-  const els = doc.getElementsByTagName('systemtimeout');
-  if (!els || !els[0]) return null;
-  return parseSystemTimeoutEl(els[0]);
-}
-
 // --- bluetooth ------------------------------------------------------
 
 // Parse the speaker's <BluetoothInfo> XML into:
@@ -660,21 +523,9 @@ export function parseSystemTimeoutXml(xmlText) {
 // observed in the wild. The currently-connected device is exposed via
 // /now_playing's <connectionStatusInfo> instead (see parseNowPlayingEl).
 //
-// Defensive: tolerates either tag-case (BluetoothInfo / bluetoothInfo).
-export function parseBluetoothInfoXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-
-  let root = doc.getElementsByTagName('BluetoothInfo');
-  if (!root || !root[0]) root = doc.getElementsByTagName('bluetoothInfo');
-  if (!root || !root[0]) return null;
-
-  return parseBluetoothInfoEl(root[0]);
-}
-
 // Parse an already-resolved <BluetoothInfo> DOM element. Reads only the
 // speaker's own MAC; ignores any speculative children.
+// Defensive: tolerates either tag-case (BluetoothInfo / bluetoothInfo).
 export function parseBluetoothInfoEl(el) {
   if (!el) return null;
   const macAddress = el.getAttribute('BluetoothMACAddress') ||
@@ -709,15 +560,6 @@ export function parseBluetoothInfoEl(el) {
 //
 // Standalone returns a non-null object with master='' and members=[]
 // so the view can branch on `members.length` and presence of `master`.
-export function parseZoneXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-  const els = doc.getElementsByTagName('zone');
-  if (!els || !els[0]) return null;
-  return parseZoneEl(els[0]);
-}
-
 export function parseZoneEl(el) {
   if (!el) return null;
   const master          = el.getAttribute('master') || '';
@@ -747,15 +589,7 @@ export function parseZoneEl(el) {
 //                   model_description="..." location="..."/>
 //     ...
 //   </ListMediaServersResponse>
-export function parseListMediaServersXml(xmlText) {
-  if (typeof xmlText !== 'string' || !xmlText.trim()) return null;
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length > 0) return null;
-  const els = doc.getElementsByTagName('ListMediaServersResponse');
-  if (!els || !els[0]) return null;
-  return parseListMediaServersEl(els[0]);
-}
-
+//
 // Filters to entries the firmware identifies as Bose/SoundTouch. We
 // keep `mac`, `ip`, and `name` (preferring friendly_name) — that's
 // everything the picker needs to render and to call addZoneSlave.
