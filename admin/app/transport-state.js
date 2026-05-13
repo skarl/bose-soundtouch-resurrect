@@ -21,26 +21,31 @@
 
 // --- transportPhase -------------------------------------------------
 
-// A "content item is selected" when the speaker is not in STANDBY AND
-// the nowPlaying payload carries a non-empty ContentItem (the
-// firmware leaves <ContentItem> empty between sources). STANDBY wins
-// over everything else — when the speaker is asleep we want the idle
-// "Play to wake" glyph, never a spinner.
+// STANDBY wins over everything — when the speaker is asleep we want
+// the idle "Play to wake" glyph, never a spinner. After that, only the
+// explicit BUFFERING_STATE drives the loading glyph; STOP_STATE means
+// the user (or the speaker, on a TUNEIN stream end) stopped the audio
+// and the Play button must stay tappable so a resume is possible. For
+// TUNEIN sources Bo does not emit PAUSE_STATE — a "pause" tap stops
+// the stream and lands in STOP_STATE; treating STOP_STATE as paused
+// (with a fresh Play glyph) is the resume-friendly contract.
 export function transportPhase(np) {
   if (!np) return 'idle';
   if (np.source === 'STANDBY') return 'standby';
 
   const status = np.playStatus || '';
-  if (status === 'PLAY_STATE')  return 'playing';
-  if (status === 'PAUSE_STATE') return 'paused';
+  if (status === 'PLAY_STATE')      return 'playing';
+  if (status === 'BUFFERING_STATE') return 'buffering';
 
-  // Anything else (BUFFERING_STATE, STOP_STATE, INVALID_PLAY_STATUS,
-  // empty) is either a real buffering window or an idle source. The
-  // distinguishing signal is whether the user has selected something
-  // to play — a populated ContentItem.location is the firmware's own
-  // "you asked for this" anchor.
+  // PAUSE_STATE and STOP_STATE both surface as 'paused' when an item
+  // is selected — tapping Play resumes the stream (or restarts it for
+  // TUNEIN after a STOP). Without an item there's nothing to resume,
+  // so fall through to 'idle'.
   const hasItem = !!(np.item && (np.item.location || np.item.name));
-  return hasItem ? 'buffering' : 'idle';
+  if (status === 'PAUSE_STATE' || status === 'STOP_STATE') {
+    return hasItem ? 'paused' : 'idle';
+  }
+  return 'idle';
 }
 
 // --- prev/next classifier -------------------------------------------

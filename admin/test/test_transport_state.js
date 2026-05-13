@@ -83,16 +83,32 @@ test('transportPhase: INVALID_PLAY_STATUS with no item → idle', () => {
   );
 });
 
-test('transportPhase: STOP_STATE with item still selected → buffering', () => {
-  // The firmware briefly shows STOP_STATE after a source switch and
-  // before audio starts — treat it as buffering so the spinner shows.
+test('transportPhase: STOP_STATE with item still selected → paused', () => {
+  // For TUNEIN streams Bo emits STOP_STATE when the user pauses (the
+  // stream ends rather than freezing). The Play button must stay
+  // tappable so a resume is possible — treating STOP_STATE as paused
+  // keeps the resume contract honest. Only the explicit BUFFERING_STATE
+  // drives the loading glyph.
   assert.equal(
     transportPhase({
       source: 'TUNEIN',
       item: { location: '/v1/playback/station/s24896', name: 'SWR3' },
       playStatus: 'STOP_STATE',
     }),
-    'buffering',
+    'paused',
+  );
+});
+
+test('transportPhase: INVALID_PLAY_STATUS with item selected → idle (no resume possible)', () => {
+  // INVALID_PLAY_STATUS means the firmware can't classify the state;
+  // we don't pretend the button is resumable.
+  assert.equal(
+    transportPhase({
+      source: 'TUNEIN',
+      item: { location: '/v1/playback/station/s24896', name: 'SWR3' },
+      playStatus: 'INVALID_PLAY_STATUS',
+    }),
+    'idle',
   );
 });
 
