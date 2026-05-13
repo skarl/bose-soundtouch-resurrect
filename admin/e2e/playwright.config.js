@@ -32,6 +32,10 @@ export default defineConfig({
     ['list'],
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
     ['json', { outputFile: 'test-results/results.json' }],
+    // Custom: fills the Result column in 0.4.2-smoke-report.md from
+    // the same in-memory test data the JSON reporter consumes, so the
+    // Markdown report is complete the moment the run finishes.
+    ['./smoke-report-reporter.js'],
   ],
   outputDir: 'test-results/artefacts',
   use: {

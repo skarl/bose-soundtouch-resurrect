@@ -40,6 +40,14 @@ npm run test:headed
 npm run test:report
 ```
 
+**Important — do not pass `--reporter=…` to the canonical run.** Playwright's
+CLI `--reporter` flag *replaces* the config's reporter list, so passing
+`--reporter=list` (handy during dev iteration on a single spec) skips
+both the HTML reporter and the JSON reporter the smoke report depends
+on. Use `npm test` for the full run and reserve `--reporter=line` for
+single-spec dev runs (e.g. `npx playwright test tests/play.spec.js
+--reporter=line`).
+
 ## What each spec covers
 
 | Spec | Slice | Coverage |
@@ -75,37 +83,15 @@ npm run test:report
 ## Refreshing the smoke report
 
 `full-smoke.spec.js` writes a stub Markdown report to
-`test-results/0.4.2-smoke-report.md` during the run. After the suite
-finishes, the JSON reporter at `test-results/results.json` carries
-every spec's pass/fail status. To enrich the Markdown report's Result
-column from the JSON reporter, run:
+`test-results/0.4.2-smoke-report.md` during the run. The custom
+reporter at `smoke-report-reporter.js` watches every test's status
+and fills the Result column in the Markdown report from the
+in-process Playwright test data — no extra shell incantation needed.
+Running `npm test` produces a fully-populated report.
 
-```bash
-node -e '
-  const fs = require("node:fs");
-  const r = JSON.parse(fs.readFileSync("test-results/results.json", "utf8"));
-  const status = {};
-  for (const suite of r.suites || []) {
-    for (const sub of suite.suites || [suite]) {
-      const file = (sub.file || suite.file || "").split("/").pop();
-      const pass = (sub.specs || []).every(s => (s.tests || []).every(t => (t.results || []).every(rr => rr.status === "passed")));
-      status[file] = pass ? "PASS" : "FAIL";
-    }
-  }
-  const path = "test-results/0.4.2-smoke-report.md";
-  let md = fs.readFileSync(path, "utf8");
-  for (const [file, verdict] of Object.entries(status)) {
-    md = md.replace(new RegExp(`\\`" + file + "\\``" + " (.*) _filled by post-run reporter step_", "g"),
-                    "`" + file + "` $1 " + verdict);
-  }
-  fs.writeFileSync(path, md);
-'
-```
-
-The above is intentionally a tiny post-run shim rather than a full
-reporter plugin — the report exists from the moment Playwright finishes,
-and any consumer that wants richer per-test data can read
-`results.json` directly.
+The reporter is wired into `playwright.config.js`; `--reporter=line`
+overrides the config and skips it (handy for single-spec dev iteration
+where the report is not needed).
 
 ## Deferred — orchestrator run
 
