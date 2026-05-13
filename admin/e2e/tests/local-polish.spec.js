@@ -1,42 +1,75 @@
 // Slice #82 — Polish grab-bag.
 //
 // Final-mile polish that didn't fit cleanly into earlier slices:
-//   - "Browse all of <country>" anchor on Local Radio drills.
-//   - Tiny-country annotation when a country surfaces only a handful of
-//     stations.
-//   - Every <img> in the SPA has loading="lazy".
-//   - `related` arrays render as chip rows.
+//   - "Browse all of <country>" anchor on c=local responses, surfacing
+//     the localCountry link as a prominent card above the local audio list.
+//   - Tiny-country annotation when a country surfaces ≤5 stations
+//     (Vatican / Liechtenstein / Andorra). The live r-list API doesn't
+//     emit `station_count` metadata on country rows, so we MITM the
+//     Browse response to inject one (the SPA fixture under
+//     admin/test/fixtures/api/r-europe-countries.tunein.json is the
+//     canonical shape).
+//   - Every `<img>` rendered in the SPA has loading="lazy".
+//   - `related` arrays render as chip rows on the browse drill page.
 //   - Station-detail call-to-action reads "Play" (not "Audition" /
 //     "Testplay" — see project memory).
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { test, expect, gotoBrowse } from './_setup.js';
 
-test('Local Radio surfaces a "Browse all of <country>" card', async ({ page }) => {
-  // Local Radio root: r0 → region → country drill. r100000079 is the
-  // canonical Germany id in the TuneIn taxonomy.
-  await gotoBrowse(page, 'r100000079');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+test('Local Radio (c=local) surfaces a "Browse all of <country>" card', async ({ page }) => {
+  // c=local is the canonical entry to Local Radio. Its response
+  // carries a `key="localCountry"` child the SPA lifts into the
+  // .browse-local-country card. gotoBrowse() only builds id=-anchored
+  // hashes; route past it directly.
+  await page.goto('/#/browse?c=local', { waitUntil: 'load' });
+  await page.waitForSelector('[data-view="browse"][data-mode="drill"]', { timeout: 15_000 });
   await expect(page.locator('.browse-loading')).toHaveCount(0, { timeout: 15_000 });
 
-  const browseAll = page.locator('a, button').filter({ hasText: /Browse all of\s+/i }).first();
-  await expect(browseAll).toBeVisible({ timeout: 10_000 });
+  const card = page.locator('a.browse-local-country[data-local-country="1"]');
+  await expect(card).toBeVisible({ timeout: 10_000 });
+  const label = (await card.locator('.browse-local-country__label').innerText()).trim();
+  expect(label).toMatch(/^Browse all of\s+/);
 });
 
-test('tiny-country drills carry the tiny-country annotation', async ({ page }) => {
-  // A small country drill — Vatican City / San Marino / Andorra all
-  // qualify. We probe via a couple of candidates and assert the
-  // annotation surfaces on at least one.
-  const candidates = ['r101188', 'r101384', 'r101107']; // Vatican, San Marino, Andorra
-  let found = false;
-  for (const id of candidates) {
-    await gotoBrowse(page, id);
-    await page.locator('.browse-loading').waitFor({ state: 'detached', timeout: 15_000 }).catch(() => {});
-    const annotation = page.locator('.tiny-country, [data-annotation="tiny-country"], .browse-tiny-note').first();
-    if (await annotation.count() > 0 && await annotation.isVisible().catch(() => false)) {
-      found = true;
-      break;
-    }
+test('tiny-country drills carry the tiny-country annotation (MITMed station_count)', async ({ page }) => {
+  // The live r-list API doesn't emit station_count on country rows,
+  // so this assertion would never fire against a real Bo response.
+  // MITM the Browse fetch for the European-countries node with the
+  // already-canonical fixture from the unit suite — same data shape
+  // the slice was authored against.
+  const fixturePath = join(__dirname, '..', '..', 'test', 'fixtures', 'api',
+    'r-europe-countries.tunein.json');
+  const fixture = readFileSync(fixturePath, 'utf8');
+
+  await page.route('**/cgi-bin/api/v1/tunein/browse?id=r-europe-countries**', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: fixture }));
+  // The fixture uses guide_ids r101193 / r101160 / r101110 / r101172 /
+  // r100346; we navigate via a synthetic id and serve the fixture.
+  await page.route('**/cgi-bin/api/v1/tunein/browse?id=r-tiny-countries-mitm', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: fixture }));
+
+  await page.goto('/#/browse?id=r-tiny-countries-mitm', { waitUntil: 'load' });
+  await page.waitForSelector('[data-view="browse"][data-mode="drill"]', { timeout: 15_000 });
+  await expect(page.locator('.browse-loading')).toHaveCount(0, { timeout: 15_000 });
+
+  // The annotation lives on rows whose count is <= 5 (browse.js
+  // TINY_COUNTRY_THRESHOLD). The fixture has Vatican (1), Liechtenstein
+  // (3), Andorra (5) under that threshold; the annotation must mount
+  // on each.
+  const annotations = page.locator('.browse-row__annot[data-tiny-country="1"]');
+  await expect(annotations.first()).toBeVisible({ timeout: 5_000 });
+  expect(await annotations.count()).toBeGreaterThanOrEqual(3);
+
+  // Each annotation's text is " · N station(s)".
+  const texts = await annotations.allInnerTexts();
+  for (const t of texts) {
+    expect(t).toMatch(/·\s+\d+\s+stations?$/);
   }
-  expect(found, 'expected at least one tiny-country annotation across Vatican/San Marino/Andorra').toBe(true);
 });
 
 test('every <img> on the browse view has loading="lazy"', async ({ page }) => {
@@ -46,43 +79,51 @@ test('every <img> on the browse view has loading="lazy"', async ({ page }) => {
   const offenders = await page.$$eval('img', (imgs) =>
     imgs
       .filter((img) => img.getAttribute('loading') !== 'lazy')
-      // Inline SVG fallback markers sometimes use <img> with data: URIs
-      // and an explicit loading="eager" — surface those if present.
       .map((img) => img.getAttribute('src') || img.outerHTML.slice(0, 80)));
   expect(offenders, `images missing loading="lazy": ${offenders.join(', ')}`).toEqual([]);
 });
 
-test('`related` entries render as chips on a station detail', async ({ page }) => {
-  // Drill from a populated category, follow the first station.
-  await gotoBrowse(page, 'g3');
+test('`related` entries render as chips on a browse drill', async ({ page }) => {
+  // Folk Music (c100000948) has a related section with two pivots
+  // (Most Popular, By Location). Each chip is .browse-pivot, mounted
+  // inside .browse-related.
+  await gotoBrowse(page, 'c100000948');
   await expect(page.locator('.browse-loading')).toHaveCount(0, { timeout: 15_000 });
-  const firstStation = page.locator('.station-row a[href*="#/station/"], a.station-row[href*="#/station/"]').first();
-  await expect(firstStation).toBeVisible({ timeout: 10_000 });
-  await firstStation.click();
-  await page.waitForFunction(() => location.hash.startsWith('#/station/'), null, { timeout: 10_000 });
-  await page.waitForSelector('[data-view="station"]', { timeout: 15_000 });
 
-  // If the station carries a `related` array, it renders as chips.
-  // Some stations have no related set; we don't fail the spec when
-  // there are zero related entries, but if any are present they MUST
-  // render as chips.
-  const related = page.locator('.related-chips, [data-role="related"], .station-related');
-  if (await related.count() > 0) {
-    const chips = related.first().locator('.chip, a.related-chip, [role="link"]');
-    expect(await chips.count()).toBeGreaterThanOrEqual(1);
-  }
+  const relatedSection = page.locator('.browse-section[data-section="related"]');
+  await expect(relatedSection).toBeVisible({ timeout: 10_000 });
+  const chips = relatedSection.locator('.browse-pivot');
+  expect(await chips.count()).toBeGreaterThanOrEqual(1);
 });
 
 test('station-detail call-to-action reads "Play"', async ({ page }) => {
+  // Drill into a populated category, follow the first station row to
+  // the station detail view, wait for the probe to settle, assert the
+  // play CTA label.
   await gotoBrowse(page, 'g3');
   await expect(page.locator('.browse-loading')).toHaveCount(0, { timeout: 15_000 });
-  const firstStation = page.locator('.station-row a[href*="#/station/"], a.station-row[href*="#/station/"]').first();
-  await firstStation.click();
-  await page.waitForFunction(() => location.hash.startsWith('#/station/'), null, { timeout: 10_000 });
 
-  const cta = page.locator('[data-view="station"] button.station-play, [data-view="station"] [data-action="play"], [data-view="station"] button').filter({ hasText: /Play\b/ }).first();
-  await expect(cta).toBeVisible({ timeout: 10_000 });
-  const label = (await cta.innerText()).trim();
+  const firstStation = page.locator('a.station-row[href*="#/station/"]').first();
+  await expect(firstStation).toBeVisible({ timeout: 10_000 });
+
+  // Click the row body (not the inline Play icon) — the row anchor is
+  // a link to #/station/<sid>. We force-click on the row's name span
+  // to avoid hitting the Play icon's stopPropagation.
+  await firstStation.locator('.station-row__name').click();
+  await page.waitForFunction(() => location.hash.startsWith('#/station/'), null, { timeout: 10_000 });
+  await page.waitForSelector('[data-view="station"]', { timeout: 15_000 });
+
+  // The Play CTA is button.station-test-play (station.js
+  // buildTestPlayButton). It only mounts on playable verdicts so wait
+  // for the probe to settle. Skeleton time can be up to ~15s on Bo
+  // since the probe walks Tune.ashx + parses streams.
+  const cta = page.locator('[data-view="station"] button.station-test-play');
+  await expect(cta).toBeVisible({ timeout: 30_000 });
+
+  // The visible label inside the CTA is the .station-test-play__label
+  // span. The button has a secondary description span below; assert
+  // the primary label text exactly reads "Play".
+  const label = (await cta.locator('.station-test-play__label').innerText()).trim();
   expect(label).toMatch(/^Play$/);
   // Project memory: the verb is "Play". "Audition" / "Testplay" are forbidden.
   expect(label).not.toMatch(/Audition|Testplay/i);
