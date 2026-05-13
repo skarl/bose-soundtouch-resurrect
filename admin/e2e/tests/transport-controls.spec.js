@@ -28,7 +28,7 @@ const BUFFERING_NP_XML = `<?xml version="1.0" encoding="UTF-8" ?>
   <artist></artist>
   <album></album>
   <stationName>Test station</stationName>
-  <art artImageStatus="IMAGE_PRESENT">http://example.invalid/art.png</art>
+  <art artImageStatus="INVALID" />
   <favoriteEnabled />
   <playStatus>BUFFERING_STATE</playStatus>
   <streamType>RADIO_STREAMING</streamType>
