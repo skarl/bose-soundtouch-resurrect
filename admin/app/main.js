@@ -51,7 +51,14 @@ const notFound = defineView({
 function redirectHashForStation(id) {
   if (typeof id !== 'string' || id.length < 2) return null;
   const prefix = id.charAt(0);
-  if (prefix === 'p' || prefix === 't') {
+  // `p` carries `c=pbrowse` so the browse view's show-landing dispatch
+  // (#84) renders the Describe-driven show card. `t` uses the bare-id
+  // drill — topics don't have a dedicated landing surface, but the
+  // body must never dead-end on the /station/ route.
+  if (prefix === 'p') {
+    return `#/browse?c=pbrowse&id=${encodeURIComponent(id)}`;
+  }
+  if (prefix === 't') {
     return `#/browse?id=${encodeURIComponent(id)}`;
   }
   return null;

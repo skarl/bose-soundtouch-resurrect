@@ -502,12 +502,15 @@ test('stationRow href: s-prefix sid routes to the station detail view', () => {
   assert.equal(c.getAttribute('href'), '#/station/s12345');
 });
 
-test('stationRow href: p-prefix sid routes to the browse drill (show landing)', () => {
+test('stationRow href: p-prefix sid routes to c=pbrowse show landing', () => {
+  // c=pbrowse triggers the show-landing dispatch in browse.js (#84),
+  // which renders the Describe-driven show card. Without it the bare
+  // id falls into the generic drill and the show metadata never shows.
   const c = stationRow({ sid: 'p73', name: 'Jazz at Lincoln Center' });
-  assert.equal(c.getAttribute('href'), '#/browse?id=p73');
+  assert.equal(c.getAttribute('href'), '#/browse?c=pbrowse&id=p73');
 });
 
-test('stationRow href: t-prefix sid routes to the browse drill', () => {
+test('stationRow href: t-prefix sid routes to the bare-id browse drill', () => {
   const c = stationRow({ sid: 't9999', name: 'Some Topic' });
   assert.equal(c.getAttribute('href'), '#/browse?id=t9999');
 });
@@ -533,9 +536,9 @@ test('stationCard href: s-prefix sid routes to the station detail view', () => {
   assert.equal(c.getAttribute('href'), '#/station/s12345');
 });
 
-test('stationCard href: p-prefix sid routes to the browse drill', () => {
+test('stationCard href: p-prefix sid routes to c=pbrowse show landing', () => {
   const c = stationCard({ sid: 'p73', name: 'Show' });
-  assert.equal(c.getAttribute('href'), '#/browse?id=p73');
+  assert.equal(c.getAttribute('href'), '#/browse?c=pbrowse&id=p73');
 });
 
 test('stationCard href: unknown prefix collapses to "#"', () => {

@@ -88,7 +88,10 @@ function makeRoutes(recorder) {
   function redirectHashForStation(id) {
     if (typeof id !== 'string' || id.length < 2) return null;
     const prefix = id.charAt(0);
-    if (prefix === 'p' || prefix === 't') {
+    if (prefix === 'p') {
+      return `#/browse?c=pbrowse&id=${encodeURIComponent(id)}`;
+    }
+    if (prefix === 't') {
       return `#/browse?id=${encodeURIComponent(id)}`;
     }
     return null;
@@ -155,7 +158,7 @@ test('router: /station/s12345 mounts the station view (strict matcher)', () => {
 
 // --- safety net: p / t prefix triggers stationRedirect --------------
 
-test('router: /station/p73 hits stationRedirect and replaces hash → #/browse?id=p73', () => {
+test('router: /station/p73 hits stationRedirect and replaces hash → c=pbrowse show landing', () => {
   const { recorder } = bootRouter('#/station/p73');
   // The first dispatch mounts stationRedirect, which calls
   // location.replace → fires hashchange → router re-dispatches and
@@ -168,10 +171,13 @@ test('router: /station/p73 hits stationRedirect and replaces hash → #/browse?i
   );
   const redirect = recorder[0];
   assert.equal(redirect.params.id, 'p73');
-  assert.equal(redirect.target, '#/browse?id=p73');
+  // p sids redirect to c=pbrowse so the show-landing dispatch (#84)
+  // takes over — the bare-id browse drill would show the show's
+  // related sections but not the show metadata itself.
+  assert.equal(redirect.target, '#/browse?c=pbrowse&id=p73');
 });
 
-test('router: /station/t9999 hits stationRedirect and replaces hash → #/browse?id=t9999', () => {
+test('router: /station/t9999 hits stationRedirect and replaces hash → bare-id browse drill', () => {
   const { recorder } = bootRouter('#/station/t9999');
   const names = recorder.map((r) => r.name);
   assert.deepEqual(names, ['stationRedirect:redirect', 'browse']);

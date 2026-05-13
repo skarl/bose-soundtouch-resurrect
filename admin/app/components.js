@@ -383,17 +383,21 @@ export function confirm(message, options = {}) {
 // prefix. The router only mounts the station detail view for `s` sids
 // (preset assignment + probe live there); `p` (show) and `t` (topic) sids
 // resolve through Browse.ashx, so their natural detail page is the
-// browse drill at #/browse?id=<sid>. Anything else — missing sid,
-// unknown prefix — collapses to "#" (an explicit no-op anchor) rather
-// than emitting a route that would 404. Closing this seam in the row
-// primitive itself catches every call site at once; the alternative
-// (override-at-each-caller) is exactly what regressed in #86.
+// browse drill. The `p` route carries `c=pbrowse` so the browse view's
+// show-landing dispatch (#84) takes over and renders the Describe-driven
+// show card — without `c=pbrowse` the bare-id path falls into the
+// generic drill, which renders the show's Genres / Networks but not
+// the show metadata itself. Anything else — missing sid, unknown prefix
+// — collapses to "#" (an explicit no-op anchor) rather than emitting a
+// route that would 404. Closing this seam in the row primitive itself
+// catches every call site at once; the alternative (override-at-each-
+// caller) is exactly what regressed in #86.
 function hrefForSid(sid) {
   if (typeof sid !== 'string' || sid.length < 2) return '#';
   const enc = encodeURIComponent(sid);
   switch (sid.charAt(0)) {
     case 's': return `#/station/${enc}`;
-    case 'p': return `#/browse?id=${enc}`;
+    case 'p': return `#/browse?c=pbrowse&id=${enc}`;
     case 't': return `#/browse?id=${enc}`;
     default:  return '#';
   }
