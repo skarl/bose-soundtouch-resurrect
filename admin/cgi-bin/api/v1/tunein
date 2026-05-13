@@ -12,6 +12,7 @@
 #   GET /tunein/search?q=...&type=station   → Search.ashx
 #   GET /tunein/browse                      → Browse.ashx (root)
 #   GET /tunein/browse?id=g22               → Browse.ashx?id=g22
+#   GET /tunein/describe?c=languages        → Describe.ashx (taxonomy dump)
 #   GET /tunein/station/sNNN                → Describe.ashx?id=sNNN
 #   GET /tunein/probe/sNNN                  → Tune.ashx?id=sNNN
 #
@@ -20,7 +21,14 @@
 # limits don't bite). For POST or HTTPS, use /usr/bin/curl instead.
 
 UA='Bose_Lisa/27.0.6'
-MAGIC='formats=mp3,aac&lang=de-de&render=json'
+# Magic-param scoping per route — see docs/tunein-api.md § 7.4.
+# Tune.ashx needs `formats=mp3,aac&lang=de-de` to avoid the
+# `notcompatible` placeholder; Browse / Search are demonstrably worse
+# off with them (filtered drills thin out under formats=mp3,aac). Each
+# route below composes its own URL with only the params it wants;
+# `render=json` is always appended.
+MAGIC_TUNE='formats=mp3,aac&lang=de-de'
+RENDER='render=json'
 # Plain HTTP, not HTTPS: the busybox wget on this firmware is built
 # without TLS support. The speaker's outbound traffic is on the LAN,
 # and TuneIn's OPML endpoint serves the same body over either scheme.
@@ -54,15 +62,17 @@ PI="${PATH_INFO:-}"
 QS="${QUERY_STRING:-}"
 case "$PI" in
   /search)
-    URL="$BASE/Search.ashx?$MAGIC${QS:+&$QS}" ;;
+    URL="$BASE/Search.ashx?$RENDER${QS:+&$QS}" ;;
   /browse)
-    URL="$BASE/Browse.ashx?$MAGIC${QS:+&$QS}" ;;
+    URL="$BASE/Browse.ashx?$RENDER${QS:+&$QS}" ;;
+  /describe)
+    URL="$BASE/Describe.ashx?$RENDER${QS:+&$QS}" ;;
   /station/s[0-9]*)
     SID=${PI#/station/}
-    URL="$BASE/Describe.ashx?$MAGIC&id=$SID" ;;
+    URL="$BASE/Describe.ashx?$RENDER&id=$SID" ;;
   /probe/s[0-9]*)
     SID=${PI#/probe/}
-    URL="$BASE/Tune.ashx?$MAGIC&id=$SID" ;;
+    URL="$BASE/Tune.ashx?$MAGIC_TUNE&$RENDER&id=$SID" ;;
   *)
     emit_error '404 Not Found' 'unknown tunein route' ;;
 esac

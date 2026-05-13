@@ -1,6 +1,7 @@
-// Tests for speaker-xml.js parsers — pure XML→domain mapping.
-// Each parseXxxXml/parseXxxEl pair is fixture-driven and shared by both
-// the REST fetchers in api.js and the WS dispatch path in speaker-state.js.
+// Tests for speaker-xml.js parsers — pure DOM-element → domain mapping.
+// REST (api.js#xmlGet) and WS (speaker-state.js#dispatch) both feed an
+// already-resolved element to the same parseEl, so a single fixture per
+// field is enough to cover both transports.
 //
 // Run: node --test admin/test
 
@@ -16,23 +17,24 @@ globalThis.DOMParser = class extends XmldomDOMParser {
 };
 
 import {
-  parseNowPlayingXml, parseNowPlayingEl,
-  parseInfoXml, parseInfoEl,
-  parseVolumeXml, parseVolumeEl,
-  parseSourcesXml, parseSourcesEl,
-  parseNetworkInfoXml, parseNetworkInfoEl,
-  parseSystemTimeoutXml, parseSystemTimeoutEl,
-  parseBluetoothInfoXml, parseBluetoothInfoEl,
-  parseBassXml, parseBassEl,
-  parseBassCapabilitiesXml, parseBassCapabilitiesEl,
-  parseBalanceXml, parseBalanceEl,
-  parseBalanceCapabilitiesXml, parseBalanceCapabilitiesEl,
-  parseDSPMonoStereoXml, parseDSPMonoStereoEl,
-  parseCapabilitiesXml, parseCapabilitiesEl,
-  parseRecentsXml, parseRecentsEl,
-  parseZoneXml, parseZoneEl,
-  parseListMediaServersXml, parseListMediaServersEl,
+  parseNowPlayingEl,
+  parseInfoEl,
+  parseVolumeEl,
+  parseSourcesEl,
+  parseNetworkInfoEl,
+  parseSystemTimeoutEl,
+  parseBluetoothInfoEl,
+  parseBassEl,
+  parseBassCapabilitiesEl,
+  parseBalanceEl,
+  parseBalanceCapabilitiesEl,
+  parseDSPMonoStereoEl,
+  parseCapabilitiesEl,
+  parseRecentsEl,
+  parseZoneEl,
+  parseListMediaServersEl,
 } from '../app/speaker-xml.js';
+import { FIELDS } from '../app/speaker-state.js';
 import { dispatch } from '../app/ws.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -45,6 +47,15 @@ async function fixture(name) {
 
 async function wsFixture(name) {
   return readFile(join(WS_FIXTURES, name), 'utf8');
+}
+
+// Locate the first element matching `tag` from a fixture body and return
+// it. REST callers (api.js#xmlGet) follow the same getElementsByTagName
+// pattern so these tests mirror production behaviour.
+function elementFrom(xmlText, tag) {
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  const els = doc.getElementsByTagName(tag);
+  return els && els[0] ? els[0] : null;
 }
 
 function makeStore(initial = {}) {
@@ -61,11 +72,10 @@ function makeStore(initial = {}) {
   };
 }
 
-// --- parseNowPlayingXml (REST path) ---------------------------------
+// --- parseNowPlayingEl ----------------------------------------------
 
-test('parseNowPlayingXml: TUNEIN stream has expected fields', async () => {
-  const xml = await fixture('now-playing-tunein.xml');
-  const np = parseNowPlayingXml(xml);
+test('parseNowPlayingEl: TUNEIN stream has expected fields', async () => {
+  const np = parseNowPlayingEl(elementFrom(await fixture('now-playing-tunein.xml'), 'nowPlaying'));
   assert.ok(np, 'returns a non-null object');
   assert.equal(np.source, 'TUNEIN');
   assert.equal(np.item.name, 'Example Radio');
@@ -76,9 +86,8 @@ test('parseNowPlayingXml: TUNEIN stream has expected fields', async () => {
   assert.equal(np.playStatus, 'PLAY_STATE');
 });
 
-test('parseNowPlayingXml: STANDBY returns source=STANDBY with empty fields', async () => {
-  const xml = await fixture('now-playing-standby.xml');
-  const np = parseNowPlayingXml(xml);
+test('parseNowPlayingEl: STANDBY returns source=STANDBY with empty fields', async () => {
+  const np = parseNowPlayingEl(elementFrom(await fixture('now-playing-standby.xml'), 'nowPlaying'));
   assert.ok(np, 'returns a non-null object');
   assert.equal(np.source, 'STANDBY');
   assert.equal(np.track, '');
@@ -86,29 +95,23 @@ test('parseNowPlayingXml: STANDBY returns source=STANDBY with empty fields', asy
   assert.equal(np.playStatus, '');
 });
 
-test('parseNowPlayingXml: empty string returns null', () => {
-  assert.equal(parseNowPlayingXml(''), null);
-});
-
-test('parseNowPlayingXml: non-nowPlaying XML returns null', () => {
-  assert.equal(parseNowPlayingXml('<volume>42</volume>'), null);
-});
-
-// --- parseNowPlayingEl (DOM element path, used by WS) ---------------
-
-test('parseNowPlayingEl: parses a DOM element directly', async () => {
-  const xml = await fixture('now-playing-tunein.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('nowPlaying');
-  const np = parseNowPlayingEl(els && els[0]);
-  assert.ok(np, 'returns a non-null object');
-  assert.equal(np.source, 'TUNEIN');
-  assert.equal(np.item.name, 'Example Radio');
-  assert.equal(np.playStatus, 'PLAY_STATE');
-});
-
 test('parseNowPlayingEl: null input returns null', () => {
   assert.equal(parseNowPlayingEl(null), null);
+});
+
+test('parseNowPlayingEl: BLUETOOTH source carries connection info', async () => {
+  const np = parseNowPlayingEl(elementFrom(await fixture('now-playing-bluetooth.xml'), 'nowPlaying'));
+  assert.ok(np);
+  assert.equal(np.source, 'BLUETOOTH');
+  assert.ok(np.connection, 'connection is set when <connectionStatusInfo> present');
+  assert.equal(np.connection.deviceName, "Sven's iPhone");
+  assert.equal(np.connection.status, 'CONNECTED');
+});
+
+test('parseNowPlayingEl: TUNEIN source has connection=null', async () => {
+  const np = parseNowPlayingEl(elementFrom(await fixture('now-playing-tunein.xml'), 'nowPlaying'));
+  assert.ok(np);
+  assert.equal(np.connection, null);
 });
 
 // --- WS dispatch: nowPlayingUpdated ---------------------------------
@@ -135,11 +138,10 @@ test('nowPlayingUpdated dispatch: STANDBY sets source=STANDBY', async () => {
   assert.ok(store._touched.includes('speaker'));
 });
 
-// --- parseInfoXml ---------------------------------------------------
+// --- parseInfoEl ----------------------------------------------------
 
-test('parseInfoXml: extracts deviceID, name, type, and SCM firmwareVersion', async () => {
-  const xml = await fixture('info.xml');
-  const info = parseInfoXml(xml);
+test('parseInfoEl: extracts deviceID, name, type, and SCM firmwareVersion', async () => {
+  const info = parseInfoEl(elementFrom(await fixture('info.xml'), 'info'));
   assert.ok(info, 'returns a non-null object');
   assert.equal(info.deviceID, '3415139ABD77');
   assert.equal(info.name, 'Bo');
@@ -150,7 +152,7 @@ test('parseInfoXml: extracts deviceID, name, type, and SCM firmwareVersion', asy
   );
 });
 
-test('parseInfoXml: firmwareVersion comes from the SCM component, not PackagedProduct', async () => {
+test('parseInfoEl: firmwareVersion comes from the SCM component, not PackagedProduct', () => {
   const xml = '<info deviceID="AA">' +
               '<name>X</name><type>Y</type>' +
               '<components>' +
@@ -159,25 +161,25 @@ test('parseInfoXml: firmwareVersion comes from the SCM component, not PackagedPr
               '<component><componentCategory>SCM</componentCategory>' +
               '<softwareVersion>27.0.6.29798</softwareVersion></component>' +
               '</components></info>';
-  const info = parseInfoXml(xml);
+  const info = parseInfoEl(elementFrom(xml, 'info'));
   assert.ok(info);
   assert.equal(info.firmwareVersion, '27.0.6.29798');
 });
 
-test('parseInfoXml: no SCM component → firmwareVersion is empty', () => {
+test('parseInfoEl: no SCM component → firmwareVersion is empty', () => {
   const xml = '<info deviceID="AA"><name>X</name><type>Y</type>' +
               '<components><component>' +
               '<componentCategory>PackagedProduct</componentCategory>' +
               '<softwareVersion>9.9.9</softwareVersion>' +
               '</component></components></info>';
-  const info = parseInfoXml(xml);
+  const info = parseInfoEl(elementFrom(xml, 'info'));
   assert.ok(info);
   assert.equal(info.firmwareVersion, '');
 });
 
-test('parseInfoXml: missing <components> → firmwareVersion empty, other fields populated', () => {
+test('parseInfoEl: missing <components> → firmwareVersion empty, other fields populated', () => {
   const xml = '<info deviceID="BB"><name>N</name><type>T</type></info>';
-  const info = parseInfoXml(xml);
+  const info = parseInfoEl(elementFrom(xml, 'info'));
   assert.ok(info);
   assert.equal(info.deviceID, 'BB');
   assert.equal(info.name, 'N');
@@ -185,71 +187,30 @@ test('parseInfoXml: missing <components> → firmwareVersion empty, other fields
   assert.equal(info.firmwareVersion, '');
 });
 
-test('parseInfoXml: empty string returns null', () => {
-  assert.equal(parseInfoXml(''), null);
-});
-
-test('parseInfoXml: non-info XML returns null', () => {
-  assert.equal(parseInfoXml('<volume>0</volume>'), null);
-});
-
 test('parseInfoEl: null input returns null', () => {
   assert.equal(parseInfoEl(null), null);
 });
 
-test('parseInfoEl: parses a DOM element directly', async () => {
-  const xml = await fixture('info.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('info');
-  const info = parseInfoEl(els && els[0]);
-  assert.ok(info);
-  assert.equal(info.deviceID, '3415139ABD77');
-  assert.equal(info.name, 'Bo');
-  assert.equal(info.type, 'SoundTouch 10');
-  assert.ok(info.firmwareVersion.startsWith('27.0.6.29798'));
-});
+// --- parseVolumeEl --------------------------------------------------
 
-// --- parseVolumeXml -------------------------------------------------
-
-test('parseVolumeXml: normal volume returns expected fields', async () => {
-  const xml = await fixture('volume.xml');
-  const vol = parseVolumeXml(xml);
+test('parseVolumeEl: normal volume returns expected fields', async () => {
+  const vol = parseVolumeEl(elementFrom(await fixture('volume.xml'), 'volume'));
   assert.ok(vol, 'returns a non-null object');
   assert.equal(vol.targetVolume, 32);
   assert.equal(vol.actualVolume, 32);
   assert.equal(vol.muteEnabled, false);
 });
 
-test('parseVolumeXml: muted volume sets muteEnabled=true', async () => {
-  const xml = await fixture('volume-muted.xml');
-  const vol = parseVolumeXml(xml);
+test('parseVolumeEl: muted volume sets muteEnabled=true', async () => {
+  const vol = parseVolumeEl(elementFrom(await fixture('volume-muted.xml'), 'volume'));
   assert.ok(vol, 'returns a non-null object');
   assert.equal(vol.targetVolume, 20);
   assert.equal(vol.actualVolume, 20);
   assert.equal(vol.muteEnabled, true);
 });
 
-test('parseVolumeXml: empty string returns null', () => {
-  assert.equal(parseVolumeXml(''), null);
-});
-
-test('parseVolumeXml: non-volume XML returns null', () => {
-  assert.equal(parseVolumeXml('<nowPlaying source="STANDBY"/>'), null);
-});
-
 test('parseVolumeEl: null input returns null', () => {
   assert.equal(parseVolumeEl(null), null);
-});
-
-test('parseVolumeEl: parses a DOM element directly', async () => {
-  const xml = await fixture('volume.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('volume');
-  const vol = parseVolumeEl(els && els[0]);
-  assert.ok(vol, 'returns a non-null object');
-  assert.equal(vol.targetVolume, 32);
-  assert.equal(vol.actualVolume, 32);
-  assert.equal(vol.muteEnabled, false);
 });
 
 // --- WS dispatch: volumeUpdated -------------------------------------
@@ -266,11 +227,10 @@ test('volumeUpdated dispatch sets state.speaker.volume and touches speaker', asy
   assert.ok(store._touched.includes('speaker'), 'speaker key was touched');
 });
 
-// --- parseSourcesXml ------------------------------------------------
+// --- parseSourcesEl -------------------------------------------------
 
-test('parseSourcesXml: returns 4-element array with correct fields', async () => {
-  const xml = await fixture('sources.xml');
-  const sources = parseSourcesXml(xml);
+test('parseSourcesEl: returns 4-element array with correct fields', async () => {
+  const sources = parseSourcesEl(elementFrom(await fixture('sources.xml'), 'sources'));
   assert.ok(Array.isArray(sources), 'returns an array');
   assert.equal(sources.length, 4);
 
@@ -300,38 +260,20 @@ test('parseSourcesXml: returns 4-element array with correct fields', async () =>
   assert.equal(spotify.isLocal, false);
 });
 
-test('parseSourcesXml: empty string returns null', () => {
-  assert.equal(parseSourcesXml(''), null);
-});
-
-test('parseSourcesXml: no-sources <sources/> returns empty array', () => {
-  const sources = parseSourcesXml('<sources deviceID="test"/>');
+test('parseSourcesEl: no-sources <sources/> returns empty array', () => {
+  const sources = parseSourcesEl(elementFrom('<sources deviceID="test"/>', 'sources'));
   assert.ok(Array.isArray(sources), 'returns an array');
   assert.equal(sources.length, 0);
-});
-
-// --- parseSourcesEl (DOM element path) ------------------------------
-
-test('parseSourcesEl: parses a DOM element directly', async () => {
-  const xml = await fixture('sources.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('sources');
-  const sources = parseSourcesEl(els && els[0]);
-  assert.ok(Array.isArray(sources), 'returns an array');
-  assert.equal(sources.length, 4);
-  assert.equal(sources[0].source, 'TUNEIN');
-  assert.equal(sources[0].isLocal, false);
 });
 
 test('parseSourcesEl: null input returns null', () => {
   assert.equal(parseSourcesEl(null), null);
 });
 
-// --- parseNetworkInfoXml -------------------------------------------
+// --- parseNetworkInfoEl ---------------------------------------------
 
-test('parseNetworkInfoXml: connected interface — fields populated, MAC normalised', async () => {
-  const xml = await fixture('network-info.xml');
-  const net = parseNetworkInfoXml(xml);
+test('parseNetworkInfoEl: connected interface — fields populated, MAC normalised', async () => {
+  const net = parseNetworkInfoEl(elementFrom(await fixture('network-info.xml'), 'networkInfo'));
   assert.ok(net, 'returns a non-null object');
   assert.equal(net.ssid, 'WLAN-Oben');
   assert.equal(net.ipAddress, '192.168.178.36');
@@ -343,17 +285,15 @@ test('parseNetworkInfoXml: connected interface — fields populated, MAC normali
   assert.equal(net.mode, 'STATION');
 });
 
-test('parseNetworkInfoXml: picks the first connected interface, not the disconnected wlan1', async () => {
-  const xml = await fixture('network-info.xml');
-  const net = parseNetworkInfoXml(xml);
+test('parseNetworkInfoEl: picks the first connected interface, not the disconnected wlan1', async () => {
+  const net = parseNetworkInfoEl(elementFrom(await fixture('network-info.xml'), 'networkInfo'));
   // wlan0 has the IP, wlan1 doesn't.
   assert.equal(net.name, 'wlan0');
   assert.equal(net.macAddress, '0CB2B709F837');
 });
 
-test('parseNetworkInfoXml: disconnected speaker — falls back to first interface, ssid/ip empty', async () => {
-  const xml = await fixture('network-info-disconnected.xml');
-  const net = parseNetworkInfoXml(xml);
+test('parseNetworkInfoEl: disconnected speaker — falls back to first interface, ssid/ip empty', async () => {
+  const net = parseNetworkInfoEl(elementFrom(await fixture('network-info-disconnected.xml'), 'networkInfo'));
   assert.ok(net, 'returns a non-null object');
   assert.equal(net.macAddress, '0CB2B709F837');
   assert.equal(net.ipAddress, '');
@@ -362,193 +302,88 @@ test('parseNetworkInfoXml: disconnected speaker — falls back to first interfac
   assert.equal(net.frequencyKHz, null);
 });
 
-test('parseNetworkInfoXml: empty string returns null', () => {
-  assert.equal(parseNetworkInfoXml(''), null);
-});
-
-test('parseNetworkInfoXml: non-networkInfo XML returns null', () => {
-  assert.equal(parseNetworkInfoXml('<volume>42</volume>'), null);
-});
-
-test('parseNetworkInfoXml: <networkInfo/> with no interfaces returns null', () => {
-  assert.equal(parseNetworkInfoXml('<networkInfo/>'), null);
-});
-
-test('parseNetworkInfoEl: parses a DOM element directly', async () => {
-  const xml = await fixture('network-info.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('networkInfo');
-  const net = parseNetworkInfoEl(els && els[0]);
-  assert.ok(net, 'returns a non-null object');
-  assert.equal(net.ssid, 'WLAN-Oben');
-  assert.equal(net.ipAddress, '192.168.178.36');
+test('parseNetworkInfoEl: <networkInfo/> with no interfaces returns null', () => {
+  assert.equal(parseNetworkInfoEl(elementFrom('<networkInfo/>', 'networkInfo')), null);
 });
 
 test('parseNetworkInfoEl: null input returns null', () => {
   assert.equal(parseNetworkInfoEl(null), null);
 });
 
-// --- parseSystemTimeoutXml ------------------------------------------
+// --- parseSystemTimeoutEl -------------------------------------------
 
-test('parseSystemTimeoutXml: enabled=true with minutes', async () => {
-  const xml = await fixture('systemtimeout.xml');
-  const t = parseSystemTimeoutXml(xml);
+test('parseSystemTimeoutEl: enabled=true with minutes', async () => {
+  const t = parseSystemTimeoutEl(elementFrom(await fixture('systemtimeout.xml'), 'systemtimeout'));
   assert.ok(t, 'returns a non-null object');
   assert.equal(t.enabled, true);
   assert.equal(t.minutes, 20);
 });
 
-test('parseSystemTimeoutXml: enabled=false / minutes=0 (Never)', async () => {
-  const xml = await fixture('systemtimeout-off.xml');
-  const t = parseSystemTimeoutXml(xml);
+test('parseSystemTimeoutEl: enabled=false / minutes=0 (Never)', async () => {
+  const t = parseSystemTimeoutEl(elementFrom(await fixture('systemtimeout-off.xml'), 'systemtimeout'));
   assert.ok(t, 'returns a non-null object');
   assert.equal(t.enabled, false);
   assert.equal(t.minutes, 0);
-});
-
-test('parseSystemTimeoutXml: empty string returns null', () => {
-  assert.equal(parseSystemTimeoutXml(''), null);
-});
-
-test('parseSystemTimeoutXml: non-systemtimeout XML returns null', () => {
-  assert.equal(parseSystemTimeoutXml('<volume>0</volume>'), null);
 });
 
 test('parseSystemTimeoutEl: null input returns null', () => {
   assert.equal(parseSystemTimeoutEl(null), null);
 });
 
-test('parseSystemTimeoutEl: parses a DOM element directly', async () => {
-  const xml = await fixture('systemtimeout.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('systemtimeout');
-  const t = parseSystemTimeoutEl(els && els[0]);
-  assert.ok(t, 'returns a non-null object');
-  assert.equal(t.enabled, true);
-  assert.equal(t.minutes, 20);
-});
-
-// --- parseBluetoothInfoXml ------------------------------------------
+// --- parseBluetoothInfoEl -------------------------------------------
 // Bo's firmware exposes only the speaker's own MAC; <pairedList> never
 // materialises in practice (verified with iPhone actively paired). The
 // parser now reads only BluetoothMACAddress and ignores any speculative
 // children so a stray <pairedList> in the wild is silently tolerated.
 
-test('parseBluetoothInfoXml: speaker MAC attribute populates macAddress', async () => {
-  const xml = await fixture('bluetooth-info-empty.xml');
-  const bt = parseBluetoothInfoXml(xml);
+test('parseBluetoothInfoEl: speaker MAC attribute populates macAddress', async () => {
+  const bt = parseBluetoothInfoEl(elementFrom(await fixture('bluetooth-info-empty.xml'), 'BluetoothInfo'));
   assert.ok(bt, 'returns a non-null object');
   assert.equal(bt.macAddress, '0CB2B709F837');
   assert.equal(bt.paired, undefined, 'paired list is no longer surfaced');
 });
 
-test('parseBluetoothInfoXml: bare <BluetoothInfo/> returns macAddress=""', () => {
-  const bt = parseBluetoothInfoXml('<BluetoothInfo/>');
+test('parseBluetoothInfoEl: bare <BluetoothInfo/> returns macAddress=""', () => {
+  const bt = parseBluetoothInfoEl(elementFrom('<BluetoothInfo/>', 'BluetoothInfo'));
   assert.ok(bt);
   assert.equal(bt.macAddress, '');
 });
 
-test('parseBluetoothInfoXml: speculative <pairedList> is ignored', () => {
+test('parseBluetoothInfoEl: speculative <pairedList> is ignored', () => {
   const xml = '<BluetoothInfo BluetoothMACAddress="AABBCCDDEEFF">' +
               '<pairedList><pairedDevice mac="11:22:33:44:55:66">Phone</pairedDevice></pairedList>' +
               '</BluetoothInfo>';
-  const bt = parseBluetoothInfoXml(xml);
+  const bt = parseBluetoothInfoEl(elementFrom(xml, 'BluetoothInfo'));
   assert.ok(bt);
   assert.equal(bt.macAddress, 'AABBCCDDEEFF');
   assert.equal(bt.paired, undefined, 'pairedList shape is intentionally not parsed');
-});
-
-test('parseBluetoothInfoXml: empty string returns null', () => {
-  assert.equal(parseBluetoothInfoXml(''), null);
-});
-
-test('parseBluetoothInfoXml: non-bluetooth XML returns null', () => {
-  assert.equal(parseBluetoothInfoXml('<volume>42</volume>'), null);
 });
 
 test('parseBluetoothInfoEl: null input returns null', () => {
   assert.equal(parseBluetoothInfoEl(null), null);
 });
 
-test('parseBluetoothInfoEl: parses a DOM element directly', async () => {
-  const xml = await fixture('bluetooth-info-empty.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('BluetoothInfo');
-  const bt = parseBluetoothInfoEl(els && els[0]);
-  assert.ok(bt);
-  assert.equal(bt.macAddress, '0CB2B709F837');
-});
+// --- parseBassEl ----------------------------------------------------
 
-// --- parseNowPlayingXml: connection (BT) ---------------------------
-
-test('parseNowPlayingXml: BLUETOOTH source carries connection info', async () => {
-  const xml = await fixture('now-playing-bluetooth.xml');
-  const np = parseNowPlayingXml(xml);
-  assert.ok(np);
-  assert.equal(np.source, 'BLUETOOTH');
-  assert.ok(np.connection, 'connection is set when <connectionStatusInfo> present');
-  assert.equal(np.connection.deviceName, "Sven's iPhone");
-  assert.equal(np.connection.status, 'CONNECTED');
-});
-
-test('parseNowPlayingXml: TUNEIN source has connection=null', async () => {
-  const xml = await fixture('now-playing-tunein.xml');
-  const np = parseNowPlayingXml(xml);
-  assert.ok(np);
-  assert.equal(np.connection, null);
-});
-
-// --- parseBassXml ---------------------------------------------------
-
-test('parseBassXml: returns expected fields', async () => {
-  const xml = await fixture('bass.xml');
-  const bass = parseBassXml(xml);
+test('parseBassEl: returns expected fields', async () => {
+  const bass = parseBassEl(elementFrom(await fixture('bass.xml'), 'bass'));
   assert.ok(bass, 'returns a non-null object');
   assert.equal(bass.targetBass, -3);
   assert.equal(bass.actualBass, -3);
-});
-
-test('parseBassXml: empty string returns null', () => {
-  assert.equal(parseBassXml(''), null);
-});
-
-test('parseBassXml: non-bass XML returns null', () => {
-  assert.equal(parseBassXml('<volume>0</volume>'), null);
 });
 
 test('parseBassEl: null input returns null', () => {
   assert.equal(parseBassEl(null), null);
 });
 
-test('parseBassEl: parses a DOM element directly', async () => {
-  const xml = await fixture('bass.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('bass');
-  const bass = parseBassEl(els && els[0]);
-  assert.ok(bass);
-  assert.equal(bass.targetBass, -3);
-  assert.equal(bass.actualBass, -3);
-});
+// --- parseBassCapabilitiesEl ----------------------------------------
 
-// --- parseBassCapabilitiesXml ---------------------------------------
-
-test('parseBassCapabilitiesXml: returns min/max/default', async () => {
-  const xml = await fixture('bass-capabilities.xml');
-  const caps = parseBassCapabilitiesXml(xml);
+test('parseBassCapabilitiesEl: returns min/max/default', async () => {
+  const caps = parseBassCapabilitiesEl(elementFrom(await fixture('bass-capabilities.xml'), 'bassCapabilities'));
   assert.ok(caps);
   assert.equal(caps.bassMin, -9);
   assert.equal(caps.bassMax, 0);
   assert.equal(caps.bassDefault, 0);
-});
-
-test('parseBassCapabilitiesEl: parses a DOM element directly', async () => {
-  const xml = await fixture('bass-capabilities.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('bassCapabilities');
-  const caps = parseBassCapabilitiesEl(els && els[0]);
-  assert.ok(caps);
-  assert.equal(caps.bassMin, -9);
-  assert.equal(caps.bassMax, 0);
 });
 
 test('parseBassCapabilitiesEl: null input returns null', () => {
@@ -568,56 +403,27 @@ test('bassUpdated dispatch sets state.speaker.bass and touches speaker', async (
   assert.ok(store._touched.includes('speaker'), 'speaker key was touched');
 });
 
-// --- parseBalanceXml ------------------------------------------------
+// --- parseBalanceEl -------------------------------------------------
 
-test('parseBalanceXml: returns expected fields', async () => {
-  const xml = await fixture('balance.xml');
-  const balance = parseBalanceXml(xml);
+test('parseBalanceEl: returns expected fields', async () => {
+  const balance = parseBalanceEl(elementFrom(await fixture('balance.xml'), 'balance'));
   assert.ok(balance);
   assert.equal(balance.targetBalance, 2);
   assert.equal(balance.actualBalance, 2);
-});
-
-test('parseBalanceXml: empty string returns null', () => {
-  assert.equal(parseBalanceXml(''), null);
-});
-
-test('parseBalanceXml: non-balance XML returns null', () => {
-  assert.equal(parseBalanceXml('<volume>0</volume>'), null);
 });
 
 test('parseBalanceEl: null input returns null', () => {
   assert.equal(parseBalanceEl(null), null);
 });
 
-test('parseBalanceEl: parses a DOM element directly', async () => {
-  const xml = await fixture('balance.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('balance');
-  const balance = parseBalanceEl(els && els[0]);
-  assert.ok(balance);
-  assert.equal(balance.targetBalance, 2);
-});
+// --- parseBalanceCapabilitiesEl -------------------------------------
 
-// --- parseBalanceCapabilitiesXml ------------------------------------
-
-test('parseBalanceCapabilitiesXml: returns min/max/default', async () => {
-  const xml = await fixture('balance-capabilities.xml');
-  const caps = parseBalanceCapabilitiesXml(xml);
+test('parseBalanceCapabilitiesEl: returns min/max/default', async () => {
+  const caps = parseBalanceCapabilitiesEl(elementFrom(await fixture('balance-capabilities.xml'), 'balanceCapabilities'));
   assert.ok(caps);
   assert.equal(caps.balanceMin, -7);
   assert.equal(caps.balanceMax, 7);
   assert.equal(caps.balanceDefault, 0);
-});
-
-test('parseBalanceCapabilitiesEl: parses a DOM element directly', async () => {
-  const xml = await fixture('balance-capabilities.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('balanceCapabilities');
-  const caps = parseBalanceCapabilitiesEl(els && els[0]);
-  assert.ok(caps);
-  assert.equal(caps.balanceMin, -7);
-  assert.equal(caps.balanceMax, 7);
 });
 
 test('parseBalanceCapabilitiesEl: null input returns null', () => {
@@ -637,18 +443,16 @@ test('balanceUpdated dispatch sets state.speaker.balance and touches speaker', a
   assert.ok(store._touched.includes('speaker'));
 });
 
-// --- parseDSPMonoStereoXml ------------------------------------------
+// --- parseDSPMonoStereoEl -------------------------------------------
 
-test('parseDSPMonoStereoXml: stereo (mono enabled=false) → mode=stereo', async () => {
-  const xml = await fixture('dsp-mono-stereo.xml');
-  const dsp = parseDSPMonoStereoXml(xml);
+test('parseDSPMonoStereoEl: stereo (mono enabled=false) → mode=stereo', async () => {
+  const dsp = parseDSPMonoStereoEl(elementFrom(await fixture('dsp-mono-stereo.xml'), 'DSPMonoStereo'));
   assert.ok(dsp);
   assert.equal(dsp.mode, 'stereo');
 });
 
-test('parseDSPMonoStereoXml: mono (mono enabled=true) → mode=mono', async () => {
-  const xml = await fixture('dsp-mono-stereo-mono.xml');
-  const dsp = parseDSPMonoStereoXml(xml);
+test('parseDSPMonoStereoEl: mono (mono enabled=true) → mode=mono', async () => {
+  const dsp = parseDSPMonoStereoEl(elementFrom(await fixture('dsp-mono-stereo-mono.xml'), 'DSPMonoStereo'));
   assert.ok(dsp);
   assert.equal(dsp.mode, 'mono');
 });
@@ -657,20 +461,10 @@ test('parseDSPMonoStereoEl: null input returns null', () => {
   assert.equal(parseDSPMonoStereoEl(null), null);
 });
 
-test('parseDSPMonoStereoEl: parses a DOM element directly', async () => {
-  const xml = await fixture('dsp-mono-stereo.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('DSPMonoStereo');
-  const dsp = parseDSPMonoStereoEl(els && els[0]);
-  assert.ok(dsp);
-  assert.equal(dsp.mode, 'stereo');
-});
+// --- parseCapabilitiesEl --------------------------------------------
 
-// --- parseCapabilitiesXml -------------------------------------------
-
-test('parseCapabilitiesXml: surfaces deviceID, dspMonoStereo, and named capabilities', async () => {
-  const xml = await fixture('capabilities.xml');
-  const caps = parseCapabilitiesXml(xml);
+test('parseCapabilitiesEl: surfaces deviceID, dspMonoStereo, and named capabilities', async () => {
+  const caps = parseCapabilitiesEl(elementFrom(await fixture('capabilities.xml'), 'capabilities'));
   assert.ok(caps, 'returns a non-null object');
   assert.equal(caps.deviceID, '3415139ABD77');
   assert.equal(caps.dspMonoStereo, false, 'available="false" → false');
@@ -685,33 +479,14 @@ test('parseCapabilitiesXml: surfaces deviceID, dspMonoStereo, and named capabili
   assert.equal(caps.capabilities[0].url, '/systemtimeout');
 });
 
-test('parseCapabilitiesXml: empty string returns null', () => {
-  assert.equal(parseCapabilitiesXml(''), null);
-});
-
-test('parseCapabilitiesXml: non-capabilities XML returns null', () => {
-  assert.equal(parseCapabilitiesXml('<volume>0</volume>'), null);
-});
-
 test('parseCapabilitiesEl: null input returns null', () => {
   assert.equal(parseCapabilitiesEl(null), null);
 });
 
-test('parseCapabilitiesEl: parses a DOM element directly', async () => {
-  const xml = await fixture('capabilities.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('capabilities');
-  const caps = parseCapabilitiesEl(els && els[0]);
-  assert.ok(caps);
-  assert.equal(caps.deviceID, '3415139ABD77');
-  assert.equal(caps.lrStereoCapable, true);
-});
+// --- parseRecentsEl -------------------------------------------------
 
-// --- parseRecentsXml ------------------------------------------------
-
-test('parseRecentsXml: returns array with TUNEIN + SPOTIFY entries', async () => {
-  const xml = await fixture('recents.xml');
-  const recents = parseRecentsXml(xml);
+test('parseRecentsEl: returns array with TUNEIN + SPOTIFY entries', async () => {
+  const recents = parseRecentsEl(elementFrom(await fixture('recents.xml'), 'recents'));
   assert.ok(Array.isArray(recents), 'returns an array');
   assert.equal(recents.length, 5);
 
@@ -737,33 +512,14 @@ test('parseRecentsXml: returns array with TUNEIN + SPOTIFY entries', async () =>
   assert.ok(spotify.sourceAccount.length > 0);
 });
 
-test('parseRecentsXml: empty <recents/> returns []', async () => {
-  const xml = await fixture('recents-empty.xml');
-  const recents = parseRecentsXml(xml);
+test('parseRecentsEl: empty <recents/> returns []', async () => {
+  const recents = parseRecentsEl(elementFrom(await fixture('recents-empty.xml'), 'recents'));
   assert.ok(Array.isArray(recents));
   assert.equal(recents.length, 0);
 });
 
-test('parseRecentsXml: empty string returns null', () => {
-  assert.equal(parseRecentsXml(''), null);
-});
-
-test('parseRecentsXml: non-recents XML returns null', () => {
-  assert.equal(parseRecentsXml('<volume>0</volume>'), null);
-});
-
 test('parseRecentsEl: null input returns null', () => {
   assert.equal(parseRecentsEl(null), null);
-});
-
-test('parseRecentsEl: parses a DOM element directly', async () => {
-  const xml = await fixture('recents.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('recents');
-  const recents = parseRecentsEl(els && els[0]);
-  assert.ok(Array.isArray(recents));
-  assert.equal(recents.length, 5);
-  assert.equal(recents[1].itemName, '95.5 Charivari');
 });
 
 // --- WS dispatch: recentsUpdated ------------------------------------
@@ -780,11 +536,10 @@ test('recentsUpdated dispatch sets state.speaker.recents and touches speaker', a
   assert.ok(store._touched.includes('speaker'), 'speaker key was touched');
 });
 
-// --- parseZoneXml --------------------------------------------------
+// --- parseZoneEl ----------------------------------------------------
 
-test('parseZoneXml: standalone <zone/> → empty members, no master', async () => {
-  const xml = await fixture('zone-standalone.xml');
-  const zone = parseZoneXml(xml);
+test('parseZoneEl: standalone <zone/> → empty members, no master', async () => {
+  const zone = parseZoneEl(elementFrom(await fixture('zone-standalone.xml'), 'zone'));
   assert.ok(zone, 'returns a non-null object');
   assert.equal(zone.master, '');
   assert.equal(zone.masterIpAddress, '');
@@ -793,9 +548,8 @@ test('parseZoneXml: standalone <zone/> → empty members, no master', async () =
   assert.equal(zone.members.length, 0);
 });
 
-test('parseZoneXml: master shape — isMaster=true, members populated', async () => {
-  const xml = await fixture('zone-master.xml');
-  const zone = parseZoneXml(xml);
+test('parseZoneEl: master shape — isMaster=true, members populated', async () => {
+  const zone = parseZoneEl(elementFrom(await fixture('zone-master.xml'), 'zone'));
   assert.ok(zone);
   assert.equal(zone.master, '3415139ABD77');
   assert.equal(zone.masterIpAddress, '');
@@ -806,9 +560,8 @@ test('parseZoneXml: master shape — isMaster=true, members populated', async ()
   assert.equal(zone.members[0].role, 'LEFT');
 });
 
-test('parseZoneXml: member shape — senderIPAddress set, isMaster=false', async () => {
-  const xml = await fixture('zone-member.xml');
-  const zone = parseZoneXml(xml);
+test('parseZoneEl: member shape — senderIPAddress set, isMaster=false', async () => {
+  const zone = parseZoneEl(elementFrom(await fixture('zone-member.xml'), 'zone'));
   assert.ok(zone);
   assert.equal(zone.master, '689E19D55555');
   assert.equal(zone.masterIpAddress, '192.168.178.40');
@@ -816,40 +569,20 @@ test('parseZoneXml: member shape — senderIPAddress set, isMaster=false', async
   assert.equal(zone.members.length, 2);
 });
 
-test('parseZoneXml: empty string returns null', () => {
-  assert.equal(parseZoneXml(''), null);
-});
-
-test('parseZoneXml: non-zone XML returns null', () => {
-  assert.equal(parseZoneXml('<volume>0</volume>'), null);
-});
-
 test('parseZoneEl: null input returns null', () => {
   assert.equal(parseZoneEl(null), null);
 });
 
-test('parseZoneEl: parses a DOM element directly', async () => {
-  const xml = await fixture('zone-master.xml');
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  const els = doc.getElementsByTagName('zone');
-  const zone = parseZoneEl(els && els[0]);
-  assert.ok(zone);
-  assert.equal(zone.master, '3415139ABD77');
-  assert.equal(zone.members.length, 2);
-});
+// --- parseListMediaServersEl ----------------------------------------
 
-// --- parseListMediaServersXml --------------------------------------
-
-test('parseListMediaServersXml: standalone (only DLNA peers, no Bose) returns []', async () => {
-  const xml = await fixture('list-media-servers.xml');
-  const peers = parseListMediaServersXml(xml);
+test('parseListMediaServersEl: standalone (only DLNA peers, no Bose) returns []', async () => {
+  const peers = parseListMediaServersEl(elementFrom(await fixture('list-media-servers.xml'), 'ListMediaServersResponse'));
   assert.ok(Array.isArray(peers));
   assert.equal(peers.length, 0, 'AVM FRITZ!Box entries are filtered out');
 });
 
-test('parseListMediaServersXml: keeps Bose-marked entries with mac/ip/name', async () => {
-  const xml = await fixture('list-media-servers-with-bose.xml');
-  const peers = parseListMediaServersXml(xml);
+test('parseListMediaServersEl: keeps Bose-marked entries with mac/ip/name', async () => {
+  const peers = parseListMediaServersEl(elementFrom(await fixture('list-media-servers-with-bose.xml'), 'ListMediaServersResponse'));
   assert.ok(Array.isArray(peers));
   assert.equal(peers.length, 1);
   assert.equal(peers[0].mac, '689E19D55555');
@@ -858,10 +591,58 @@ test('parseListMediaServersXml: keeps Bose-marked entries with mac/ip/name', asy
   assert.equal(peers[0].model, 'SoundTouch 20');
 });
 
-test('parseListMediaServersXml: empty string returns null', () => {
-  assert.equal(parseListMediaServersXml(''), null);
-});
-
 test('parseListMediaServersEl: null input returns null', () => {
   assert.equal(parseListMediaServersEl(null), null);
 });
+
+// --- Parametric coverage: every FIELDS row has a fixture ------------
+//
+// One row in FIELDS is a deliberate exception (see speaker-state.js):
+//   presets — JSON envelope; no path/tag/parseEl triple.
+// Every other row is asserted to have a backing api fixture and a
+// non-null parseEl result, so dropping or renaming a fixture without
+// updating the registry trips a test.
+
+const FIXTURE_FOR_FIELD = {
+  info:          'info.xml',
+  nowPlaying:    'now-playing-tunein.xml',
+  volume:        'volume.xml',
+  sources:       'sources.xml',
+  bass:          'bass.xml',
+  balance:       'balance.xml',
+  dspMonoStereo: 'dsp-mono-stereo.xml',
+  zone:          'zone-master.xml',
+  bluetooth:     'bluetooth-info-empty.xml',
+  network:       'network-info.xml',
+  recents:       'recents.xml',
+  systemTimeout: 'systemtimeout.xml',
+};
+
+for (const row of FIELDS) {
+  if (!row.path && !row.tag && !row.parseEl) {
+    // Documented exception (presets).
+    test(`FIELDS row '${row.name}' is a custom-fetcher exception`, () => {
+      assert.equal(typeof row.fetcher, 'function',
+        `exception rows must declare a fetcher (row: ${row.name})`);
+    });
+    continue;
+  }
+
+  test(`FIELDS row '${row.name}' has {path, tag, parseEl} and fixture coverage`, async () => {
+    assert.equal(typeof row.path, 'string',  `${row.name}.path is a string`);
+    assert.equal(typeof row.tag, 'string',   `${row.name}.tag is a string`);
+    assert.equal(typeof row.parseEl, 'function', `${row.name}.parseEl is a function`);
+
+    const fixtureName = FIXTURE_FOR_FIELD[row.name];
+    assert.ok(fixtureName,
+      `no fixture mapped for '${row.name}' — add one to FIXTURE_FOR_FIELD`);
+
+    const xml = await fixture(fixtureName);
+    const el  = elementFrom(xml, row.tag);
+    assert.ok(el, `fixture ${fixtureName} contains <${row.tag}>`);
+
+    const value = row.parseEl(el);
+    assert.notEqual(value, null,
+      `${row.name}.parseEl returned non-null for fixture ${fixtureName}`);
+  });
+}

@@ -116,6 +116,16 @@ if [ -d "$ADMIN/cgi-bin/api/v1" ]; then
   $SSH root@"$SPEAKER" 'chmod +x /mnt/nv/resolver/cgi-bin/api/v1/*'
 fi
 
+# Shared playback library (#95). CGIs source it via
+# ../../lib/playback.sh, so the on-device layout mirrors the repo:
+# /mnt/nv/resolver/cgi-bin/lib/playback.sh.
+if [ -d "$ADMIN/cgi-bin/lib" ]; then
+  say "Pushing CGI shared library"
+  $SSH root@"$SPEAKER" 'mkdir -p /mnt/nv/resolver/cgi-bin/lib'
+  $SCP -r "$ADMIN/cgi-bin/lib/." \
+       root@"$SPEAKER":/mnt/nv/resolver/cgi-bin/lib/
+fi
+
 # busybox httpd reads httpd.conf once at startup, not per request, so
 # bounce it to pick up MIME-type changes. shepherdd respawns it within
 # a second; CGI invocations during the gap return connection-refused.

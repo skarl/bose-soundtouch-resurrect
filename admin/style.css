@@ -525,8 +525,44 @@ main {
   filter: brightness(1.05);
 }
 
+/* Buffering state on the now-playing main play button — issue #88.
+ * The glyph swaps to a horizontal ellipsis (rendered as three dots
+ * inside the icon slot) and the whole control gets a subtle pulse so
+ * "I'm waiting" reads at a glance, distinct from both Play (filled
+ * triangle) and Pause (two bars). Pointer events are suppressed so a
+ * tap is a no-op while the speaker is still buffering. */
+.np-btn--play[data-phase="buffering"] {
+  pointer-events: none;
+  animation: np-btn-buffer-pulse 1100ms ease-in-out infinite;
+}
+
+@keyframes np-btn-buffer-pulse {
+  0%, 100% { opacity: 1;   transform: scale(1); }
+  50%      { opacity: 0.6; transform: scale(0.94); }
+}
+
+/* Prev / Next: native disabled attribute drives the visual state so
+ * keyboard nav + screen readers stay in sync (issue #88). */
+.np-btn[disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .np-btn { transition: none; }
+  .np-btn--play[data-phase="buffering"] { animation: none; }
+}
+
+/* Mini-player play button mirrors the now-playing buffering treatment.
+ * Same data-phase semantics so the helper can paint both surfaces
+ * identically. */
+.shell-mini__play[data-phase="buffering"] {
+  pointer-events: none;
+  animation: np-btn-buffer-pulse 1100ms ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-mini__play[data-phase="buffering"] { animation: none; }
 }
 
 /* Section header — used by both the source card and the presets block.
@@ -953,6 +989,39 @@ main {
 
 .search-error {
   color: var(--search-err);
+}
+
+/* "Include podcasts" toggle — sits inside the sticky .search-bar
+   alongside the input wrap. Compact label + checkbox, default ON. */
+.search-include-podcasts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.search-include-podcasts__input {
+  margin: 0;
+  cursor: pointer;
+}
+
+.search-include-podcasts__label { color: var(--fg); }
+
+/* Georestricted results — small bottom section, visually disabled. */
+.search-unavailable {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.search-unavailable .station-row.is-disabled {
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 /* --- version-drift banner ---------------------------------------- */
@@ -2243,7 +2312,7 @@ select.settings-input {
 /* --- station detail v2 -------------------------------------------- */
 /* Three-up preset grid replaces the inline 6-button assign row; each
    cell shows slot number, current occupant, and a small genre tag.
-   Long names truncate. The full-width gradient Test play CTA sits
+   Long names truncate. The full-width gradient Play CTA sits
    between the stream chooser and the assign grid. */
 
 .station-presets-grid {
@@ -2324,7 +2393,7 @@ select.settings-input {
   opacity: 0.6;
 }
 
-/* Full-width gradient Test play CTA. Background gradient is set per
+/* Full-width gradient Play CTA. Background gradient is set per
    station via inline style (stationGradient(name) → linear-gradient).
    White text + soft shadow read on every theme; subtitle is a softer
    line beneath the main label. */
@@ -2519,6 +2588,156 @@ select.settings-input {
   flex-shrink: 0;
 }
 
+/* Slice #79 — chips on the meta line + the tertiary subtitle line.
+ * Three-line subtitle is the ceiling (name + meta + tertiary); the
+ * chips row sits inside .station-row__meta so it shares the
+ * horizontal-flow + gap with location/bitrate. */
+
+.station-row__reliability {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.station-row__reliability-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.station-row__reliability[data-tier="green"] .station-row__reliability-dot {
+  background: var(--ok, #2a7);
+}
+.station-row__reliability[data-tier="amber"] .station-row__reliability-dot {
+  background: var(--warn, #d80);
+}
+.station-row__reliability[data-tier="red"] .station-row__reliability-dot {
+  background: var(--danger, #c33);
+}
+
+.station-row__reliability-text {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+/* Inline meta-line chip — used for the genre drill. Smaller than
+ * .browse-pivot so it sits naturally amid the meta text. */
+.station-row__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+  font-size: 10.5px;
+  line-height: 1.4;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 120ms ease;
+}
+
+.station-row__chip:hover,
+.station-row__chip:focus-visible {
+  background: var(--surface-hi);
+}
+
+.station-row__chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.station-row__chip.is-disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+/* Tertiary subtitle line — current_track or "Now airing: <show>".
+ * Sits below .station-row__meta inside .station-row__body, sharing
+ * the body's column flow. */
+.station-row__tertiary {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.station-row__tertiary-prefix {
+  flex-shrink: 0;
+  color: var(--text-dim, var(--fg-muted));
+}
+
+.station-row__show-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.station-row__show-link:hover,
+.station-row__show-link:focus-visible {
+  color: var(--fg);
+}
+
+/* Inline Play button on station/show/topic rows. 44x44 tap target per
+ * the issue (#78). The icon stays small (20px) but the click surface
+ * fills the square so it's reachable on touch. Hover lifts the bg
+ * tint without colliding with the row's own hover state. The
+ * is-loading class spins the icon while playGuideId() is in flight. */
+.station-row__play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -4px 4px -4px 0;
+  border-radius: 8px;
+  color: var(--accent, var(--fg));
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.station-row__play:hover,
+.station-row__play:focus-visible {
+  background: var(--surface-hi);
+}
+
+.station-row__play:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.station-row__play.is-loading {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.station-row__play.is-loading > svg {
+  animation: station-row-play-spin 800ms linear infinite;
+}
+
+@keyframes station-row-play-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .station-row__play { transition: none; }
+  .station-row__play.is-loading > svg { animation: none; }
+}
+
 /* --- browse card + browse row (non-audio rows) ------------------ */
 
 .browse-card {
@@ -2598,27 +2817,326 @@ select.settings-input {
   flex-shrink: 0;
 }
 
-/* Drill-mode breadcrumb header bits. */
-.browse-crumb {
-  font-family: 'Geist Mono', ui-monospace, monospace;
-  text-transform: none;
-  letter-spacing: 0;
+/* Pivot chips — inline cross-cut shortcuts at the tail of the
+   related section. Rendered as a horizontal wrap of small pill
+   anchors (`pivotName`, `pivotGenre`, `pivotLocation`). */
+.browse-pivots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0 0;
 }
 
-.browse-crumb__id {
+.browse-pivot {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.browse-pivot:hover,
+.browse-pivot:focus-visible {
+  background: var(--surface-hi);
+}
+
+.browse-pivot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.browse-pivot.is-disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+/* Per-section footer slot. Slice #76 mounts a "Load more" button
+   here when the section has a cursor. The slot is always present
+   so the section card's bottom edge stays stable across pagination. */
+.browse-section__footer:empty {
+  display: none;
+}
+
+/* Page-top filter input — drill-view-only, always visible. Issue #77. */
+.browse-filter {
+  margin: 0 0 8px;
+}
+
+.browse-filter__input {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.browse-filter__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* DOM filter applicator — rows whose text/subtext/playing/current_track
+   don't contain the query collapse to display:none. Same class on
+   .station-row and .browse-row. */
+.station-row.is-filtered-out,
+.browse-row.is-filtered-out {
+  display: none;
+}
+
+/* Eager-serial crawl progress strap. Mounts at the top of the
+   drill body while a section is actively crawling under the
+   filter. Repurposed across sections (one strap at a time). */
+.browse-strap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-hi);
+  font-size: 12px;
   color: var(--text-dim, var(--fg-muted));
 }
 
-.browse-back {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  text-decoration: none;
-  color: var(--accent);
-  font-size: 13px;
+.browse-strap__label {
+  flex: 1;
+  font-weight: 500;
 }
 
-.browse-back:hover { text-decoration: underline; }
+.browse-strap__keep {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.browse-strap__keep:hover,
+.browse-strap__keep:focus-visible {
+  background: var(--surface-hi);
+}
+
+.browse-section__footer {
+  padding: 8px 0 0;
+}
+
+/* Load-more button — mounts into .browse-section__footer for any
+   section whose page response carried a `next*` cursor. Same pill
+   shape as the pivot chips for visual continuity, slightly heavier
+   so it reads as a "primary" action within the footer. */
+.browse-load-more {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.browse-load-more:hover,
+.browse-load-more:focus-visible {
+  background: var(--surface-hi);
+}
+
+.browse-load-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.browse-load-more[data-state="busy"] {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.browse-load-more[data-state="error"] {
+  border-color: var(--danger, #c33);
+  color: var(--danger, #c33);
+  cursor: default;
+}
+
+/* Drill-mode pill bar — chevron Back + inline trail in one row. */
+/* Replaces the old standalone Back link + standalone crumb trail.
+   The bar mounts only on drill views; the root tabs view stays bare. */
+.browse-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 4px 4px;
+  margin: 0 0 8px;
+  background: var(--surface);
+  border-radius: 999px;
+  min-height: 32px;
+}
+
+/* Circular Back affordance — glyph only, no text. The aria-label
+   carries the popped destination (`Back to <name>`). */
+.browse-bar__back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface-hi);
+  color: var(--accent);
+  text-decoration: none;
+  flex: 0 0 auto;
+}
+
+.browse-bar__back:hover { background: var(--stream-sel); }
+
+.browse-bar__back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Inline trail inside the pill bar — anchors separated by `›`
+   characters carried by their own .browse-bar__sep spans. */
+.browse-bar__trail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+/* Anchor crumbs render as plain body text — no accent colour, no
+   underline — so the trail reads as one continuous breadcrumb and
+   the current (bold) tail is the visual anchor. Hover reveals the
+   underline so the affordance is still discoverable on pointer. */
+a.browse-bar__crumb {
+  text-decoration: none;
+  color: var(--fg);
+}
+
+a.browse-bar__crumb:hover { text-decoration: underline; }
+
+a.browse-bar__crumb:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.browse-bar__crumb.is-disabled {
+  color: var(--fg-muted);
+  cursor: default;
+  pointer-events: none;
+}
+
+/* Current segment — bolded non-link tail (aria-current="page"). */
+.browse-bar__crumb.is-current {
+  color: var(--fg);
+  font-weight: 600;
+  cursor: default;
+}
+
+.browse-bar__crumb.is-current:hover { text-decoration: none; }
+
+.browse-bar__sep {
+  color: var(--fg-muted);
+  user-select: none;
+}
+
+/* Active-filter badge — mounted in-bar, peer to the trail, when the
+   drill carries `filter=…`. Reads as a soft tag: resolved filter
+   label + trailing × close affordance that navigates to the same
+   drill minus the filter. Issue #104.
+
+   margin-left: auto pushes the badge to the right edge of the bar
+   so it never crowds the trail anchors. The trail's own flex-wrap
+   handles narrow widths by wrapping ancestor crumbs over multiple
+   lines; the badge stays flush right at the wrap boundary. */
+.browse-bar__filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 2px 4px 2px 10px;
+  background: var(--surface-hi);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--fg);
+  flex: 0 0 auto;
+}
+
+.browse-bar__filter-label {
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.browse-bar__filter-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg-muted);
+  text-decoration: none;
+  flex: 0 0 auto;
+}
+
+.browse-bar__filter-close:hover {
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.browse-bar__filter-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Page title row — h1 + small muted sid suffix. Replaces the old
+   `.browse-crumb__title` + `.browse-crumb__id` pair that the drill
+   section-h used to carry. */
+.browse-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  min-width: 0;
+}
+
+.browse-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--fg);
+  min-width: 0;
+}
+
+.browse-title__sid {
+  color: var(--fg-muted);
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 0.8rem;
+}
 
 /* Search empty state — single stacked column. The earlier two-column
    grid was the polish that didn't match the mockup. */

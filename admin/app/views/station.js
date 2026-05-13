@@ -5,7 +5,7 @@
 //      "loading metadata...", disabled assign buttons).
 //   2. Fetch Describe.ashx via tuneinStation(sid) → fill name,
 //      slogan, location/language/format meta. Adds the station to
-//      state.caches.recentlyViewed (search.js's empty state reads it).
+//      state.ui.visitedStations (search.js's empty state reads it).
 //   3. Fetch Tune.ashx via probe(sid) → cache-aware orchestrator in
 //      app/probe.js. Re-entry within the 10-minute TTL skips the fetch.
 //      The Probe result carries tuneinJson so assign + audition can
@@ -20,64 +20,18 @@
 
 import { html, mount, defineView } from '../dom.js';
 import { tuneinStation, presetsList } from '../api.js';
-import { store, addRecentlyViewed } from '../state.js';
+import { store, addVisitedStation } from '../state.js';
 import { showToast } from '../toast.js';
 import { setArt } from '../art.js';
 import { stationGradient } from '../tint.js';
 import { pill } from '../components.js';
+import { icon } from '../icons.js';
 import { probe, assignToPreset, buildBosePayload } from '../probe.js';
 import { previewStream } from '../actions/index.js';
+import { cgiErrorMessage } from '../error-messages.js';
+import { pickArt, bestStream, buildMetaText, fmtCodec, fmtReliability } from '../station-verdict.js';
 
 const ASSIGN_SLOTS = 6;
-
-// Pull the friendliest single image URL from a Describe.ashx body[0].
-// TuneIn's Describe sometimes provides `logo` (square preferred), and
-// Browse responses use `image`. Either may be HTTP or HTTPS.
-function pickArt(stationBody) {
-  if (!stationBody || typeof stationBody !== 'object') return '';
-  const url = stationBody.logo || stationBody.image || '';
-  return typeof url === 'string' ? url : '';
-}
-
-// Build the metadata strip text from a Describe body. Filters empty
-// fields so we don't render lonely separators.
-function buildMetaText(stationBody) {
-  if (!stationBody || typeof stationBody !== 'object') return '';
-  const parts = [];
-  if (stationBody.location) parts.push(stationBody.location);
-  if (stationBody.language) parts.push(stationBody.language);
-  if (stationBody.genre_name) parts.push(stationBody.genre_name);
-  if (stationBody.frequency && stationBody.band) {
-    parts.push(`${stationBody.frequency} ${stationBody.band}`);
-  } else if (stationBody.frequency) {
-    parts.push(String(stationBody.frequency));
-  }
-  return parts.join(' . ');
-}
-
-// Pick the "best" stream for the verdict pill: highest bitrate.
-// Defensive — bitrate may be a string or missing on real TuneIn data.
-function bestStream(streams) {
-  if (!Array.isArray(streams) || streams.length === 0) return null;
-  const score = (s) => {
-    const b = Number(s && s.bitrate);
-    return Number.isFinite(b) ? b : -1;
-  };
-  let best = streams[0];
-  for (const s of streams) if (score(s) > score(best)) best = s;
-  return best;
-}
-
-function fmtCodec(stream) {
-  if (!stream) return '';
-  const codec = stream.media_type || stream.formats || '';
-  return typeof codec === 'string' ? codec.toUpperCase() : '';
-}
-
-function fmtReliability(stream) {
-  const r = Number(stream && stream.reliability);
-  return Number.isFinite(r) && r > 0 ? `${r}%` : '';
-}
 
 function buildAssignGrid() {
   const wrap = document.createElement('div');
@@ -150,7 +104,31 @@ function presetGenreLabel(preset) {
   return src ? src.toLowerCase() : '';
 }
 
+// Chevron-only back affordance styled like the browse-bar pill. Clicking
+// pops one entry off the SPA history stack via history.back() so the
+// user returns to wherever they came from (browse drill, search results,
+// preset row) instead of being teleported to #/browse.
+function buildBackBar() {
+  const bar = document.createElement('div');
+  bar.className = 'browse-bar';
+
+  const back = document.createElement('a');
+  back.className = 'browse-bar__back';
+  back.href = '#';
+  back.setAttribute('aria-label', 'Back');
+  back.appendChild(icon('chevron-left', 16));
+  back.addEventListener('click', (e) => {
+    e.preventDefault();
+    history.back();
+  });
+
+  bar.appendChild(back);
+  return bar;
+}
+
 function renderSkeleton(root, sid) {
+  const backBar = buildBackBar();
+
   const verdictBox = document.createElement('div');
   verdictBox.className = 'station-verdict';
   verdictBox.textContent = 'Probing stream...';
@@ -165,7 +143,7 @@ function renderSkeleton(root, sid) {
 
   mount(root, html`
     <section class="station-detail" data-view="station" data-sid="${sid}">
-      <p class="breadcrumb"><a href="#/browse">&larr; Browse</a></p>
+      ${backBar}
       <header class="station-header">
         <div class="station-art" hidden></div>
         <div class="station-header__body">
@@ -194,7 +172,7 @@ function buildTestPlayButton(name) {
 
   const label = document.createElement('span');
   label.className = 'station-test-play__label';
-  label.textContent = 'Test play';
+  label.textContent = 'Play';
 
   const sub = document.createElement('span');
   sub.className = 'station-test-play__sub';
@@ -267,7 +245,7 @@ export default defineView({
     renderSkeleton(root, sid);
     repaintPresetCells();
 
-    // Audition + assign closure state. Test play streams to the speaker,
+    // Play + assign closure state. The Play CTA streams to the speaker,
     // not in the browser. Bo stays tuned until the user picks
     // something else — no auto-stop on toggle-click or navigation.
     let chosenStreamUrl = '';
@@ -292,13 +270,12 @@ export default defineView({
       try {
         const envelope = await previewStream({ id: actx.sid, name: liveName, json: bose });
         if (!envelope || envelope.ok !== true) {
-          const code = envelope && envelope.error && envelope.error.code;
-          showToast(`Audition failed${code ? ': ' + code : ''}`);
+          showToast(`Playback failed: ${cgiErrorMessage(envelope)}`);
           return;
         }
         showToast(`Playing on Bo: ${liveName}`);
       } catch (err) {
-        showToast(`Audition failed: ${err.message || 'transport error'}`);
+        showToast(`Playback failed: ${err.message || 'transport error'}`);
       }
     }
 
@@ -386,7 +363,7 @@ export default defineView({
           anchor = list;
         }
 
-        // Test play CTA goes between the stream chooser and the assign
+        // Play CTA goes between the stream chooser and the assign
         // grid. Reuses chosenStreamUrl from the chooser; preserves the
         // existing previewStream callsite (auditionStream → previewStream).
         const cta = buildTestPlayButton(actx && actx.getName ? actx.getName() : sid);
@@ -493,9 +470,7 @@ export default defineView({
         return;
       }
 
-      const errObj = (envelope && envelope.error) || { code: 'UNKNOWN' };
-      const detail = errObj.message ? `${errObj.code}: ${errObj.message}` : errObj.code;
-      showToast(`Save failed (${detail})`);
+      showToast(`Save failed: ${cgiErrorMessage(envelope)}`);
       presetsList().then((envv) => {
         if (envv && envv.ok && Array.isArray(envv.data)) store.update('speaker', (s) => { s.speaker.presets = envv.data; });
       }).catch(() => { /* keep the toast as the user-facing signal */ });
@@ -513,12 +488,12 @@ export default defineView({
         const name = (body && body.name) || sid;
         stationName = name;
         stationArt  = pickArt(body);
-        addRecentlyViewed({ sid, name, art: stationArt });
+        addVisitedStation({ sid, name, art: stationArt });
       })
       .catch((err) => {
         if (env.signal.aborted) return;
         applyMetadataError(root, err);
-        addRecentlyViewed({ sid, name: sid });
+        addVisitedStation({ sid, name: sid });
       });
 
     // probe() is cache-aware — re-entry within the 10-minute TTL skips

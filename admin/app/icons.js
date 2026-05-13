@@ -134,6 +134,24 @@ const SHAPES = {
     ['line', { x1: '19', y1: '12', x2: '5', y2: '12' }],
     ['polyline', { points: '12 19 5 12 12 5' }],
   ],
+  // Chevron-left — just the angle bracket (no horizontal shaft). Used
+  // for the drill pill-bar's circular Back affordance, where the glyph
+  // sits alone inside the pill and any extra shaft would crowd the
+  // 24x24 frame.
+  'chevron-left': [
+    ['polyline', { points: '15 18 9 12 15 6' }],
+  ],
+  // Buffering — three horizontal dots. Used on the play/pause control
+  // while the speaker is in BUFFERING_STATE (or any non-PLAY non-
+  // STANDBY state with a selected item) so the visual is distinct
+  // from both Play (triangle) and Pause (two bars). The CSS pulse on
+  // .np-btn--play[data-phase="buffering"] carries the "in flight"
+  // signal; this is the glyph the pulse is wrapped around. See #88.
+  buffer: [
+    ['circle', { cx: '5',  cy: '12', r: '1.5' }],
+    ['circle', { cx: '12', cy: '12', r: '1.5' }],
+    ['circle', { cx: '19', cy: '12', r: '1.5' }],
+  ],
 };
 
 export function icon(name, size = 16) {

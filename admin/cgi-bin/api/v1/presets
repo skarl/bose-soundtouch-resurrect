@@ -7,7 +7,7 @@
 #
 # GET parses the speaker's <presets> XML into 6-slot ordered array.
 # Empty slots are emitted as {slot:N, empty:true}. Per-slot extraction
-# is best-effort sed/awk — if a slot's XML can't be parsed cleanly we
+# is best-effort awk — if a slot's XML can't be parsed cleanly we
 # return it as empty rather than fail the whole envelope.
 #
 # POST validates {id, slot, name, kind, json} from the JSON body, then:
@@ -19,94 +19,23 @@
 # No rollback on /storePreset failure — see admin/PLAN.md
 # § REST API → presets for the failure-mode rationale.
 #
+# Envelope + CSRF guard live in admin/cgi-bin/lib/playback.sh, shared
+# with /play and /preview.
+#
 # busybox-shell only — no bash-isms, no jq. Must pass shellcheck
 # under --severity=warning.
-# CSRF: same Origin-header guard pattern as cgi-bin/api/v1/speaker.
-# See admin/PLAN.md § REST API → presets.
 
 set -u
 
-SPEAKER_BASE='http://localhost:8090'
-RESOLVER_DIR='/mnt/nv/resolver/bmx/tunein/v1/playback/station'
-
-TMPDIR_FALLBACK="${TMPDIR:-/tmp}"
-
-emit_error() {
-    status="$1"
-    code="$2"
-    msg="$3"
-    printf 'Status: %s\r\n' "$status"
-    printf 'Content-Type: application/json; charset=utf-8\r\n'
-    printf 'Cache-Control: no-store\r\n'
-    printf 'Access-Control-Allow-Origin: *\r\n'
-    printf '\r\n'
-    printf '{"ok":false,"error":{"code":"%s","message":"%s"}}\n' "$code" "$msg"
-}
-
-emit_ok_headers() {
-    printf 'Status: 200 OK\r\n'
-    printf 'Content-Type: application/json; charset=utf-8\r\n'
-    printf 'Cache-Control: no-store\r\n'
-    printf 'Access-Control-Allow-Origin: *\r\n'
-    printf 'Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n'
-    printf 'Access-Control-Allow-Headers: Content-Type\r\n'
-    printf '\r\n'
-}
-
-# CORS preflight: respond and exit before doing any work.
-if [ "${REQUEST_METHOD:-GET}" = 'OPTIONS' ]; then
-    printf 'Status: 204 No Content\r\n'
-    printf 'Access-Control-Allow-Origin: *\r\n'
-    printf 'Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n'
-    printf 'Access-Control-Allow-Headers: Content-Type\r\n'
-    printf '\r\n'
-    exit 0
-fi
-
-# Escape a string for safe inclusion in a JSON string literal. Handles
-# the JSON-mandatory escapes (\, ", and the common control chars).
-# Order matters: backslash first so the later passes' injections don't
-# get double-escaped. Newlines/tabs/CRs are unlikely in id/slot/name
-# but cheap to defang.
-json_escape() {
-    printf '%s' "$1" \
-        | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
-        | tr '\n' ' ' \
-        | tr '\r' ' ' \
-        | tr '\t' ' '
-}
-
-# XML-escape a string. Used when building the storePreset payload.
-xml_escape() {
-    printf '%s' "$1" | sed \
-        -e 's/&/\&amp;/g' \
-        -e 's/</\&lt;/g' \
-        -e 's/>/\&gt;/g' \
-        -e 's/"/\&quot;/g' \
-        -e "s/'/\\&apos;/g"
-}
-
-# Extract the value of an attribute on the FIRST tag matching $1 in
-# stdin. Output is the raw attribute text (already URL/XML decoded by
-# whoever wrote it; we just lift the substring).
-#   xml_attr <tag> <attr> < file
-# Returns empty string if not found.
-xml_attr() {
-    tag="$1"
-    attr="$2"
-    # The speaker emits attributes on a single line per tag, double-
-    # quoted. Match all occurrences then `head -n 1` so we keep the
-    # first; busybox sed has no `q` between two commands on one line.
-    sed -n "s/.*<${tag}[^>]* ${attr}=\"\\([^\"]*\\)\".*/\\1/p" \
-        | head -n 1
-}
+# shellcheck source=../../lib/playback.sh
+. "$(dirname "$0")/../../lib/playback.sh"
 
 # Extract the text content of the FIRST occurrence of <tag>...</tag>
 # from stdin. Single-line tags only — fine for the speaker's output.
-# Decodes the five XML entities so consumers don't need to.
+# Decodes the five XML entities so consumers don't need to. Local to
+# this CGI because no other playback CGI consumes the speaker's XML.
 xml_text() {
-    tag="$1"
-    sed -n "s|.*<${tag}[^>]*>\\([^<]*\\)</${tag}>.*|\\1|p" \
+    sed -n "s|.*<${1}[^>]*>\\([^<]*\\)</${1}>.*|\\1|p" \
         | head -n 1 \
         | sed \
             -e 's/&lt;/</g' \
@@ -116,35 +45,6 @@ xml_text() {
             -e 's/&amp;/\&/g'
 }
 
-# Emit a single slot's JSON object. Reads the slot's <preset>...</preset>
-# block as $2 (already a single line). Falls back to {empty:true} if no
-# usable ContentItem is found. POSIX sh has no `local`, so all variable
-# names here are prefixed with `s_` to avoid clobbering callers.
-emit_slot_json() {
-    s_slot="$1"
-    s_block="$2"
-
-    s_src=$(printf '%s' "$s_block" | xml_attr ContentItem source)
-    s_typ=$(printf '%s' "$s_block" | xml_attr ContentItem type)
-    s_loc=$(printf '%s' "$s_block" | xml_attr ContentItem location)
-    s_name=$(printf '%s' "$s_block" | xml_text itemName)
-    s_art=$(printf '%s' "$s_block" | xml_text containerArt)
-
-    if [ -z "$s_src" ] && [ -z "$s_loc" ] && [ -z "$s_name" ]; then
-        printf '{"slot":%s,"empty":true}' "$s_slot"
-        return
-    fi
-
-    s_src_j=$(json_escape "$s_src")
-    s_typ_j=$(json_escape "$s_typ")
-    s_loc_j=$(json_escape "$s_loc")
-    s_name_j=$(json_escape "$s_name")
-    s_art_j=$(json_escape "$s_art")
-
-    printf '{"slot":%s,"source":"%s","type":"%s","location":"%s","itemName":"%s","art":"%s"}' \
-        "$s_slot" "$s_src_j" "$s_typ_j" "$s_loc_j" "$s_name_j" "$s_art_j"
-}
-
 # Fetch /presets from the speaker, parse, and emit the JSON envelope on
 # stdout. Returns 0 on success, non-zero on transport failure (caller
 # is responsible for emitting an error envelope in that case). Uses
@@ -152,12 +52,12 @@ emit_slot_json() {
 # cleans up before returning rather than relying on a trap that would
 # clobber the caller's.
 fetch_and_emit_presets() {
-    fp_body="$TMPDIR_FALLBACK/presets.$$.body"
+    fp_body="$PLAYBACK_TMPDIR/presets.$$.body"
 
     # busybox wget exits 0 on 2xx and nonzero on 4xx/5xx/network error,
     # so we don't need `-S` to inspect headers (and busybox doesn't
     # support that flag anyway).
-    if ! wget -q -O "$fp_body" "${SPEAKER_BASE}/presets"; then
+    if ! wget -q -O "$fp_body" "${PLAYBACK_SPEAKER_BASE}/presets"; then
         rm -f "$fp_body"
         return 1
     fi
@@ -251,77 +151,12 @@ fetch_and_emit_presets() {
     return 0
 }
 
-# Read the request body (CGI: stdin, length=CONTENT_LENGTH) into a file.
-# Echoes the file path on stdout; caller is responsible for cleanup.
-slurp_body() {
-    body_file="$TMPDIR_FALLBACK/presets-req.$$.body"
-    cl="${CONTENT_LENGTH:-0}"
-    if [ "$cl" -gt 0 ] 2>/dev/null; then
-        dd bs=1 count="$cl" of="$body_file" 2>/dev/null
-    else
-        : >"$body_file"
-    fi
-    printf '%s' "$body_file"
-}
-
-# Pull a flat string field from a JSON body. Tolerates whitespace around
-# the colon. Returns empty string if absent. Doesn't unescape \uXXXX or
-# string escapes — id/slot/name/kind don't need it in practice.
-#   json_string_field <key> < file
-json_string_field() {
-    key="$1"
-    sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" \
-        | head -n 1
-}
-
-# Pull a numeric field from a JSON body. Same tolerance as above.
-json_number_field() {
-    key="$1"
-    sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\\([0-9][0-9]*\\).*/\\1/p" \
-        | head -n 1
-}
-
-# Extract the raw substring for the `json` field (the only nested
-# field). We don't need to parse it — the resolver consumes it as-is.
-# Strategy: find `"json":` then capture from the next `{` to its
-# matching `}` by counting braces. Pure awk.
-json_object_field() {
-    awk '
-        BEGIN { found = 0; depth = 0; out = "" }
-        {
-            if (!found) {
-                # Locate `"json"` followed by `:` and then `{`.
-                idx = match($0, /"json"[[:space:]]*:[[:space:]]*\{/)
-                if (idx == 0) { buf = buf $0; next }
-                # Drop everything up to (and including) the opening `{`.
-                rest = substr($0, idx + RLENGTH - 1)
-                found = 1
-                line = rest
-            } else {
-                line = $0
-            }
-            for (i = 1; i <= length(line); i++) {
-                c = substr(line, i, 1)
-                out = out c
-                if (c == "{") depth++
-                else if (c == "}") {
-                    depth--
-                    if (depth == 0) { print out; exit }
-                }
-            }
-            out = out "\n"
-        }
-    '
-}
-
 # Match against ^s[0-9]+$ — id sanity. Returns 0 on match, 1 on mismatch.
 is_valid_id() {
-    candidate="$1"
-    case "$candidate" in
+    case "$1" in
         s) return 1 ;;
         s*)
-            tail=${candidate#s}
-            # Reject if tail has any non-digit char.
+            tail=${1#s}
             case "$tail" in
                 ''|*[!0-9]*) return 1 ;;
                 *) return 0 ;;
@@ -333,36 +168,30 @@ is_valid_id() {
 
 # Match an integer 1..6. Returns 0 on match.
 is_valid_slot() {
-    candidate="$1"
-    case "$candidate" in
+    case "$1" in
         1|2|3|4|5|6) return 0 ;;
         *) return 1 ;;
     esac
 }
 
+# CORS preflight: respond and exit before doing any work.
+if handle_cors_preflight 'GET, POST, OPTIONS'; then exit 0; fi
+
 handle_get() {
-    if fetch_and_emit_presets >"$TMPDIR_FALLBACK/presets-out.$$"; then
-        emit_ok_headers
-        cat "$TMPDIR_FALLBACK/presets-out.$$"
-        rm -f "$TMPDIR_FALLBACK/presets-out.$$"
+    if fetch_and_emit_presets >"$PLAYBACK_TMPDIR/presets-out.$$"; then
+        emit_ok_headers 'GET, POST, OPTIONS'
+        cat "$PLAYBACK_TMPDIR/presets-out.$$"
+        rm -f "$PLAYBACK_TMPDIR/presets-out.$$"
     else
-        rm -f "$TMPDIR_FALLBACK/presets-out.$$"
+        rm -f "$PLAYBACK_TMPDIR/presets-out.$$"
         emit_error '502 Bad Gateway' UPSTREAM_UNREACHABLE \
             "speaker /presets fetch failed"
     fi
 }
 
 handle_post() {
-    # CSRF guard — same shape as cgi-bin/api/v1/speaker.
-    case "${HTTP_ORIGIN:-}" in
-        "http://${HTTP_HOST:-}"|"https://${HTTP_HOST:-}"|"")
-            ;;
-        *)
-            emit_error '403 Forbidden' CSRF_BLOCKED \
-                "cross-origin mutating request rejected"
-            return 0
-            ;;
-    esac
+    # Same Origin+Referer guard as the speaker CGI.
+    csrf_guard || return 0
 
     # PATH_INFO is /1 .. /6 (the slot).
     pi="${PATH_INFO:-}"
@@ -373,9 +202,10 @@ handle_post() {
         return 0
     fi
 
-    body_file=$(slurp_body)
+    body_file="$PLAYBACK_TMPDIR/presets-req.$$.body"
     # shellcheck disable=SC2064
     trap "rm -f '$body_file'" EXIT INT TERM
+    slurp_body "$body_file"
 
     body_id=$(json_string_field id <"$body_file")
     body_slot=$(json_number_field slot <"$body_file")
@@ -416,9 +246,9 @@ handle_post() {
     fi
 
     # Atomic write: tmp + mv on the same filesystem.
-    target="${RESOLVER_DIR}/${body_id}"
+    target="${PLAYBACK_RESOLVER_DIR}/${body_id}"
     target_tmp="${target}.tmp"
-    mkdir -p "$RESOLVER_DIR" 2>/dev/null || true
+    mkdir -p "$PLAYBACK_RESOLVER_DIR" 2>/dev/null || true
 
     if ! printf '%s' "$body_json" >"$target_tmp" 2>/dev/null; then
         emit_error '500 Internal Server Error' WRITE_FAILED \
@@ -450,9 +280,9 @@ handle_post() {
     esac
     sp_body="<preset id=\"${body_slot}\"><ContentItem source=\"TUNEIN\" type=\"stationurl\" location=\"${location}\" sourceAccount=\"\" isPresetable=\"true\"><itemName>${name_xml}</itemName>${art_xml}</ContentItem></preset>"
 
-    sp_url="${SPEAKER_BASE}/storePreset?id=${body_slot}"
-    sp_body_file="$TMPDIR_FALLBACK/presets-sp.$$.body"
-    sp_resp_file="$TMPDIR_FALLBACK/presets-sp.$$.resp"
+    sp_url="${PLAYBACK_SPEAKER_BASE}/storePreset?id=${body_slot}"
+    sp_body_file="$PLAYBACK_TMPDIR/presets-sp.$$.body"
+    sp_resp_file="$PLAYBACK_TMPDIR/presets-sp.$$.resp"
     printf '%s' "$sp_body" >"$sp_body_file"
 
     # busybox wget on this firmware is GET-only — it doesn't accept
@@ -462,7 +292,7 @@ handle_post() {
     # Additionally inspect the response body because the speaker
     # sometimes returns 200 with an <errors><error>...</error> payload.
     sp_ok=1
-    sp_status=$(curl -s -o "$sp_resp_file" -w '%{http_code}' \
+    sp_status=$(/usr/bin/curl -s -o "$sp_resp_file" -w '%{http_code}' \
         -X POST -H 'Content-Type: application/xml' \
         --data-binary "@$sp_body_file" \
         "$sp_url")
@@ -481,20 +311,19 @@ handle_post() {
         if [ -z "$sp_err" ]; then
             sp_err="speaker rejected storePreset"
         fi
-        sp_err_j=$(json_escape "$sp_err")
         rm -f "$sp_body_file" "$sp_resp_file"
-        emit_error '502 Bad Gateway' STOREPRESET_REJECTED "$sp_err_j"
+        emit_error '502 Bad Gateway' STOREPRESET_REJECTED "$sp_err"
         return 0
     fi
     rm -f "$sp_body_file" "$sp_resp_file"
 
     # Success — return the now-current full presets list.
-    if fetch_and_emit_presets >"$TMPDIR_FALLBACK/presets-out.$$"; then
-        emit_ok_headers
-        cat "$TMPDIR_FALLBACK/presets-out.$$"
-        rm -f "$TMPDIR_FALLBACK/presets-out.$$"
+    if fetch_and_emit_presets >"$PLAYBACK_TMPDIR/presets-out.$$"; then
+        emit_ok_headers 'GET, POST, OPTIONS'
+        cat "$PLAYBACK_TMPDIR/presets-out.$$"
+        rm -f "$PLAYBACK_TMPDIR/presets-out.$$"
     else
-        rm -f "$TMPDIR_FALLBACK/presets-out.$$"
+        rm -f "$PLAYBACK_TMPDIR/presets-out.$$"
         # storePreset succeeded but the follow-up GET failed. Surface
         # this distinctly so the browser knows to refetch later.
         emit_error '502 Bad Gateway' UPSTREAM_UNREACHABLE \

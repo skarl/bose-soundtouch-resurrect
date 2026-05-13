@@ -1,0 +1,78 @@
+{
+  "head": {
+    "title": "Folk Alley",
+    "status": "200"
+  },
+  "body": [
+    {
+      "element": "outline",
+      "text": "Stations carrying this show",
+      "key": "stations",
+      "children": [
+        {
+          "element": "outline",
+          "type": "audio",
+          "text": "Celtic Music Radio (Johnstone, UK)",
+          "URL": "http://opml.radiotime.com/Tune.ashx?id=s92207",
+          "bitrate": "128",
+          "reliability": "29",
+          "guide_id": "s92207",
+          "subtext": "Folk Alley",
+          "genre_id": "g79",
+          "formats": "mp3",
+          "item": "station",
+          "image": "http://cdn-profiles.tunein.com/s92207/images/logoq.jpg?t=1",
+          "now_playing_id": "s92207",
+          "preset_id": "s92207"
+        },
+        {
+          "element": "outline",
+          "type": "audio",
+          "text": "WKSU 89.7 (Kent, OH)",
+          "URL": "http://opml.radiotime.com/Tune.ashx?id=s30414",
+          "bitrate": "128",
+          "reliability": "98",
+          "guide_id": "s30414",
+          "subtext": "Folk Alley",
+          "genre_id": "g79",
+          "formats": "mp3",
+          "item": "station",
+          "image": "http://cdn-profiles.tunein.com/s30414/images/logoq.jpg?t=1",
+          "now_playing_id": "s30414",
+          "preset_id": "s30414"
+        }
+      ]
+    },
+    {
+      "element": "outline",
+      "text": "Past Episodes",
+      "key": "topics",
+      "children": [
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "Folk Alley — Week of May 5, 2026",
+          "URL": "http://opml.radiotime.com/Tune.ashx?id=t912000001",
+          "guide_id": "t912000001",
+          "subtext": "Highlights from this week's broadcast.",
+          "image": "http://cdn-profiles.tunein.com/p4727070/images/logoq.jpg?t=1",
+          "item": "topic",
+          "topic_duration": "7200",
+          "show_id": "p4727070"
+        },
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "Folk Alley — Week of April 28, 2026",
+          "URL": "http://opml.radiotime.com/Tune.ashx?id=t912000002",
+          "guide_id": "t912000002",
+          "subtext": "Highlights from this week's broadcast.",
+          "image": "http://cdn-profiles.tunein.com/p4727070/images/logoq.jpg?t=1",
+          "item": "topic",
+          "topic_duration": "7200",
+          "show_id": "p4727070"
+        }
+      ]
+    }
+  ]
+}

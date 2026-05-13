@@ -1,0 +1,46 @@
+{
+  "head": {
+    "status": "200"
+  },
+  "body": [
+    {
+      "element": "show",
+      "title": "Fresh Air",
+      "hosts": "Terry Gross",
+      "guide_id": "p17",
+      "preset_id": "p17",
+      "description": "Fresh Air from WHYY, the Peabody Award-winning weekday magazine of contemporary arts and issues, is one of public radio's most popular programs. Hosted by Terry Gross and Tonya Mosley, the show features intimate conversations with today's biggest luminaries.\r\n\r\nSubscribe to Fresh Air Plus! You'll enjoy bonus episodes and sponsor-free listening - all while you support NPR's mission. Learn more at plus.npr.org/freshair",
+      "is_preset": false,
+      "is_event": false,
+      "url": "",
+      "report_url": "",
+      "detail_url": "http://tun.in/pei6l",
+      "twitter_id": "nprfreshair",
+      "logo": "https://cdn-profiles.tunein.com/p17/images/logoq.png?t=639003116360000000",
+      "location": "Philadelphia, PA",
+      "has_topics": true,
+      "email": "freshair@freshair.com",
+      "phone": "(202) 513-2300",
+      "language": "English",
+      "start": "",
+      "start_utc": "",
+      "duration": "",
+      "genre_id": "g168",
+      "genre_name": "Interviews",
+      "secondary_genre_id": "g266",
+      "secondary_genre_name": "Public Radio",
+      "fb_share": true,
+      "twitter_share": true,
+      "ad_eligible": false,
+      "tunein_url": "http://tunein.com/program/?programId=17",
+      "is_family_content": false,
+      "is_mature_content": false,
+      "content_classification": "talk",
+      "echoed_count": null,
+      "favorited_count": null,
+      "is_favorited": null,
+      "is_favoritable": null,
+      "has_profile": "true"
+    }
+  ]
+}

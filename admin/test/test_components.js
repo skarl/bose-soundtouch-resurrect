@@ -12,130 +12,7 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 
-import { DOMImplementation } from '@xmldom/xmldom';
-
-// --- DOM shim --------------------------------------------------------
-
-const doc = new DOMImplementation().createDocument(null, null, null);
-// applyTint() (reached via stationArt → setArt) calls
-// document.querySelector('.np-view'); xmldom has no querySelector. The
-// lookup just needs to return null so applyTint bails out cleanly.
-if (!doc.querySelector) doc.querySelector = () => null;
-// theme.js applies on import via document.documentElement.dataset.theme.
-// xmldom's empty doc has no documentElement; create a fake one with a
-// dataset stand-in so the side-effecting import doesn't blow up.
-if (!doc.documentElement) {
-  const html = doc.createElement('html');
-  doc.appendChild(html);
-}
-if (!doc.documentElement.dataset) {
-  doc.documentElement.dataset = {};
-}
-globalThis.document = doc;
-
-// Pull a sample element to grab the Element prototype, then patch it.
-const _sampleEl = doc.createElement('span');
-const ElementProto = Object.getPrototypeOf(_sampleEl);
-
-if (!ElementProto.classList) {
-  Object.defineProperty(ElementProto, 'classList', {
-    get() {
-      const el = this;
-      return {
-        add(...names) {
-          const cur = (el.getAttribute('class') || '').split(/\s+/).filter(Boolean);
-          for (const n of names) if (!cur.includes(n)) cur.push(n);
-          el.setAttribute('class', cur.join(' '));
-        },
-        remove(...names) {
-          const cur = (el.getAttribute('class') || '').split(/\s+/).filter(Boolean);
-          const next = cur.filter((c) => !names.includes(c));
-          el.setAttribute('class', next.join(' '));
-        },
-        contains(name) {
-          return (el.getAttribute('class') || '').split(/\s+/).includes(name);
-        },
-        toggle(name, force) {
-          const has = this.contains(name);
-          const want = force == null ? !has : !!force;
-          if (want && !has) this.add(name);
-          else if (!want && has) this.remove(name);
-          return want;
-        },
-      };
-    },
-  });
-}
-
-// xmldom stores className / href / src / alt as JS-only properties; the
-// production code (stationRow, art.js) writes via the property and our
-// assertions read via getAttribute. Mirror property → attribute so both
-// sides see the same value.
-if (!Object.getOwnPropertyDescriptor(ElementProto, 'className')) {
-  Object.defineProperty(ElementProto, 'className', {
-    get() { return this.getAttribute('class') || ''; },
-    set(v) { this.setAttribute('class', String(v == null ? '' : v)); },
-  });
-}
-for (const attr of ['href', 'src', 'alt']) {
-  if (!Object.getOwnPropertyDescriptor(ElementProto, attr)) {
-    Object.defineProperty(ElementProto, attr, {
-      get() { return this.getAttribute(attr) || ''; },
-      set(v) { this.setAttribute(attr, String(v == null ? '' : v)); },
-    });
-  }
-}
-// dataset Proxy: data-foo ↔ dataset.foo round-trip via attributes.
-if (!Object.getOwnPropertyDescriptor(ElementProto, 'dataset')) {
-  Object.defineProperty(ElementProto, 'dataset', {
-    get() {
-      const el = this;
-      return new Proxy({}, {
-        get(_t, key) {
-          if (typeof key !== 'string') return undefined;
-          const attr = 'data-' + key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
-          const v = el.getAttribute(attr);
-          return v == null ? undefined : v;
-        },
-        set(_t, key, value) {
-          if (typeof key !== 'string') return true;
-          const attr = 'data-' + key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
-          el.setAttribute(attr, String(value));
-          return true;
-        },
-      });
-    },
-  });
-}
-
-if (!ElementProto.addEventListener) {
-  ElementProto.addEventListener = function (type, fn) {
-    const map = this.__listeners__ || (this.__listeners__ = new Map());
-    if (!map.has(type)) map.set(type, new Set());
-    map.get(type).add(fn);
-  };
-  ElementProto.removeEventListener = function (type, fn) {
-    const map = this.__listeners__;
-    if (map && map.has(type)) map.get(type).delete(fn);
-  };
-  ElementProto.dispatchEvent = function (evt) {
-    const map = this.__listeners__;
-    if (!map || !map.has(evt.type)) return true;
-    for (const fn of map.get(evt.type)) {
-      try { fn.call(this, evt); } catch (_e) { /* swallow */ }
-    }
-    return !evt.defaultPrevented;
-  };
-}
-
-// Minimal Event-ish factories.
-function ev(type, init = {}) {
-  return Object.assign({
-    type,
-    defaultPrevented: false,
-    preventDefault() { this.defaultPrevented = true; },
-  }, init);
-}
+import { doc, ev } from './fixtures/dom-shim.js';
 
 const {
   pill,
@@ -147,6 +24,7 @@ const {
   updatePill,
   throttleLeadingTrailing,
   stationRow,
+  stationCard,
 } = await import('../app/components.js');
 
 // --- pill ------------------------------------------------------------
@@ -486,4 +364,61 @@ test('stationRow: falls back to sid for the name when name is missing', () => {
   const c = stationRow({ sid: 's42' });
   const nameEl = findFirstByClass(c, 'station-row__name');
   assert.equal(nameEl.textContent, 's42');
+});
+
+// --- stationRow href derivation (#86) -------------------------------
+//
+// Hard-coding `#/station/<sid>` produced dead links for `p` (show) and
+// `t` (topic) sids — the router only mounts the station view for `s`
+// sids. These tests pin the prefix-aware href on the primitive itself
+// so a regression at any call site (browse-drill, search, show-landing
+// row, etc.) shows up here instead of as a silent 404 in the SPA.
+
+test('stationRow href: s-prefix sid routes to the station detail view', () => {
+  const c = stationRow({ sid: 's12345', name: 'KEXP' });
+  assert.equal(c.getAttribute('href'), '#/station/s12345');
+});
+
+test('stationRow href: p-prefix sid routes to c=pbrowse show landing', () => {
+  // c=pbrowse triggers the show-landing dispatch in browse.js (#84),
+  // which renders the Describe-driven show card. Without it the bare
+  // id falls into the generic drill and the show metadata never shows.
+  const c = stationRow({ sid: 'p73', name: 'Jazz at Lincoln Center' });
+  assert.equal(c.getAttribute('href'), '#/browse?c=pbrowse&id=p73');
+});
+
+test('stationRow href: t-prefix sid routes to the bare-id browse drill', () => {
+  const c = stationRow({ sid: 't9999', name: 'Some Topic' });
+  assert.equal(c.getAttribute('href'), '#/browse?id=t9999');
+});
+
+test('stationRow href: unknown prefix collapses to "#"', () => {
+  const c = stationRow({ sid: 'g42', name: 'Genre row' });
+  assert.equal(c.getAttribute('href'), '#');
+});
+
+test('stationRow href: empty / missing sid collapses to "#"', () => {
+  const empty = stationRow({ name: 'no id' });
+  assert.equal(empty.getAttribute('href'), '#');
+  const blank = stationRow({ sid: '', name: 'blank' });
+  assert.equal(blank.getAttribute('href'), '#');
+  const tooShort = stationRow({ sid: 's', name: 'just prefix' });
+  assert.equal(tooShort.getAttribute('href'), '#');
+});
+
+// stationCard mirrors stationRow's href derivation so a future caller
+// passing a `p`/`t` sid through the card variant doesn't dead-end.
+test('stationCard href: s-prefix sid routes to the station detail view', () => {
+  const c = stationCard({ sid: 's12345', name: 'KEXP' });
+  assert.equal(c.getAttribute('href'), '#/station/s12345');
+});
+
+test('stationCard href: p-prefix sid routes to c=pbrowse show landing', () => {
+  const c = stationCard({ sid: 'p73', name: 'Show' });
+  assert.equal(c.getAttribute('href'), '#/browse?c=pbrowse&id=p73');
+});
+
+test('stationCard href: unknown prefix collapses to "#"', () => {
+  const c = stationCard({ sid: 'g42', name: 'Genre card' });
+  assert.equal(c.getAttribute('href'), '#');
 });

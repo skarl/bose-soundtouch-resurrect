@@ -59,27 +59,35 @@ export const store = observable({
   },
   caches: {
     probe:          new Map(),               // sid → Probe = {sid, verdict, tuneinJson, expires} — TTL 10 min
-    recentlyViewed: [],                      // [{sid, name, art?}], in-memory only
   },
   // recentEvents is a 50-entry FIFO ring of inbound WS frames (raw text +
   // root tag), surfaced by the System settings section as a debug log.
   ws: { connected: false, mode: 'offline', lastEvent: null, recentEvents: [] },
-  ui: { toast: null, testPlaying: null, activeTab: 'now' },
+  ui: {
+    toast: null,
+    testPlaying: null,
+    activeTab: 'now',
+    // Station detail pages the admin user has opened, most-recent
+    // first. UX scaffolding for the search empty state — distinct from
+    // state.speaker.recents (the speaker's own play history). Lives
+    // under .ui so the structural distinction is unmistakable.
+    visitedStations: [],                     // [{sid, name, art?}], in-memory only
+  },
 });
 
-// Prepend an entry to state.caches.recentlyViewed, dedupe by sid, cap
-// at RECENT_MAX, and notify 'caches' subscribers. Station view calls
-// this on entry; search empty state reads the array.
-export function addRecentlyViewed({ sid, name, art }) {
+// Prepend an entry to state.ui.visitedStations, dedupe by sid, cap at
+// RECENT_MAX, and notify 'ui' subscribers. Station view calls this on
+// entry; search empty state reads the array.
+export function addVisitedStation({ sid, name, art }) {
   if (typeof sid !== 'string' || !sid) return;
   if (typeof name !== 'string' || !name) return;
   const entry = { sid, name };
   if (typeof art === 'string' && art) entry.art = art;
 
-  const current = store.state.caches.recentlyViewed || [];
+  const current = store.state.ui.visitedStations || [];
   const deduped = current.filter((e) => e.sid !== sid);
   const next = [entry, ...deduped].slice(0, RECENT_MAX);
 
-  store.state.caches.recentlyViewed = next;
-  store.touch('caches');
+  store.state.ui.visitedStations = next;
+  store.touch('ui');
 }

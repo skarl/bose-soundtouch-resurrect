@@ -1,0 +1,43 @@
+{
+  "head": {
+    "title": "Folk",
+    "status": "200"
+  },
+  "body": [
+    {
+      "element": "outline",
+      "text": "Explore Folk",
+      "key": "related",
+      "children": [
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "Most Popular",
+          "URL": "http://opml.radiotime.com/Browse.ashx?id=c100000948&filter=s:popular",
+          "key": "popular"
+        },
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "By Location",
+          "URL": "http://opml.radiotime.com/Browse.ashx?id=c100000948&pivot=country&filter=s",
+          "key": "pivotLocation"
+        },
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "By Name",
+          "URL": "http://opml.radiotime.com/Browse.ashx?id=c100000948&pivot=name&filter=s",
+          "key": "pivotName"
+        },
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "Bluegrass",
+          "URL": "http://opml.radiotime.com/Browse.ashx?id=g133",
+          "guide_id": "g133"
+        }
+      ]
+    }
+  ]
+}

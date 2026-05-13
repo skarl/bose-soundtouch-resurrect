@@ -1,0 +1,102 @@
+{
+  "head": {
+    "title": "More Stations - Folk",
+    "status": "200"
+  },
+  "body": [
+    {
+      "element": "outline",
+      "type": "audio",
+      "text": "Gigant FM (Netherlands)",
+      "URL": "http://opml.radiotime.com/Tune.ashx?id=s54615&filter=s",
+      "bitrate": "192",
+      "reliability": "82",
+      "guide_id": "s54615",
+      "subtext": "Re-ranked from page 1 — dedup must drop this copy.",
+      "genre_id": "g3075",
+      "formats": "mp3",
+      "item": "station",
+      "image": "http://cdn-profiles.tunein.com/s54615/images/logoq.png?t=157347",
+      "now_playing_id": "s54615",
+      "preset_id": "s54615"
+    },
+    {
+      "element": "outline",
+      "type": "audio",
+      "text": "Carnaval Radio (Maastricht, Netherlands)",
+      "URL": "http://opml.radiotime.com/Tune.ashx?id=s150125&filter=s",
+      "bitrate": "192",
+      "reliability": "100",
+      "guide_id": "s150125",
+      "subtext": "Re-ranked from page 1 — second dedup overlap.",
+      "genre_id": "g79",
+      "formats": "mp3",
+      "item": "station",
+      "image": "http://cdn-profiles.tunein.com/s150125/images/logoq.png?t=1",
+      "now_playing_id": "s150125",
+      "preset_id": "s150125"
+    },
+    {
+      "element": "outline",
+      "type": "audio",
+      "text": "Folk-Page-2 Unique A",
+      "URL": "http://opml.radiotime.com/Tune.ashx?id=s900001&filter=s",
+      "bitrate": "128",
+      "reliability": "98",
+      "guide_id": "s900001",
+      "subtext": "Page 2 fresh row",
+      "genre_id": "g79",
+      "formats": "mp3",
+      "item": "station",
+      "image": "http://cdn-profiles.tunein.com/s900001/images/logoq.png?t=1",
+      "now_playing_id": "s900001",
+      "preset_id": "s900001"
+    },
+    {
+      "element": "outline",
+      "type": "audio",
+      "text": "Folk-Page-2 Unique B",
+      "URL": "http://opml.radiotime.com/Tune.ashx?id=s900002&filter=s",
+      "bitrate": "128",
+      "reliability": "97",
+      "guide_id": "s900002",
+      "subtext": "Page 2 fresh row",
+      "genre_id": "g79",
+      "formats": "mp3",
+      "item": "station",
+      "image": "http://cdn-profiles.tunein.com/s900002/images/logoq.png?t=1",
+      "now_playing_id": "s900002",
+      "preset_id": "s900002"
+    },
+    {
+      "element": "outline",
+      "type": "audio",
+      "text": "Folk-Page-2 Unique C",
+      "URL": "http://opml.radiotime.com/Tune.ashx?id=s900003&filter=s",
+      "bitrate": "96",
+      "reliability": "100",
+      "guide_id": "s900003",
+      "subtext": "Page 2 fresh row",
+      "genre_id": "g79",
+      "formats": "mp3",
+      "item": "station",
+      "image": "http://cdn-profiles.tunein.com/s900003/images/logoq.png?t=1",
+      "now_playing_id": "s900003",
+      "preset_id": "s900003"
+    },
+    {
+      "element": "outline",
+      "type": "link",
+      "text": "More Stations",
+      "URL": "http://opml.radiotime.com/Browse.ashx?offset=78&id=c100000948&filter=s",
+      "key": "nextStations"
+    },
+    {
+      "element": "outline",
+      "type": "link",
+      "text": "Find by Name",
+      "URL": "http://opml.radiotime.com/Browse.ashx?pivot=name&id=c100000948&filter=s",
+      "key": "pivotName"
+    }
+  ]
+}

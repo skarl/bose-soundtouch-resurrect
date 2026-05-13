@@ -54,3 +54,13 @@ venv/
 # Dev-only: admin/test/ uses @xmldom/xmldom for fixture-driven WS tests.
 # Lockfile is committed; node_modules is reinstallable via `npm ci`.
 node_modules/
+
+# --- Playwright e2e suite (admin/e2e/) -------------------------------
+
+# The e2e suite under admin/e2e/ is a sub-package; its node_modules and
+# generated artefacts must never be committed. The suite itself
+# (specs, config, fixtures, README, package.json) IS committed.
+admin/e2e/node_modules/
+admin/e2e/test-results/
+admin/e2e/playwright-report/
+admin/e2e/.playwright/

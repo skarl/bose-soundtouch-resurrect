@@ -11,61 +11,81 @@
 
 import { html, mount, defineView } from '../dom.js';
 import { store } from '../state.js';
-import { speakerNowPlaying, presetsList } from '../api.js';
+import { speakerNowPlaying, presetsList, playGuideId, tuneinBrowse } from '../api.js';
 import { setArt } from '../art.js';
 import { hashHue } from '../tint.js';
 import * as actions from '../actions/index.js';
 import { equalizer, slider } from '../components.js';
+import { renderNowPlayingTitle } from '../np-title.js';
 import { icon } from '../icons.js';
 import { formatVolumeValueText, rovingFocus } from '../a11y.js';
+import {
+  transportPhase,
+  classifyPrevNext,
+  extractGuideIdFromLocation,
+  parentKey,
+  topicsKey,
+  topicNameKey,
+} from '../transport-state.js';
+import { cache, TTL_DRILL_HEAD } from '../tunein-cache.js';
+import { classifyOutline } from '../tunein-outline.js';
+import { showToast } from '../toast.js';
+import { pickTrackLine, pickMetaLine, humaniseSourceKey } from '../np-derive.js';
 
 const POLL_MS = 2000;
 const PRESET_SLOTS = 6;
 const LONG_PRESS_MS = 600;
 
+// Pull the ordered list of topic guide_ids out of a Browse(c=topics)
+// JSON body. The body shape is either a flat list of topic outlines
+// or a single section container with `children` — handle both so the
+// caller doesn't have to inspect the response. Filters to t-prefix
+// rows (the only ones the firmware can resolve as a topic stream).
+function extractTopicIds(json) {
+  const out = [];
+  const visit = (entry) => {
+    if (!entry || typeof entry !== 'object') return;
+    if (Array.isArray(entry.children)) {
+      for (const c of entry.children) visit(c);
+      return;
+    }
+    // Filter on classification (drops cursors, pivots, tombstones)
+    // AND on the t-prefix so a sibling station row in the same body
+    // doesn't poison the topics list.
+    const kind = classifyOutline(entry);
+    const gid = typeof entry.guide_id === 'string' ? entry.guide_id : '';
+    if (kind === 'topic' && /^t\d+$/.test(gid)) out.push(gid);
+  };
+  const body = json && Array.isArray(json.body) ? json.body : [];
+  for (const e of body) visit(e);
+  return out;
+}
+
+// #102: stash episode titles under tunein.topicname.<t<N>>. Same
+// traversal shape as extractTopicIds, isolated here so the search-
+// arrival path (lazyFetchTopicsList) gets the same priming the
+// browse-view drill already does.
+function cacheTopicNames(json) {
+  const visit = (entry) => {
+    if (!entry || typeof entry !== 'object') return;
+    if (Array.isArray(entry.children)) {
+      for (const c of entry.children) visit(c);
+      return;
+    }
+    const gid = typeof entry.guide_id === 'string' ? entry.guide_id : '';
+    if (!/^t\d+$/.test(gid)) return;
+    const text = typeof entry.text === 'string' ? entry.text.trim() : '';
+    if (text) cache.set(topicNameKey(gid), text, TTL_DRILL_HEAD);
+  };
+  const body = json && Array.isArray(json.body) ? json.body : [];
+  for (const e of body) visit(e);
+}
+
+// Thin shim so the existing renderName callsites stay one-arg. The
+// canonical helper lives in np-title.js and is shared with the shell
+// mini-player.
 function renderName(np) {
-  if (!np) return '';
-  return (np.item && np.item.name) || np.track || '';
-}
-
-// Deduplicate track vs artist vs station name (case-insensitive) and
-// join with em-dash. TuneIn streams often put the current song in
-// <artist> and the station tagline in <track> — render whatever is
-// distinct and non-empty.
-function pickTrackLine(np, stationName) {
-  if (!np) return '';
-  const norm = (s) => (typeof s === 'string' ? s.trim() : '');
-  const station = (stationName || '').toLowerCase();
-  const track  = norm(np.track);
-  const artist = norm(np.artist);
-  const useArtist = artist && artist.toLowerCase() !== station;
-  const useTrack  = track && track.toLowerCase() !== station
-                          && track.toLowerCase() !== artist.toLowerCase();
-  const parts = [];
-  if (useArtist) parts.push(artist);
-  if (useTrack)  parts.push(track);
-  return parts.join(' – ');
-}
-
-// "TUNEIN · 128 kbps · liveRadio" from the nowPlaying object.
-// Fields are absent on STANDBY / AUX; returns '' rather than dots.
-function pickMetaLine(np) {
-  if (!np) return '';
-  const parts = [];
-  if (np.source && np.source !== 'STANDBY') parts.push(np.source);
-  const type = np.item && np.item.type;
-  if (type) parts.push(type);
-  return parts.join(' · ');
-}
-
-// Title-case an UPPER_SNAKE source key when the parser didn't supply a
-// displayName (some firmware payloads ship empty <sourceItem> bodies).
-function humaniseSourceKey(key) {
-  return String(key || '')
-    .toLowerCase()
-    .split('_')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ');
+  return renderNowPlayingTitle(np);
 }
 
 export default defineView({
@@ -88,7 +108,7 @@ export default defineView({
         <div class="np-card">
           <div class="np-card__top">
             <div class="np-art-wrap">
-              <img class="np-art" alt="">
+              <img class="np-art" alt="" loading="lazy">
             </div>
             <div class="np-body">
               <div class="np-text">
@@ -175,13 +195,48 @@ export default defineView({
     const presetBtns = [];
 
     function syncPlayBtn(np) {
-      const playing = np && np.playStatus === 'PLAY_STATE';
-      const next = playing ? icon('pause', 16) : icon('play', 16);
+      const phase = transportPhase(np);
+      // Glyph + label per phase. Buffering is its own glyph so the
+      // visual reads as "in flight" rather than a third "Play" state
+      // (the most common bug from the pre-#88 logic). The CSS pulse
+      // on data-phase="buffering" is what carries the motion.
+      let glyphName;
+      let title;
+      if (phase === 'playing')        { glyphName = 'pause';  title = 'Pause'; }
+      else if (phase === 'buffering') { glyphName = 'buffer'; title = 'Buffering…'; }
+      else                            { glyphName = 'play';   title = 'Play'; }
+      const next = icon(glyphName, 16);
       btnPlay.replaceChild(next, playIconRef.node);
       playIconRef.node = next;
-      btnPlay.title = playing ? 'Pause' : 'Play';
-      btnPlay.setAttribute('aria-label', playing ? 'Pause' : 'Play');
-      btnPlay.dataset.playing = playing ? '1' : '';
+      btnPlay.title = title;
+      btnPlay.setAttribute('aria-label', title);
+      btnPlay.dataset.playing = phase === 'playing' ? '1' : '';
+      btnPlay.dataset.phase = phase;
+      // aria-busy doubles for the screen-reader signal on buffering.
+      if (phase === 'buffering') btnPlay.setAttribute('aria-busy', 'true');
+      else                       btnPlay.removeAttribute('aria-busy');
+    }
+
+    function syncPrevNext(np) {
+      const guideId = extractGuideIdFromLocation(np?.item?.location);
+      let ctx = {};
+      if (guideId && guideId.charAt(0) === 't') {
+        const parent = cache.get(parentKey(guideId));
+        if (parent) {
+          const siblings = cache.get(topicsKey(parent));
+          ctx = {
+            parentShowId: parent,
+            siblings: Array.isArray(siblings) ? siblings : [],
+          };
+        }
+      }
+      const { prev, next, mode } = classifyPrevNext(np, ctx);
+      btnPrev.disabled = !prev;
+      btnNext.disabled = !next;
+      // Mark the row mode so click handlers can branch on it without
+      // re-classifying. Useful for tests too.
+      btnPrev.dataset.transportMode = mode;
+      btnNext.dataset.transportMode = mode;
     }
 
     function applyVolume(vol) {
@@ -206,12 +261,18 @@ export default defineView({
     }
 
     function applyNowPlaying(np) {
-      const standby = np && np.source === 'STANDBY';
+      const standby = np?.source === 'STANDBY';
       cardEl.hidden     = standby;
       asleepEl.hidden   = !standby;
       // Transport sits inside the card now; hiding the card hides it.
 
-      eqEl.setPlaying(!!(np && np.playStatus === 'PLAY_STATE'));
+      eqEl.setPlaying(np?.playStatus === 'PLAY_STATE');
+
+      // Always sync the transport classifier — even in STANDBY the
+      // buttons need their `disabled` attribute set correctly so
+      // keyboard tabs through a hidden card don't reach a live button.
+      syncPlayBtn(np);
+      syncPrevNext(np);
 
       if (standby) return;
 
@@ -225,8 +286,6 @@ export default defineView({
       const artUrl = np && typeof np.art === 'string' && np.art.startsWith('http')
         ? np.art : '';
       setArt(artEl, artUrl, name);
-
-      syncPlayBtn(np);
     }
 
     // Mutate only the DOM nodes for slots that changed. Compare previous
@@ -287,8 +346,9 @@ export default defineView({
       try {
         await actions.playPreset(Number(slot));
       } catch (_err) {
-        // Non-fatal — the next nowPlayingUpdated / nowSelectionUpdated
-        // will confirm or deny the switch.
+        // Rollback + error toast are owned by actions.playPreset; the
+        // throw is rethrown for observability but the UI has already
+        // self-corrected by the time we get here.
       }
     }
 
@@ -431,12 +491,16 @@ export default defineView({
       try {
         await actions.selectSource(src);
       } catch (_err) {
-        // Switch errors are non-fatal — the source pill state will
-        // self-correct when the next nowPlaying update arrives.
+        // Rollback + error toast are owned by actions.selectSource; the
+        // throw is rethrown for observability but the UI has already
+        // self-corrected by the time we get here.
       }
     }
 
     let keyInFlight = false;
+    // Topic-skip in-flight guard — separate from keyInFlight so a
+    // pressKey path doesn't block /play and vice versa.
+    let skipInFlight = false;
 
     async function sendKey(key) {
       if (keyInFlight) return;
@@ -448,11 +512,128 @@ export default defineView({
       }
     }
 
-    function onPrev()  { sendKey('PREV_TRACK'); }
-    function onNext()  { sendKey('NEXT_TRACK'); }
+    // resolve a topic id to a human label out of the cached topics
+    // list. The list itself stores ids only by default, but we also
+    // #102: Resolve the episode title for a /play call's `name` field.
+    // Source priority:
+    //   1. `tunein.topicname.<t<N>>` — primed by the browse view + the
+    //      lazy fetcher below; this is the canonical resolved title.
+    //   2. The firmware's own <itemName> if it's already on this topic
+    //      AND that name isn't itself the raw guide_id (defending
+    //      against a stale state written by an earlier sid-fallback).
+    // Falls back to the topic id as a last resort: #99 makes `name`
+    // structurally required on playGuideId, so we always return a
+    // string. The fallback is the known c9d8396 degrade (itemName
+    // surfaces the sid); the topic-name primer in the browse drill +
+    // the lazy fetcher below populate the cache so the fallback fires
+    // only on a never-drilled, never-fetched topic — vanishingly rare
+    // in practice.
+    function labelForTopic(topicId) {
+      const cached = cache.get(topicNameKey(topicId));
+      if (typeof cached === 'string' && cached) return cached;
+      const np = store.state.speaker.nowPlaying;
+      const location = np?.item?.location ?? null;
+      const itemName = np?.item?.name ?? null;
+      if (location
+          && extractGuideIdFromLocation(location) === topicId
+          && itemName
+          && itemName !== topicId) {
+        return itemName;
+      }
+      return topicId;
+    }
+
+    // Fan-out: lazy-fetch the topics list for `parentId` when it isn't
+    // already cached. Used by the Prev/Next path when the user arrived
+    // at a topic via search (no drill context). Idempotent — the cache
+    // entry survives until TTL_DRILL_HEAD expires.
+    async function lazyFetchTopicsList(parentId) {
+      const key = topicsKey(parentId);
+      const cached = cache.get(key);
+      if (Array.isArray(cached)) return cached;
+      try {
+        const body = await tuneinBrowse({ c: 'topics', id: parentId });
+        const ids = extractTopicIds(body);
+        // #102: lift episode titles from the same body into the
+        // tunein.topicname.<t<N>> cache so the next Prev/Next can ship
+        // `name` to /play. The browse view's primer already does this
+        // on drill; this branch covers the search-arrival path.
+        cacheTopicNames(body);
+        if (ids.length >= 2) {
+          cache.set(key, ids, TTL_DRILL_HEAD);
+          return ids;
+        }
+        // Cache the empty / 1-entry result too so we don't refetch on
+        // every click, but flag the buttons as disabled by writing a
+        // sentinel (the classifier rejects length < 2 anyway).
+        cache.set(key, ids, TTL_DRILL_HEAD);
+        return ids;
+      } catch (_err) {
+        return [];
+      }
+    }
+
+    function onPrev() { onSkip('prev'); }
+    function onNext() { onSkip('next'); }
+
+    async function onSkip(direction) {
+      const btn = direction === 'prev' ? btnPrev : btnNext;
+      if (btn.disabled) return;
+      if (skipInFlight) return;
+
+      const np = store.state.speaker.nowPlaying;
+      const guideId = extractGuideIdFromLocation(np?.item?.location ?? null);
+      const isTopic = guideId && guideId.charAt(0) === 't';
+
+      if (!isTopic) {
+        // Firmware-key path (BLUETOOTH, BoseMusic, UPnP, ...).
+        sendKey(direction === 'prev' ? 'PREV_TRACK' : 'NEXT_TRACK');
+        return;
+      }
+
+      // Topic-list path — the classifier already confirmed parent +
+      // siblings ≥ 2 + a valid neighbour, but a long-dwelling tab can
+      // race a cache TTL expiry. Re-read and re-classify before the
+      // POST.
+      const parent = cache.get(parentKey(guideId));
+      let siblings = parent ? cache.get(topicsKey(parent)) : null;
+      if (parent && !Array.isArray(siblings)) {
+        siblings = await lazyFetchTopicsList(parent);
+      }
+      const { prev: prevOK, next: nextOK, prevId, nextId } = classifyPrevNext(np, {
+        parentShowId: parent,
+        siblings: Array.isArray(siblings) ? siblings : [],
+      });
+      const targetId = direction === 'prev' ? prevId : nextId;
+      const ok = direction === 'prev' ? prevOK : nextOK;
+      if (!ok || !targetId) {
+        // The cache moved out from under us — refresh button state and
+        // bail. The next /now_playing sync will re-paint.
+        syncPrevNext(np);
+        return;
+      }
+
+      skipInFlight = true;
+      try {
+        const result = await playGuideId(targetId, labelForTopic(targetId));
+        if (!result || !result.ok) {
+          showToast('Could not skip episode');
+        }
+      } catch (_err) {
+        showToast('Could not reach Bo');
+      } finally {
+        skipInFlight = false;
+      }
+    }
+
     function onPlayPause() {
       const np = store.state.speaker.nowPlaying;
-      const playing = np && np.playStatus === 'PLAY_STATE';
+      const phase = transportPhase(np);
+      // Re-entrancy guard — never send PLAY/PAUSE while the speaker is
+      // still buffering. The CSS already neutralises pointer events on
+      // the button, but the JS guard catches keyboard activation too.
+      if (phase === 'buffering') return;
+      const playing = phase === 'playing';
       sendKey(playing ? 'PAUSE' : 'PLAY');
     }
 

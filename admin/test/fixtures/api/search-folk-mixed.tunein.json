@@ -1,0 +1,66 @@
+{
+  "head": {
+    "title": "Search Results for 'folk'",
+    "status": "200"
+  },
+  "body": [
+    {
+      "element": "outline",
+      "type": "audio",
+      "text": "Folk Alley",
+      "URL": "http://opml.radiotime.com/Tune.ashx?id=s11111",
+      "bitrate": "192",
+      "reliability": "98",
+      "guide_id": "s11111",
+      "subtext": "Kent, OH",
+      "genre_id": "g79",
+      "formats": "mp3",
+      "item": "station",
+      "image": "http://cdn-profiles.tunein.com/s11111/images/logoq.png?t=1",
+      "now_playing_id": "s11111",
+      "preset_id": "s11111"
+    },
+    {
+      "element": "outline",
+      "type": "link",
+      "text": "Folk Alley Sessions",
+      "URL": "http://opml.radiotime.com/Browse.ashx?id=p38913",
+      "guide_id": "p38913",
+      "subtext": "Live folk sessions and interviews",
+      "item": "show",
+      "image": "http://cdn-profiles.tunein.com/p38913/images/logoq.jpg?t=1"
+    },
+    {
+      "element": "outline",
+      "type": "link",
+      "text": "Folk Music Talk",
+      "URL": "http://opml.radiotime.com/Browse.ashx?id=t22222",
+      "guide_id": "t22222",
+      "subtext": "A topic feed for folk lovers",
+      "item": "topic",
+      "image": "http://cdn-profiles.tunein.com/t22222/images/logoq.jpg?t=1"
+    },
+    {
+      "element": "outline",
+      "type": "link",
+      "text": "Joan Baez",
+      "URL": "http://opml.radiotime.com/Browse.ashx?id=m33333",
+      "guide_id": "m33333",
+      "subtext": "Folk singer-songwriter",
+      "image": "http://cdn-profiles.tunein.com/m33333/images/logoq.jpg?t=1"
+    },
+    {
+      "element": "outline",
+      "type": "audio",
+      "text": "Geo-blocked Folk FM",
+      "URL": "http://opml.radiotime.com/Tune.ashx?id=s99999",
+      "bitrate": "96",
+      "guide_id": "s99999",
+      "subtext": "Region-locked",
+      "formats": "mp3",
+      "item": "station",
+      "unavailable": "Not available in your region",
+      "image": "http://cdn-profiles.tunein.com/s99999/images/logoq.jpg?t=1"
+    }
+  ]
+}

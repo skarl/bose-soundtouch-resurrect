@@ -1,136 +1,107 @@
-// WebSocket lifecycle module. Public surface: connect(store), disconnect().
-// Owns the WebSocket lifecycle, backoff, polling fallback, and top-level
-// XML routing. Per-field fetch/parse/apply logic lives in speaker-state.js.
+// WebSocket driver. Public surface: connect(store), disconnect().
+//
+// Owns the WebSocket, the reconnect/polling timers, the visibility
+// listener, the inbound envelope router (XML root tag branch + per-child
+// speakerDispatch), and the recent-events ring buffer. Pure connection
+// state-machine logic lives in ws-fsm.js — this file executes the
+// action lists that step() emits. Speaker-button-press toasts live in
+// speaker-button-watcher.js.
+//
 // See admin/PLAN.md § Live updates and § State management.
-//
-// Connection state machine:
-//
-//     +-------------+   open + hello   +-----------+
-//     | connecting  | ---------------> | connected |
-//     +-------------+                  +-----------+
-//            ^                               |
-//            |                               | close
-//            | backoff timer                 v
-//     +-------------+    next close    +-----------+
-//     | reconnecting| <--------------- |  polling  |
-//     +-------------+   (still down)   +-----------+
-//
-// Edges:
-//   connecting  -> connected     SoundTouchSdkInfo hello frame received
-//   connected   -> reconnecting  socket close (first consecutive fail)
-//   reconnecting-> connecting    backoff timer fires
-//   reconnecting-> polling       second+ consecutive close
-//   polling     -> connected     hello frame on a later reconnect attempt
 
-import { reconcile, dispatch as speakerDispatch, ledgerKindForEventTag } from './speaker-state.js';
+import { reconcile, dispatch as speakerDispatch } from './speaker-state.js';
 import { showToast } from './toast.js';
-import { wasRecent } from './actions/index.js';
-
-const SOURCE_KIND = ledgerKindForEventTag('sourcesUpdated');
-const VOLUME_KIND = ledgerKindForEventTag('volumeUpdated');
+import * as fsm from './ws-fsm.js';
+import * as buttonWatcher from './speaker-button-watcher.js';
 
 const PRESETS_TOAST_GAP_MS = 1500;
-const VOL_TOAST_COOLDOWN   = 1500;
 
-function makeConnectionState() {
+function makeDriver() {
   return {
     socket:             null,
     userInitiatedClose: false,
-    attempt:            0,
-    consecutiveFails:   0,
     reconnectTimer:     null,
     pollInterval:       null,
     storeRef:           null,
     visibilityBound:    false,
-    speakerWatchBound:  false,
-  };
-}
-
-function makeButtonWatch() {
-  return {
-    prevPlayStatus:     null,
-    prevSource:         null,
-    prevVolume:         null,
-    volToastTs:         0,
+    fsmState:           fsm.initialState(),
     lastPresetsToastAt: 0,
   };
 }
 
-let conn  = makeConnectionState();
-let watch = makeButtonWatch();
+let drv = makeDriver();
 
-// --- Backoff sequencer ----------------------------------------------
+// Re-export for callers that referenced ws.js directly.
+export const backoff = fsm.backoff;
 
-// Exponential backoff with full jitter. baseline = min(30000, 500 * 2^attempt).
-// Jitter selects uniformly from [0, baseline), keeping reconnect storms
-// at bay when many tabs wake up simultaneously.
-export function backoff(attempt) {
-  const baseline = Math.min(30000, 500 * Math.pow(2, attempt));
-  return Math.random() * baseline;
+// --- Action executor ------------------------------------------------
+
+function runActions(actions) {
+  for (const action of actions) {
+    switch (action.type) {
+      case 'startPolling':       doStartPolling(); break;
+      case 'stopPolling':        doStopPolling(); break;
+      case 'scheduleReconnect':  doScheduleReconnect(action.ms); break;
+      case 'cancelReconnect':    doCancelReconnect(); break;
+      case 'reconcile':          if (drv.storeRef) reconcile(drv.storeRef); break;
+      case 'openSocket':         openSocket(); break;
+      case 'closeSocket':        doCloseSocket(); break;
+      default: break;
+    }
+  }
 }
 
-function watchSpeakerButtons(store) {
-  store.subscribe('speaker', (state) => {
-    const np  = state.speaker.nowPlaying;
-    const vol = state.speaker.volume;
+function dispatchEvent(event) {
+  const { state, actions } = fsm.step(drv.fsmState, event);
+  drv.fsmState = state;
+  syncStoreMode();
+  runActions(actions);
+}
 
-    // --- play/pause change ---
-    const ps = np && np.playStatus;
-    if (ps !== watch.prevPlayStatus) {
-      if (watch.prevPlayStatus !== null && (ps === 'PLAY_STATE' || ps === 'PAUSE_STATE')) {
-        if (!wasRecent('transport')) {
-          showToast('Play/Pause pressed on speaker');
-        }
-      }
-      watch.prevPlayStatus = ps;
-    }
-
-    // --- source / selection change ---
-    // Use source + item location as a compound key to distinguish preset changes.
-    const sourceKey = np && np.source && np.source !== 'STANDBY'
-      ? `${np.source}:${(np.item && np.item.location) || ''}`
-      : null;
-    if (sourceKey !== null && sourceKey !== watch.prevSource) {
-      if (watch.prevSource !== null && !wasRecent(SOURCE_KIND) && !wasRecent('preset')) {
-        showToast('Source switched on speaker');
-      }
-      watch.prevSource = sourceKey;
-    } else if (sourceKey !== null) {
-      watch.prevSource = sourceKey;
-    }
-
-    // --- volume change ---
-    const av = vol && vol.actualVolume;
-    if (typeof av === 'number' && av !== watch.prevVolume) {
-      if (watch.prevVolume !== null && !wasRecent(VOLUME_KIND)) {
-        const delta = Math.abs(av - watch.prevVolume);
-        if (delta > 1) {
-          const now = Date.now();
-          if (now - watch.volToastTs > VOL_TOAST_COOLDOWN) {
-            showToast('Volume changed on speaker');
-            watch.volToastTs = now;
-          }
-        }
-      }
-      watch.prevVolume = av;
-    }
-  });
+function syncStoreMode() {
+  const store = drv.storeRef;
+  if (!store || !store.state || !store.state.ws) return;
+  const mode = drv.fsmState.mode;
+  const connected = mode === 'connected';
+  // Mode strings the UI uses: 'connecting' | 'ws' | 'reconnecting' | 'polling'.
+  store.state.ws.mode = mode === 'connected' ? 'ws' : mode;
+  store.state.ws.connected = connected;
+  store.touch('ws');
 }
 
 // --- Polling fallback -----------------------------------------------
 
-function startPolling() {
-  if (conn.pollInterval != null) return;
-  conn.pollInterval = setInterval(() => reconcile(conn.storeRef), 2000);
+function doStartPolling() {
+  if (drv.pollInterval != null) return;
+  drv.pollInterval = setInterval(() => {
+    if (drv.storeRef) reconcile(drv.storeRef);
+  }, 2000);
 }
 
-function stopPolling() {
-  if (conn.pollInterval == null) return;
-  clearInterval(conn.pollInterval);
-  conn.pollInterval = null;
+function doStopPolling() {
+  if (drv.pollInterval == null) return;
+  clearInterval(drv.pollInterval);
+  drv.pollInterval = null;
 }
 
-// --- XML dispatch ---------------------------------------------------
+// --- Reconnect timer ------------------------------------------------
+
+function doScheduleReconnect(ms) {
+  doCancelReconnect();
+  drv.reconnectTimer = setTimeout(() => {
+    drv.reconnectTimer = null;
+    dispatchEvent({ type: 'timerFire' });
+  }, ms);
+}
+
+function doCancelReconnect() {
+  if (drv.reconnectTimer != null) {
+    clearTimeout(drv.reconnectTimer);
+    drv.reconnectTimer = null;
+  }
+}
+
+// --- Ring buffer ----------------------------------------------------
 
 // Cap of the state.ws.recentEvents ring buffer. The settings/system WS
 // log surfaces these; anything older falls off the back.
@@ -150,6 +121,8 @@ export function pushRecentEvent(store, entry) {
   }
   if (typeof store.touch === 'function') store.touch('ws');
 }
+
+// --- XML dispatch ---------------------------------------------------
 
 // Dispatch a single parsed frame against the store state.
 // Exported so test_ws_dispatch.js can drive it without a live socket.
@@ -174,15 +147,11 @@ export function dispatch(xmlText, store) {
   const tag = root.tagName;
 
   if (tag === 'SoundTouchSdkInfo') {
-    // Hello frame received — WS is live. Reset reconnect counters,
-    // stop polling, and refetch state the speaker didn't replay.
-    conn.attempt = 0;
-    conn.consecutiveFails = 0;
-    stopPolling();
-    store.state.ws.connected = true;
-    store.state.ws.mode = 'ws';
-    store.touch('ws');
-    reconcile(store);
+    // Hello frame received — WS is live. The FSM transitions us to
+    // 'connected' and emits stopPolling + reconcile. Bind the store
+    // so callers that drive dispatch() directly (tests) get the mirror.
+    if (!drv.storeRef) drv.storeRef = store;
+    dispatchEvent({ type: 'hello' });
     return;
   }
 
@@ -210,8 +179,8 @@ export function dispatch(xmlText, store) {
 
       if (child.tagName === 'presetsUpdated') {
         const now = Date.now();
-        if (now - watch.lastPresetsToastAt >= PRESETS_TOAST_GAP_MS) {
-          watch.lastPresetsToastAt = now;
+        if (now - drv.lastPresetsToastAt >= PRESETS_TOAST_GAP_MS) {
+          drv.lastPresetsToastAt = now;
           showToast('Presets changed');
         }
       }
@@ -246,113 +215,84 @@ function parseXml(text) {
 
 function onVisibilityChange() {
   if (typeof document === 'undefined') return;
-  if (document.hidden) {
-    // Cancel pending reconnect and REST polling while hidden.
-    // Don't close a live socket — it may still deliver events on resume.
-    if (conn.reconnectTimer != null) {
-      clearTimeout(conn.reconnectTimer);
-      conn.reconnectTimer = null;
-    }
-    stopPolling();
-  } else {
-    // Tab became visible again.
-    if (conn.storeRef && conn.storeRef.state.ws.connected) {
-      // WS is still alive — events resume automatically.
-    } else {
-      // WS dropped while hidden (or never connected). Retry immediately.
-      conn.attempt = 0;
-      connect(conn.storeRef);
-    }
-  }
+  dispatchEvent({ type: 'visibilityChange', hidden: !!document.hidden });
 }
 
 function bindVisibility() {
-  if (conn.visibilityBound) return;
+  if (drv.visibilityBound) return;
   if (typeof document === 'undefined') return;
   document.addEventListener('visibilitychange', onVisibilityChange);
-  conn.visibilityBound = true;
+  drv.visibilityBound = true;
 }
 
 function unbindVisibility() {
-  if (!conn.visibilityBound) return;
+  if (!drv.visibilityBound) return;
   if (typeof document === 'undefined') return;
   document.removeEventListener('visibilitychange', onVisibilityChange);
-  conn.visibilityBound = false;
+  drv.visibilityBound = false;
 }
 
 // --- Socket lifecycle -----------------------------------------------
 
-export function connect(store) {
-  if (conn.socket) return;
-  if (!store) return;
-
-  conn.storeRef = store;
-  if (!conn.speakerWatchBound) {
-    watchSpeakerButtons(store);
-    conn.speakerWatchBound = true;
-  }
-  bindVisibility();
+function openSocket() {
+  if (drv.socket) return;
+  if (!drv.storeRef) return;
+  const store = drv.storeRef;
 
   const url = `ws://${location.hostname}:8080/`;
-  conn.socket = new WebSocket(url, 'gabbo');
+  drv.socket = new WebSocket(url, 'gabbo');
 
+  // Driver-side store mirror: FSM mode might be 'connecting' or
+  // 'reconnecting' here; either way we're not connected yet.
   store.state.ws.connected = false;
-  store.state.ws.mode = 'connecting';
   store.touch('ws');
 
-  conn.socket.addEventListener('message', (evt) => {
+  drv.socket.addEventListener('open', () => {
+    dispatchEvent({ type: 'open' });
+  });
+
+  drv.socket.addEventListener('message', (evt) => {
     dispatch(evt.data, store);
   });
 
-  conn.socket.addEventListener('close', () => {
-    conn.socket = null;
-    if (conn.userInitiatedClose) {
-      conn.userInitiatedClose = false;
+  drv.socket.addEventListener('close', () => {
+    drv.socket = null;
+    if (drv.userInitiatedClose) {
+      drv.userInitiatedClose = false;
       return;
     }
-
-    store.state.ws.connected = false;
-    conn.consecutiveFails += 1;
-
-    // First close → reconnecting; subsequent → polling (with continued polling).
-    if (conn.consecutiveFails === 1) {
-      store.state.ws.mode = 'reconnecting';
-    } else {
-      store.state.ws.mode = 'polling';
-    }
-    store.touch('ws');
-
-    // Start REST polling on first drop and keep it running.
-    if (typeof document === 'undefined' || !document.hidden) {
-      startPolling();
-    }
-
-    // Schedule reconnect unless the tab is hidden.
-    if (typeof document === 'undefined' || !document.hidden) {
-      const delay = backoff(conn.attempt);
-      conn.attempt += 1;
-      conn.reconnectTimer = setTimeout(() => {
-        conn.reconnectTimer = null;
-        connect(store);
-      }, delay);
-    }
+    dispatchEvent({ type: 'close' });
   });
 
-  conn.socket.addEventListener('error', () => {
+  drv.socket.addEventListener('error', () => {
     // 'error' is always followed by 'close', which drives reconnect logic.
   });
 }
 
-export function disconnect() {
-  if (conn.reconnectTimer != null) {
-    clearTimeout(conn.reconnectTimer);
-  }
-  stopPolling();
-  unbindVisibility();
-  const socket = conn.socket;
-  conn  = makeConnectionState();
-  watch = makeButtonWatch();
+function doCloseSocket() {
+  const socket = drv.socket;
+  drv.socket = null;
   if (!socket) return;
-  conn.userInitiatedClose = true;
-  socket.close();
+  drv.userInitiatedClose = true;
+  try { socket.close(); } catch (_err) { /* noop */ }
+}
+
+export function connect(store) {
+  if (drv.socket) return;
+  if (!store) return;
+
+  drv.storeRef = store;
+  drv.fsmState = fsm.initialState();
+  buttonWatcher.attach(store);
+  bindVisibility();
+
+  syncStoreMode();
+  openSocket();
+}
+
+export function disconnect() {
+  dispatchEvent({ type: 'userDisconnect' });
+  unbindVisibility();
+  buttonWatcher.detach();
+  drv = makeDriver();
 }

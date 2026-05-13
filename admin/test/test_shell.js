@@ -9,166 +9,9 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 
-import { DOMImplementation } from '@xmldom/xmldom';
+import { doc, ev, installWindowAndLocation } from './fixtures/dom-shim.js';
 
-// --- DOM shim --------------------------------------------------------
-
-const doc = new DOMImplementation().createDocument(null, null, null);
-if (!doc.querySelector) {
-  doc.querySelector = (sel) => {
-    const all = doc.getElementsByTagName('*');
-    for (let i = 0; i < all.length; i++) {
-      const el = all.item(i);
-      if (sel.startsWith('.')) {
-        const cls = sel.slice(1);
-        const have = (el.getAttribute('class') || '').split(/\s+/);
-        if (have.includes(cls)) return el;
-      }
-    }
-    return null;
-  };
-}
-if (!doc.documentElement) {
-  const html = doc.createElement('html');
-  doc.appendChild(html);
-}
-if (!doc.documentElement.dataset) {
-  doc.documentElement.dataset = {};
-}
-globalThis.document = doc;
-
-const _sample = doc.createElement('span');
-const ElementProto = Object.getPrototypeOf(_sample);
-
-if (!ElementProto.classList) {
-  Object.defineProperty(ElementProto, 'classList', {
-    get() {
-      const el = this;
-      return {
-        add(...names) {
-          const cur = (el.getAttribute('class') || '').split(/\s+/).filter(Boolean);
-          for (const n of names) if (!cur.includes(n)) cur.push(n);
-          el.setAttribute('class', cur.join(' '));
-        },
-        remove(...names) {
-          const cur = (el.getAttribute('class') || '').split(/\s+/).filter(Boolean);
-          el.setAttribute('class', cur.filter((c) => !names.includes(c)).join(' '));
-        },
-        contains(name) {
-          return (el.getAttribute('class') || '').split(/\s+/).includes(name);
-        },
-        toggle(name, force) {
-          const has = this.contains(name);
-          const want = force == null ? !has : !!force;
-          if (want && !has) this.add(name);
-          else if (!want && has) this.remove(name);
-          return want;
-        },
-      };
-    },
-  });
-}
-
-if (!ElementProto.addEventListener) {
-  ElementProto.addEventListener = function (type, fn) {
-    const map = this.__listeners__ || (this.__listeners__ = new Map());
-    if (!map.has(type)) map.set(type, new Set());
-    map.get(type).add(fn);
-  };
-  ElementProto.removeEventListener = function (type, fn) {
-    const map = this.__listeners__;
-    if (map && map.has(type)) map.get(type).delete(fn);
-  };
-  ElementProto.dispatchEvent = function (evt) {
-    const map = this.__listeners__;
-    if (!map || !map.has(evt.type)) return true;
-    for (const fn of map.get(evt.type)) {
-      try { fn.call(this, evt); } catch (_e) { /* swallow */ }
-    }
-    return !evt.defaultPrevented;
-  };
-}
-
-if (!('hidden' in ElementProto)) {
-  Object.defineProperty(ElementProto, 'hidden', {
-    get() { return this.getAttribute('hidden') != null; },
-    set(v) {
-      if (v) this.setAttribute('hidden', '');
-      else   this.removeAttribute('hidden');
-    },
-  });
-}
-
-if (!ElementProto.replaceChildren) {
-  ElementProto.replaceChildren = function (...nodes) {
-    while (this.firstChild) this.removeChild(this.firstChild);
-    for (const n of nodes) {
-      if (n == null) continue;
-      this.appendChild(n);
-    }
-  };
-}
-
-// xmldom omits .className — back it with the `class` attribute so
-// imperative `el.className = 'foo'` round-trips through getAttribute.
-if (!Object.getOwnPropertyDescriptor(ElementProto, 'className')) {
-  Object.defineProperty(ElementProto, 'className', {
-    get() { return this.getAttribute('class') || ''; },
-    set(v) { this.setAttribute('class', String(v)); },
-  });
-}
-
-// xmldom omits Element.dataset. Back it with data-* attributes so
-// reads round-trip through getAttribute and writes via setAttribute.
-if (!Object.getOwnPropertyDescriptor(ElementProto, 'dataset')) {
-  Object.defineProperty(ElementProto, 'dataset', {
-    get() {
-      const el = this;
-      return new Proxy({}, {
-        get(_t, key) {
-          if (typeof key !== 'string') return undefined;
-          const attr = 'data-' + key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
-          const v = el.getAttribute(attr);
-          return v == null ? undefined : v;
-        },
-        set(_t, key, value) {
-          if (typeof key !== 'string') return true;
-          const attr = 'data-' + key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
-          el.setAttribute(attr, String(value));
-          return true;
-        },
-      });
-    },
-  });
-}
-
-function ev(type, init = {}) {
-  return Object.assign({
-    type,
-    defaultPrevented: false,
-    preventDefault() { this.defaultPrevented = true; },
-    stopPropagation() {},
-  }, init);
-}
-
-// Window/location stub for hash-based tests. shell.js reads
-// location.hash and addEventListener('hashchange').
-const winListeners = new Map();
-globalThis.window = {
-  addEventListener(type, fn) {
-    if (!winListeners.has(type)) winListeners.set(type, new Set());
-    winListeners.get(type).add(fn);
-  },
-  removeEventListener(type, fn) {
-    if (winListeners.has(type)) winListeners.get(type).delete(fn);
-  },
-};
-globalThis.location = { hash: '#/' };
-function fireHashChange(nextHash) {
-  globalThis.location.hash = nextHash;
-  const set = winListeners.get('hashchange');
-  if (set) for (const fn of set) fn();
-}
+const { fireHashChange } = installWindowAndLocation('#/');
 
 // --- pure helpers ---------------------------------------------------
 
@@ -503,4 +346,145 @@ test('index.html: mini and tabs come after body in DOM order (mobile pin)', asyn
   const idxTabs = html.indexOf('class="shell-tabs"');
   assert.ok(idxBody > 0 && idxMini > idxBody, 'mini after body');
   assert.ok(idxTabs > idxMini, 'tabs after mini');
+});
+
+// --- mini-player buffering glyph (#88) -----------------------------
+
+function findMiniPlayBtn() {
+  // The .shell-mini contains two <button> elements — body wrapper + play.
+  // The play button is the one carrying the 'shell-mini__play' class.
+  const mini = doc.querySelector('.shell-mini');
+  const buttons = mini.getElementsByTagName('button');
+  for (let i = 0; i < buttons.length; i++) {
+    const b = buttons.item(i);
+    if ((b.getAttribute('class') || '').includes('shell-mini__play')) return b;
+  }
+  return null;
+}
+
+test('mini-player: BUFFERING_STATE renders the buffer glyph + data-phase', async () => {
+  setupShellDOM();
+  globalThis.location.hash = '#/browse';
+  const store = makeStore({
+    speaker: {
+      info: null,
+      nowPlaying: {
+        source: 'TUNEIN',
+        item: { name: 'Fresh Air', location: '/v1/playback/station/p17' },
+        playStatus: 'BUFFERING_STATE',
+      },
+    },
+    ws: { mode: 'ws' },
+    ui: { activeTab: 'now' },
+    caches: {},
+  });
+  const { mountShell } = await import('../app/shell.js');
+  mountShell(store);
+
+  const playBtn = findMiniPlayBtn();
+  assert.ok(playBtn, 'play button exists');
+  assert.equal(playBtn.getAttribute('data-phase'), 'buffering',
+    'data-phase="buffering" surfaces on the play control');
+  assert.equal(playBtn.getAttribute('aria-busy'), 'true',
+    'aria-busy is set for SR users');
+  // Glyph is the 3-dot buffer icon — its child contains three <circle>s.
+  const svg = playBtn.getElementsByTagName('svg').item(0);
+  assert.ok(svg, 'svg glyph mounted');
+  assert.equal(svg.getElementsByTagName('circle').length, 3,
+    'buffer glyph renders three dots');
+});
+
+test('mini-player: PLAY_STATE renders pause glyph (data-phase=playing)', async () => {
+  setupShellDOM();
+  globalThis.location.hash = '#/browse';
+  const store = makeStore({
+    speaker: {
+      info: null,
+      nowPlaying: {
+        source: 'TUNEIN',
+        item: { name: 'KEXP', location: '/v1/playback/station/s12345' },
+        playStatus: 'PLAY_STATE',
+      },
+    },
+    ws: { mode: 'ws' },
+    ui: { activeTab: 'now' },
+    caches: {},
+  });
+  const { mountShell } = await import('../app/shell.js');
+  mountShell(store);
+
+  const playBtn = findMiniPlayBtn();
+  assert.equal(playBtn.getAttribute('data-phase'), 'playing');
+  assert.equal(playBtn.getAttribute('aria-label'), 'Pause');
+  assert.equal(playBtn.getAttribute('aria-busy'), null,
+    'aria-busy cleared in playing phase');
+  // pause glyph has two <rect>s.
+  const svg = playBtn.getElementsByTagName('svg').item(0);
+  assert.equal(svg.getElementsByTagName('rect').length, 2);
+});
+
+test('mini-player: STOP_STATE with no item → idle play glyph', async () => {
+  setupShellDOM();
+  globalThis.location.hash = '#/browse';
+  const store = makeStore({
+    speaker: {
+      info: null,
+      nowPlaying: {
+        source: 'TUNEIN',
+        item: { name: '', location: '' },
+        playStatus: 'STOP_STATE',
+      },
+    },
+    ws: { mode: 'ws' },
+    ui: { activeTab: 'now' },
+    caches: {},
+  });
+  const { mountShell } = await import('../app/shell.js');
+  mountShell(store);
+
+  const playBtn = findMiniPlayBtn();
+  assert.equal(playBtn.getAttribute('data-phase'), 'idle');
+  assert.equal(playBtn.getAttribute('aria-label'), 'Play');
+});
+
+test('mini-player: tap on buffering control is a no-op (re-entrancy guard)', async () => {
+  setupShellDOM();
+  globalThis.location.hash = '#/browse';
+
+  // Stub fetch — any PRESS that escapes will hit this and increment calls.
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, opts) => {
+    calls.push(String(opts && opts.body));
+    return { ok: true, status: 200 };
+  };
+
+  try {
+    const store = makeStore({
+      speaker: {
+        info: null,
+        nowPlaying: {
+          source: 'TUNEIN',
+          item: { name: 'Fresh Air', location: '/v1/playback/station/p17' },
+          playStatus: 'BUFFERING_STATE',
+        },
+      },
+      ws: { mode: 'ws' },
+      ui: { activeTab: 'now' },
+      caches: {},
+    });
+    const { mountShell } = await import('../app/shell.js');
+    mountShell(store);
+
+    const playBtn = findMiniPlayBtn();
+    playBtn.dispatchEvent(ev('click'));
+    // Give the press/release await chain a beat — should fire nothing.
+    await new Promise((r) => setTimeout(r, 10));
+
+    const playPauseHits = calls.filter((b) => /PLAY|PAUSE/.test(b));
+    assert.equal(playPauseHits.length, 0,
+      `tap on buffering control must not emit a PLAY/PAUSE key, got ${JSON.stringify(playPauseHits)}`);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

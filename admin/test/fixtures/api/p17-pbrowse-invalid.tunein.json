@@ -1,0 +1,7 @@
+{
+  "head": {
+    "status": "400",
+    "fault": "Invalid root category"
+  },
+  "body": []
+}

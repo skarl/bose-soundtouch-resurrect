@@ -1,0 +1,225 @@
+#!/bin/sh
+#
+# play — ephemeral playback endpoint. Resolves a TuneIn guide_id to a
+# live stream URL and tells Bo to /select it. Used by the inline Play
+# icon in browse / search lists for ad-hoc "play this on Bo" actions.
+#
+# Body (JSON):
+#   { "id": "<guide_id>" }
+#   { "id": "<guide_id>", "url": "<pre-resolved-stream-url>" }
+#   { "id": "<guide_id>", "name": "<resolved-label>" }
+# guide_id matches s|p|t<digits>. When `url` is supplied (e.g. cached
+# by the client from a recent /play of the same id) the CGI skips its
+# own Tune.ashx roundtrip but still applies the placeholder filter and
+# still POSTs /select. When `name` is supplied the CGI uses it as the
+# <itemName> on /select AND as the per-station JSON's `name` field —
+# without it the mini-player surfaces the raw guide_id (see #78).
+#
+# Returns (since 0.4.2):
+#   { "ok": true, "url": "<resolved-or-supplied-url>" } on success
+#   { "ok": false, "error": { "code": "OFF_AIR", "message": "..." } }
+#     on Tune.ashx nostream placeholder
+#   { "ok": false, "error": { "code": "NOT_AVAILABLE", "message": "..." } }
+#     on Tune.ashx notcompatible placeholder
+#   { "ok": false, "error": { "code": "<SHOUTY>", "message": "..." } }
+#     other failures (TUNE_FAILED, NO_STREAM, INVALID_ID, ...)
+#
+# Pre-0.4.2 callers saw a flat `{ok, error:"<kebab>"}` envelope; the
+# SPA's cgiErrorMessage() helper transparently absorbs both shapes so
+# the legacy string form still resolves to a usable toast during the
+# rollout window.
+#
+# Architecture note — relationship to /preview:
+#
+# Both /play and /preview are adapters at the same conceptual seam
+# (give Bo something to play). The split is *persistence intent*:
+#   - /preview commits a chosen stream as the next press of a preset.
+#     Caller supplies the full Bose JSON; CGI ALWAYS overwrites the
+#     per-station resolver entry atomically (its name says so).
+#   - /play is ephemeral: caller supplies only the guide_id, CGI does
+#     its own Tune.ashx lookup, picks the first usable stream, and
+#     plays it WITHOUT clobbering an existing resolver entry. If a
+#     preset already holds the per-station JSON, the firmware uses
+#     that JSON (which has the rich name/art the user set). If not,
+#     /play stages a minimal JSON that lives until the next /play of
+#     the same id replaces it; no preset state is ever overwritten.
+#
+# The Bose firmware on this hardware (SoundTouch 10) routes TUNEIN
+# content through margeServer using `location=/v1/playback/station/<id>`;
+# the resolver tree at that path must hold the per-station Bose JSON
+# for the firmware to find the stream URL. There is no firmware path
+# that takes a raw stream URL inline for a TUNEIN ContentItem, so the
+# resolver path is the only viable mechanism. /play minimises the
+# write surface: it only touches the resolver when no entry exists
+# for the id yet, so preset JSONs (with their hand-curated names) are
+# preserved across ad-hoc plays.
+#
+# busybox-shell only — no bash-isms. Uses /usr/bin/curl for both the
+# Tune.ashx GET and the /select POST (busybox wget is GET-only).
+
+set -u
+
+# shellcheck source=../../lib/playback.sh
+. "$(dirname "$0")/../../lib/playback.sh"
+
+TUNEIN_BASE='http://opml.radiotime.com'
+MAGIC_TUNE='formats=mp3,aac&lang=de-de&render=json'
+UA='Bose_Lisa/27.0.6'
+
+emit_ok_url() {
+    pb_url=$(json_escape "$1")
+    emit_ok_headers 'POST, OPTIONS'
+    printf '{"ok":true,"url":"%s"}\n' "$pb_url"
+}
+
+# CORS preflight — answer and exit before any work.
+if handle_cors_preflight 'POST, OPTIONS'; then exit 0; fi
+
+case "${REQUEST_METHOD:-GET}" in
+    POST) ;;
+    *)
+        emit_error '405 Method Not Allowed' METHOD_NOT_ALLOWED \
+            'POST only'
+        exit 0
+        ;;
+esac
+
+# Same Origin+Referer guard as the speaker CGI.
+csrf_guard || exit 0
+
+# Slurp the request body to a tempfile.
+body_file="$PLAYBACK_TMPDIR/play.$$.body"
+trap 'rm -f "$body_file" "$body_file.tune" "$body_file.json.tmp" "$body_file.sp.resp"' EXIT INT TERM
+slurp_body "$body_file"
+
+body_id=$(json_string_field id <"$body_file")
+body_url=$(json_string_field url <"$body_file")
+body_name=$(json_string_field name <"$body_file")
+
+# Resolved station name takes precedence over the guide_id. Without it
+# the Bose firmware uses whatever we put in <itemName> as the persistent
+# now-playing label, which surfaces in the mini-player + now-playing
+# view. Fall back to the guide_id so a caller that forgets the field
+# still gets a non-empty itemName.
+display_name=${body_name:-$body_id}
+
+# Validate id — must be s|p|t-prefixed digits (station / show / topic).
+case "$body_id" in
+    s[0-9]*|p[0-9]*|t[0-9]*) ;;
+    *)
+        emit_error '400 Bad Request' INVALID_ID \
+            'id must match ^[spt][0-9]+$'
+        exit 0
+        ;;
+esac
+
+# Resolve via Tune.ashx unless the caller supplied a cached URL.
+# Skipping the resolve roundtrip is the whole point of the client-side
+# tunein.stream.<guide_id> cache; the placeholder filter still runs
+# below so a stale cached entry can never select a tombstone.
+if [ -n "$body_url" ]; then
+    first_url="$body_url"
+else
+    tune_url="$TUNEIN_BASE/Tune.ashx?$MAGIC_TUNE&id=$body_id"
+    tune_file="$body_file.tune"
+    tune_status=$(/usr/bin/curl -s -o "$tune_file" -w '%{http_code}' \
+        -A "$UA" "$tune_url")
+
+    if [ -z "$tune_status" ] || [ "$tune_status" = "000" ] || [ "$tune_status" -ge 400 ] 2>/dev/null; then
+        emit_error '502 Bad Gateway' TUNE_FAILED \
+            "Tune.ashx returned HTTP $tune_status"
+        exit 0
+    fi
+
+    # Pluck the first `"url": "..."` value. The body is a JSON array of
+    # stream entries ordered by reliability; the first usable one wins.
+    # busybox has no jq, so hand-roll the parse.
+    first_url=$(sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        <"$tune_file" | head -n 1)
+
+    if [ -z "$first_url" ]; then
+        emit_error '502 Bad Gateway' NO_STREAM \
+            'Tune.ashx response contained no stream URL'
+        exit 0
+    fi
+fi
+
+# Defence-in-depth: filter the two known placeholder URLs at the CGI
+# even though the admin caches resolved URLs separately. nostream is
+# the station-is-off-air signal; notcompatible is the geo/partner gate.
+# These are 200 OK with ok:false (not a transport failure) so the
+# admin can render a useful toast without retrying.
+case "$first_url" in
+    *nostream.enUS.mp3*)
+        emit_error '200 OK' OFF_AIR \
+            'station is off-air right now'
+        exit 0
+        ;;
+    *notcompatible.enUS.mp3*)
+        emit_error '200 OK' NOT_AVAILABLE \
+            'stream not available in this region'
+        exit 0
+        ;;
+esac
+
+# Stage a minimal per-station Bose JSON ONLY if the resolver doesn't
+# already have one. Preset entries (with hand-curated names + art)
+# survive untouched; first-time ad-hoc plays of unknown ids get a
+# minimal entry that satisfies the firmware lookup. The JSON shape is
+# the same one resolver/build.py:make_bose emits, minus the metadata
+# fields we don't have here (imageUrl, isFavorite, rich name).
+target="$PLAYBACK_RESOLVER_DIR/$body_id"
+if [ ! -f "$target" ]; then
+    url_esc=$(json_escape "$first_url")
+    name_for_json=$(json_escape "$display_name")
+    tmp="$body_file.json.tmp"
+    {
+        printf '{"_links":{'
+        printf '"bmx_reporting":{"href":"/v1/report?stream_id=e0&guide_id=%s&listen_id=0&stream_type=liveRadio"},' "$body_id"
+        printf '"bmx_favorite":{"href":"/v1/favorite/%s"},' "$body_id"
+        printf '"bmx_nowplaying":{"href":"/v1/now-playing/station/%s","useInternalClient":"ALWAYS"}' "$body_id"
+        printf '},"audio":{'
+        printf '"hasPlaylist":true,"isRealtime":true,"maxTimeout":60,'
+        printf '"streamUrl":"%s",' "$url_esc"
+        printf '"streams":[{"bufferingTimeout":20,"connectingTimeout":10,"hasPlaylist":true,"isRealtime":true,"streamUrl":"%s","maxTimeout":60}]' "$url_esc"
+        printf '},"imageUrl":"","isFavorite":false,'
+        printf '"name":"%s",' "$name_for_json"
+        printf '"streamType":"liveRadio"}'
+    } >"$tmp" || {
+        emit_error '500 Internal Server Error' WRITE_FAILED \
+            "couldn't write resolver JSON"
+        exit 0
+    }
+
+    mkdir -p "$PLAYBACK_RESOLVER_DIR" 2>/dev/null
+    mv "$tmp" "$target" || {
+        emit_error '500 Internal Server Error' RENAME_FAILED \
+            "couldn't move resolver JSON into place"
+        exit 0
+    }
+fi
+
+# Compose the ContentItem and POST to /select. The firmware resolves
+# `location` to margeServer, fetches the JSON we just wrote, and tunes
+# to streamUrl. <itemName> here is the resolved station name — the
+# firmware uses it for the persistent now-playing label that surfaces
+# in the mini-player + now-playing view. Falls back to the guide_id
+# only when the caller didn't supply a name.
+name_xml=$(xml_escape "$display_name")
+sp_body=$(build_content_item "$body_id" "$name_xml")
+
+sp_resp_file="$body_file.sp.resp"
+sp_status=$(select_post "$sp_body" "$sp_resp_file")
+
+if select_failed_check "$sp_status" "$sp_resp_file"; then
+    if [ "$sp_status" = "000" ] || [ -z "$sp_status" ]; then
+        emit_error '502 Bad Gateway' SELECT_FAILED \
+            "speaker /select did not respond"
+    else
+        emit_error '502 Bad Gateway' SELECT_REJECTED \
+            "speaker rejected /select (HTTP $sp_status)"
+    fi
+    exit 0
+fi
+
+emit_ok_url "$first_url"

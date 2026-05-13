@@ -11,6 +11,11 @@ import { icon } from './icons.js';
 import { setArt } from './art.js';
 import * as actions from './actions/index.js';
 import * as theme from './theme.js';
+import { transportPhase } from './transport-state.js';
+import { renderNowPlayingTitle } from './np-title.js';
+import { onUpstreamFailure } from './api.js';
+import { reconcile } from './speaker-state.js';
+import { mountSpeakerUnreachable } from './speaker-unreachable.js';
 
 // --- pill state computation ----------------------------------------
 
@@ -24,12 +29,12 @@ const WS_DEGRADED_STATES = {
 };
 
 export function computePillState(state) {
-  const mode = (state && state.ws && state.ws.mode) || 'offline';
+  const mode = state?.ws?.mode || 'offline';
   if (mode !== 'ws') return WS_DEGRADED_STATES[mode] || WS_DEGRADED_STATES.offline;
 
-  const np = state && state.speaker && state.speaker.nowPlaying;
-  if (np && np.source === 'STANDBY') return { tone: 'ok',   text: 'standby' };
-  if (np && np.playStatus === 'PLAY_STATE') return { tone: 'live', text: 'live' };
+  const np = state?.speaker?.nowPlaying;
+  if (np?.source === 'STANDBY') return { tone: 'ok',   text: 'standby' };
+  if (np?.playStatus === 'PLAY_STATE') return { tone: 'live', text: 'live' };
   return { tone: 'ok', text: 'paused' };
 }
 
@@ -170,8 +175,7 @@ function renderRail(railEl, store) {
   function applyPill() {
     const next = computePillState(store.state);
     pillEl.update({ tone: next.tone, text: next.text, pulse: next.tone === 'live' });
-    const np = store.state.speaker.nowPlaying;
-    const standby = np && np.source === 'STANDBY';
+    const standby = store.state.speaker.nowPlaying?.source === 'STANDBY';
     powerBtn.title = standby ? 'Wake' : 'Sleep';
     powerBtn.setAttribute('aria-label', standby ? 'Wake speaker' : 'Send speaker to standby');
     powerBtn.dataset.standby = standby ? 'true' : 'false';
@@ -224,8 +228,7 @@ function renderHeader(headerEl, store) {
   function applyPill() {
     const next = computePillState(store.state);
     pillEl.update({ tone: next.tone, text: next.text, pulse: next.tone === 'live' });
-    const np = store.state.speaker.nowPlaying;
-    const standby = np && np.source === 'STANDBY';
+    const standby = store.state.speaker.nowPlaying?.source === 'STANDBY';
     powerBtn.title = standby ? 'Wake' : 'Sleep';
     powerBtn.setAttribute('aria-label', standby ? 'Wake speaker' : 'Send speaker to standby');
     powerBtn.dataset.standby = standby ? 'true' : 'false';
@@ -326,13 +329,19 @@ function renderMini(miniEl, store) {
       return;
     }
     const np = store.state.speaker.nowPlaying;
-    const playing = np && np.playStatus === 'PLAY_STATE';
+    const phase = transportPhase(np);
+    // Re-entrancy guard — never fire PLAY/PAUSE while the speaker is
+    // still buffering. The CSS already neutralises pointer events on
+    // .shell-mini__play[data-phase="buffering"], but the JS guard
+    // catches keyboard activation too.
+    if (phase === 'buffering') return;
+    const playing = phase === 'playing';
     actions.pressKey(playing ? 'PAUSE' : 'PLAY').catch(() => {});
   });
 
   function applyContent() {
     const np = store.state.speaker.nowPlaying;
-    isStandby = !!(np && np.source === 'STANDBY');
+    isStandby = np?.source === 'STANDBY';
 
     if (isStandby) {
       title.textContent = 'Speaker asleep';
@@ -340,20 +349,34 @@ function renderMini(miniEl, store) {
       setArt(img, '', '');
       playBtn.setAttribute('aria-label', 'Wake speaker');
       playBtn.replaceChildren(icon('play', 22));
+      playBtn.removeAttribute('data-phase');
+      playBtn.removeAttribute('aria-busy');
       return;
     }
 
-    const itemName = (np && np.item && np.item.name) || np?.track || '';
-    const artist   = (np && np.artist) || '';
+    const itemName = renderNowPlayingTitle(np);
+    const artist   = np?.artist || '';
     title.textContent = itemName || 'Idle';
     subtitle.textContent = artist;
 
-    const url = np && typeof np.art === 'string' && np.art.startsWith('http') ? np.art : '';
+    const url = typeof np?.art === 'string' && np.art.startsWith('http') ? np.art : '';
     setArt(img, url, itemName);
 
-    const playing = np && np.playStatus === 'PLAY_STATE';
-    playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
-    playBtn.replaceChildren(icon(playing ? 'pause' : 'play', 22));
+    // Phase-aware glyph + a11y label. transportPhase folds STANDBY,
+    // PLAY/PAUSE, and the long buffering tail into a single classifier
+    // so this surface and the now-playing main button paint the same
+    // way (see admin/app/transport-state.js).
+    const phase = transportPhase(np);
+    let glyphName;
+    let label;
+    if (phase === 'playing')        { glyphName = 'pause';  label = 'Pause'; }
+    else if (phase === 'buffering') { glyphName = 'buffer'; label = 'Buffering'; }
+    else                            { glyphName = 'play';   label = 'Play'; }
+    playBtn.setAttribute('aria-label', label);
+    playBtn.replaceChildren(icon(glyphName, 22));
+    playBtn.dataset.phase = phase;
+    if (phase === 'buffering') playBtn.setAttribute('aria-busy', 'true');
+    else                       playBtn.removeAttribute('aria-busy');
   }
 
   function applyVisibility() {
@@ -390,6 +413,16 @@ export function mountShell(store) {
   renderTabs(tabsEl, store);
   renderMini(miniEl, store);
   if (railEl) renderRail(railEl, store);
+
+  // Blocking error overlay for the "speaker on port 8090 unreachable"
+  // failure mode. Subscribes to api.js's upstream-failure observable;
+  // the overlay auto-clears on the next successful speaker-proxy call
+  // and the Retry button kicks off a reconcile() so the user can prod
+  // the speaker without waiting for the next WS frame or REST poll.
+  mountSpeakerUnreachable({
+    onFailure: onUpstreamFailure,
+    onRetry: () => reconcile(store),
+  });
 
   return bodyEl;
 }
