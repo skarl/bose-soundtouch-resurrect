@@ -379,14 +379,37 @@ export function confirm(message, options = {}) {
   });
 }
 
+// hrefForSid — derive the row/card anchor href from the TuneIn guide_id
+// prefix. The router only mounts the station detail view for `s` sids
+// (preset assignment + probe live there); `p` (show) and `t` (topic) sids
+// resolve through Browse.ashx, so their natural detail page is the
+// browse drill at #/browse?id=<sid>. Anything else — missing sid,
+// unknown prefix — collapses to "#" (an explicit no-op anchor) rather
+// than emitting a route that would 404. Closing this seam in the row
+// primitive itself catches every call site at once; the alternative
+// (override-at-each-caller) is exactly what regressed in #86.
+function hrefForSid(sid) {
+  if (typeof sid !== 'string' || sid.length < 2) return '#';
+  const enc = encodeURIComponent(sid);
+  switch (sid.charAt(0)) {
+    case 's': return `#/station/${enc}`;
+    case 'p': return `#/browse?id=${enc}`;
+    case 't': return `#/browse?id=${enc}`;
+    default:  return '#';
+  }
+}
+
 // Build a clickable card for a TuneIn station. `sid` is the only
 // required field; everything else degrades gracefully when missing.
-// Clicking the card sets location.hash to #/station/<sid> via the
-// anchor's default behaviour (no JS handler needed).
+// Clicking the card sets location.hash to a route derived from the sid
+// prefix via hrefForSid — `s` → station detail, `p`/`t` → browse drill,
+// unknown → "#". The card primitive is currently only used by callers
+// passing `s` sids, but we route through hrefForSid for parity with
+// stationRow so a future caller passing a `p`/`t` sid doesn't dead-end.
 export function stationCard({ sid, name, art, location, format }) {
   const card = document.createElement('a');
   card.className = 'station-card';
-  card.href = `#/station/${encodeURIComponent(sid)}`;
+  card.href = hrefForSid(sid);
   card.dataset.sid = sid;
 
   const artBox = document.createElement('div');
@@ -464,7 +487,13 @@ export function stationRow({
 } = {}) {
   const row = document.createElement('a');
   row.className = 'station-row';
-  row.href = `#/station/${encodeURIComponent(sid)}`;
+  // Per #86 — href is derived from the sid prefix. The previous
+  // hard-coded `#/station/<sid>` produced silent dead links whenever a
+  // caller passed a `p` or `t` sid (the show-self card on the show
+  // landing was the live offender). Routing through hrefForSid closes
+  // that class of bug at the primitive: every caller now gets the right
+  // detail page for free, with `#` as the explicit no-op fallback.
+  row.href = hrefForSid(sid);
   row.dataset.sid = sid;
 
   row.appendChild(stationArt({ url: art, name: name || sid, size: 40 }));
