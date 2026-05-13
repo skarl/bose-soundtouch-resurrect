@@ -48,9 +48,15 @@ export const test = base.extend({
     });
 
     page.on('requestfailed', (r) => {
-      const detail = `${r.method()} ${r.url()} — ${r.failure()?.errorText}`;
+      const url = r.url();
+      const detail = `${r.method()} ${url} — ${r.failure()?.errorText}`;
       console.log(`  [fail] ${detail}`);
-      requestFails.push(detail);
+      // The standard listener block scopes "network failure" to the
+      // CGI surface; navigation-aborted image loads from
+      // cdn-*.tunein.com are not the SPA's responsibility and
+      // misfire the assertion on any drill-into-drill test. Match the
+      // README's "/cgi-bin/" scope.
+      if (url.includes('/cgi-bin/')) requestFails.push(detail);
     });
 
     await use(page);
