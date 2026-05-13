@@ -424,6 +424,7 @@ function renderDrill(root, parts, crumbs) {
   loadInto(body, tuneinBrowse(parts), frame.headerCount, {
     titleEl: frame.titleEl,
     crumbToken: frame.currentToken,
+    trailEl: frame.trailEl,
   });
 }
 
@@ -531,6 +532,11 @@ function loadInto(body, promise, headerCount, head) {
       }
       if (head && head.crumbToken && title) {
         cache.set(`tunein.label.${head.crumbToken}`, title, TTL_LABEL);
+        // Also refresh the trail's current-crumb segment so the
+        // bolded tail matches the h1 (was rendering as the raw sid
+        // until Describe resolved). The patcher is a no-op when the
+        // trail isn't mounted.
+        if (head.trailEl) patchTrailCrumb(head.trailEl, head.crumbToken, title);
       }
       // Mount one pager + Load-more button per section that came back
       // with a cursor URL parked on it by renderSection / renderFlatSection.
