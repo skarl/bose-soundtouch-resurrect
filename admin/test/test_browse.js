@@ -1636,6 +1636,10 @@ test('#87 show landing hero: clicking Play calls playGuideId (mock) and toasts s
     assert.equal(calls[0].opts.method, 'POST');
     const payload = JSON.parse(calls[0].opts.body);
     assert.equal(payload.id, 'p17');
+    // #91 regression guard: hero Play must pass the resolved label
+    // (not the cached URL, not undefined) so <itemName> on /select
+    // shows the show name in the mini-player.
+    assert.equal(payload.name, 'Fresh Air');
 
     resolveFetch({
       ok: true,

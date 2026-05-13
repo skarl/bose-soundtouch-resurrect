@@ -21,7 +21,8 @@
 
 import { stationArt, isPlayableSid } from './components.js';
 import { canonicaliseBrowseUrl } from './tunein-url.js';
-import { cache, TTL_STREAM } from './tunein-cache.js';
+import { cache, TTL_STREAM, TTL_LABEL } from './tunein-cache.js';
+import { parentKey as tuneinParentKey, extractParentShowId } from './transport-state.js';
 import { playGuideId } from './api.js';
 import { showToast } from './toast.js';
 import { icon } from './icons.js';
@@ -153,11 +154,17 @@ function playButton(sid, label) {
     busy = true;
     btn.classList.add('is-loading');
 
+    if (typeof sid === 'string' && sid.charAt(0) === 't') {
+      const outline = btn.parentNode && btn.parentNode._outline;
+      const parent = outline ? extractParentShowId(outline) : null;
+      if (parent) cache.set(tuneinParentKey(sid), parent, TTL_LABEL);
+    }
+
     const cacheKey = `tunein.stream.${sid}`;
     const cached = cache.get(cacheKey);
 
     try {
-      const result = await playGuideId(sid, cached);
+      const result = await playGuideId(sid, label, cached);
       if (result && result.ok) {
         if (typeof result.url === 'string' && result.url) {
           cache.set(cacheKey, result.url, TTL_STREAM);
