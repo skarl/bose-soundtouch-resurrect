@@ -47,6 +47,65 @@ import {
 
 export const apiBase = '/cgi-bin/api/v1';
 
+// Default per-method timeouts. Reads stay short so REST polling can't
+// stall behind a hung GET; writes match the server-side `curl --max-time 10`
+// on /select so the client gives the speaker the full window the CGI
+// allows before giving up.
+export const DEFAULT_READ_TIMEOUT_MS = 5000;
+export const DEFAULT_WRITE_TIMEOUT_MS = 10000;
+
+// fetchWithTimeout — fetch() wrapped in an AbortController that fires
+// after `timeoutMs`. On timeout we throw a tagged Error (name
+// 'TimeoutError') so callers can distinguish a stalled speaker from a
+// real abort coming from the view's unmount signal.
+//
+// The timer is cleared in both the success and the failure path so a
+// long polling loop doesn't leak a setTimeout/AbortController pair per
+// request. If the caller passes their own AbortSignal via opts.signal,
+// we honour it: aborting that signal cancels the fetch and clears the
+// timeout the same as a natural completion.
+export async function fetchWithTimeout(url, opts, timeoutMs) {
+  const controller = new AbortController();
+  const externalSignal = opts && opts.signal;
+  const onExternalAbort = () => controller.abort();
+  if (externalSignal) {
+    if (externalSignal.aborted) controller.abort();
+    else externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+  }
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  try {
+    const merged = Object.assign({}, opts || {}, { signal: controller.signal });
+    return await fetch(url, merged);
+  } catch (err) {
+    if (timedOut) {
+      throw Object.assign(new Error(`${url} timed out after ${timeoutMs}ms`), {
+        name: 'TimeoutError',
+        url,
+        timeoutMs,
+      });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+  }
+}
+
+// Envelope-shape sentinel for the structured-error endpoints
+// (playGuideId / previewStream / presetsAssign). Matches the
+// `{ok:false, error:{code, message}}` schema introduced in #95 so
+// callers can treat a timeout the same as any other structured failure.
+function timeoutEnvelope() {
+  return {
+    ok: false,
+    error: { code: 'TIMEOUT', message: 'Speaker did not respond in time' },
+  };
+}
+
 // --- transport helpers ---------------------------------------------
 //
 // xmlGet / xmlPost are the single seam every speaker fetcher routes
@@ -55,22 +114,22 @@ export const apiBase = '/cgi-bin/api/v1';
 // one-line binding of `path` + `parser`.
 
 async function xmlGet(path, parser) {
-  const res = await fetch(`${apiBase}${path}`, {
+  const res = await fetchWithTimeout(`${apiBase}${path}`, {
     method: 'GET',
     headers: { Accept: 'application/xml, text/xml' },
     cache: 'no-store',
-  });
+  }, DEFAULT_READ_TIMEOUT_MS);
   if (!res.ok) throw new Error(`${path} failed: HTTP ${res.status}`);
   return parser(await res.text());
 }
 
 async function xmlPost(path, body) {
-  const res = await fetch(`${apiBase}${path}`, {
+  const res = await fetchWithTimeout(`${apiBase}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/xml' },
     body,
     cache: 'no-store',
-  });
+  }, DEFAULT_WRITE_TIMEOUT_MS);
   if (!res.ok) throw new Error(`${path} failed: HTTP ${res.status}`);
 }
 
@@ -81,10 +140,10 @@ async function xmlPost(path, body) {
 // app/reshape.js.
 
 async function getJson(path, opts) {
-  const res = await fetch(`${apiBase}${path}`, {
+  const res = await fetchWithTimeout(`${apiBase}${path}`, {
     headers: { Accept: 'application/json' },
     signal: opts && opts.signal,
-  });
+  }, DEFAULT_READ_TIMEOUT_MS);
   if (!res.ok) {
     throw new Error(`${path} failed: HTTP ${res.status}`);
   }
@@ -161,11 +220,11 @@ export { speakerNowPlaying as getNowPlaying };
 
 // GET /presets → { ok:true, data:[6 slots] } | { ok:false, error }
 export async function presetsList() {
-  const res = await fetch(`${apiBase}/presets`, {
+  const res = await fetchWithTimeout(`${apiBase}/presets`, {
     method: 'GET',
     headers: { Accept: 'application/json' },
     cache: 'no-store',
-  });
+  }, DEFAULT_READ_TIMEOUT_MS);
   // Even on 4xx/5xx the CGI emits a JSON envelope, so we parse rather
   // than treat HTTP status as the only signal.
   let body;
@@ -182,12 +241,18 @@ export async function presetsList() {
 // station-detail audition button so the user can hear the chosen
 // stream on Bo before committing it as a preset.
 export async function previewStream(payload) {
-  const res = await fetch(`${apiBase}/preview`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(payload),
-    cache: 'no-store',
-  });
+  let res;
+  try {
+    res = await fetchWithTimeout(`${apiBase}/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    }, DEFAULT_WRITE_TIMEOUT_MS);
+  } catch (err) {
+    if (err && err.name === 'TimeoutError') return timeoutEnvelope();
+    throw err;
+  }
   let body;
   try { body = await res.json(); }
   catch (err) { throw new Error(`previewStream: malformed response (HTTP ${res.status})`); }
@@ -231,12 +296,18 @@ export async function playGuideId(guideId, name, cachedUrl) {
   }
   const payload = { id: guideId, name };
   if (typeof cachedUrl === 'string' && cachedUrl) payload.url = cachedUrl;
-  const res = await fetch(`${apiBase}/play`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify(payload),
-    cache: 'no-store',
-  });
+  let res;
+  try {
+    res = await fetchWithTimeout(`${apiBase}/play`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    }, DEFAULT_WRITE_TIMEOUT_MS);
+  } catch (err) {
+    if (err && err.name === 'TimeoutError') return timeoutEnvelope();
+    throw err;
+  }
   let body;
   try { body = await res.json(); }
   catch (err) { throw new Error(`playGuideId: malformed response (HTTP ${res.status})`); }
@@ -497,15 +568,21 @@ export function getListMediaServers() {
 // Slot is 1..6; payload must include matching `slot` and `kind:"playable"`
 // (the CGI rejects anything else with a structured error).
 export async function presetsAssign(slot, payload) {
-  const res = await fetch(`${apiBase}/presets/${encodeURIComponent(slot)}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify(payload),
-    cache: 'no-store',
-  });
+  let res;
+  try {
+    res = await fetchWithTimeout(`${apiBase}/presets/${encodeURIComponent(slot)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    }, DEFAULT_WRITE_TIMEOUT_MS);
+  } catch (err) {
+    if (err && err.name === 'TimeoutError') return timeoutEnvelope();
+    throw err;
+  }
   let body;
   try {
     body = await res.json();
@@ -523,11 +600,11 @@ export async function presetsAssign(slot, payload) {
 // Transport errors throw; structured `{ok:false, error}` envelopes
 // resolve normally.
 export async function postRefreshAll() {
-  const res = await fetch(`${apiBase}/refresh-all`, {
+  const res = await fetchWithTimeout(`${apiBase}/refresh-all`, {
     method: 'POST',
     headers: { Accept: 'application/json' },
     cache: 'no-store',
-  });
+  }, DEFAULT_WRITE_TIMEOUT_MS);
   let body;
   try {
     body = await res.json();
