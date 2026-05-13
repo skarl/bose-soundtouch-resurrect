@@ -106,6 +106,73 @@ function timeoutEnvelope() {
   };
 }
 
+// --- upstream-failure observable ------------------------------------
+//
+// Every speaker-proxy fetcher routes through this seam: TimeoutError
+// from fetchWithTimeout, UPSTREAM_UNREACHABLE envelopes from the speaker
+// CGI (HTTP 502 with `{ok:false,error:{code:'UPSTREAM_UNREACHABLE'}}`),
+// and the TIMEOUT envelope returned by playGuideId/previewStream/
+// presetsAssign all surface as a `failure` notification. Any successful
+// speaker-proxy call (HTTP 2xx with no error envelope) surfaces as a
+// `success` notification so the blocking-error overlay in shell.js can
+// auto-dismiss on the next WS frame or REST poll.
+//
+// The contract is intentionally small: one listener list, two helpers
+// (notifyUpstreamFailure / notifyUpstreamSuccess), and a subscribe API
+// that returns an unsubscribe function. TuneIn fetchers (tuneinSearch
+// etc.) deliberately do NOT signal, because their failure mode is
+// orthogonal to "speaker on port 8090 is asleep" — and the blocking
+// overlay should only fire on the latter.
+
+const upstreamListeners = new Set();
+
+// Listener signature: ({ kind: 'failure'|'success', reason?: 'UPSTREAM_UNREACHABLE'|'TIMEOUT' }) => void
+export function onUpstreamFailure(listener) {
+  upstreamListeners.add(listener);
+  return () => upstreamListeners.delete(listener);
+}
+
+function notify(event) {
+  for (const fn of upstreamListeners) {
+    try { fn(event); } catch (_e) { /* swallow */ }
+  }
+}
+
+function notifyUpstreamFailure(reason) {
+  notify({ kind: 'failure', reason });
+}
+
+function notifyUpstreamSuccess() {
+  notify({ kind: 'success' });
+}
+
+// Inspect a parsed JSON envelope for the UPSTREAM_UNREACHABLE / TIMEOUT
+// codes the speaker CGI and our wrappers emit. Returns the reason string
+// when present, null otherwise. Used by the envelope-returning wrappers
+// to fan a notification before resolving with the envelope verbatim.
+function upstreamFailureReason(envelope) {
+  if (!envelope || envelope.ok !== false || !envelope.error) return null;
+  const code = typeof envelope.error === 'string' ? envelope.error : envelope.error.code;
+  if (code === 'UPSTREAM_UNREACHABLE' || code === 'TIMEOUT') return code;
+  return null;
+}
+
+// Try to read a UPSTREAM_UNREACHABLE envelope from a failed-HTTP xmlGet/
+// xmlPost response. The speaker CGI emits the envelope as JSON with
+// HTTP 502 + content-type application/json (see admin/cgi-bin/api/v1/speaker).
+// If we can parse the body and it carries UPSTREAM_UNREACHABLE, fan a
+// failure notification. Errors (non-JSON body, etc.) are swallowed —
+// the caller still throws on the non-2xx status as before.
+async function detectUpstreamFailureFromHttpError(res) {
+  const ct = (res && res.headers && typeof res.headers.get === 'function') ? res.headers.get('content-type') : '';
+  if (!ct || !/json/i.test(ct)) return;
+  let body;
+  try { body = await res.clone().json(); }
+  catch (_e) { return; }
+  const reason = upstreamFailureReason(body);
+  if (reason) notifyUpstreamFailure(reason);
+}
+
 // --- transport helpers ---------------------------------------------
 //
 // xmlGet / xmlPost are the single seam every speaker fetcher routes
@@ -114,23 +181,44 @@ function timeoutEnvelope() {
 // one-line binding of `path` + `parser`.
 
 async function xmlGet(path, parser) {
-  const res = await fetchWithTimeout(`${apiBase}${path}`, {
-    method: 'GET',
-    headers: { Accept: 'application/xml, text/xml' },
-    cache: 'no-store',
-  }, DEFAULT_READ_TIMEOUT_MS);
-  if (!res.ok) throw new Error(`${path} failed: HTTP ${res.status}`);
-  return parser(await res.text());
+  let res;
+  try {
+    res = await fetchWithTimeout(`${apiBase}${path}`, {
+      method: 'GET',
+      headers: { Accept: 'application/xml, text/xml' },
+      cache: 'no-store',
+    }, DEFAULT_READ_TIMEOUT_MS);
+  } catch (err) {
+    if (err && err.name === 'TimeoutError') notifyUpstreamFailure('TIMEOUT');
+    throw err;
+  }
+  if (!res.ok) {
+    await detectUpstreamFailureFromHttpError(res);
+    throw new Error(`${path} failed: HTTP ${res.status}`);
+  }
+  const value = parser(await res.text());
+  notifyUpstreamSuccess();
+  return value;
 }
 
 async function xmlPost(path, body) {
-  const res = await fetchWithTimeout(`${apiBase}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/xml' },
-    body,
-    cache: 'no-store',
-  }, DEFAULT_WRITE_TIMEOUT_MS);
-  if (!res.ok) throw new Error(`${path} failed: HTTP ${res.status}`);
+  let res;
+  try {
+    res = await fetchWithTimeout(`${apiBase}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/xml' },
+      body,
+      cache: 'no-store',
+    }, DEFAULT_WRITE_TIMEOUT_MS);
+  } catch (err) {
+    if (err && err.name === 'TimeoutError') notifyUpstreamFailure('TIMEOUT');
+    throw err;
+  }
+  if (!res.ok) {
+    await detectUpstreamFailureFromHttpError(res);
+    throw new Error(`${path} failed: HTTP ${res.status}`);
+  }
+  notifyUpstreamSuccess();
 }
 
 // --- TuneIn forwarder -----------------------------------------------
@@ -220,11 +308,17 @@ export { speakerNowPlaying as getNowPlaying };
 
 // GET /presets → { ok:true, data:[6 slots] } | { ok:false, error }
 export async function presetsList() {
-  const res = await fetchWithTimeout(`${apiBase}/presets`, {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-    cache: 'no-store',
-  }, DEFAULT_READ_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetchWithTimeout(`${apiBase}/presets`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    }, DEFAULT_READ_TIMEOUT_MS);
+  } catch (err) {
+    if (err && err.name === 'TimeoutError') notifyUpstreamFailure('TIMEOUT');
+    throw err;
+  }
   // Even on 4xx/5xx the CGI emits a JSON envelope, so we parse rather
   // than treat HTTP status as the only signal.
   let body;
@@ -233,6 +327,9 @@ export async function presetsList() {
   } catch (err) {
     throw new Error(`presetsList: malformed response (HTTP ${res.status})`);
   }
+  const reason = upstreamFailureReason(body);
+  if (reason) notifyUpstreamFailure(reason);
+  else if (body && body.ok) notifyUpstreamSuccess();
   return body;
 }
 
@@ -250,12 +347,18 @@ export async function previewStream(payload) {
       cache: 'no-store',
     }, DEFAULT_WRITE_TIMEOUT_MS);
   } catch (err) {
-    if (err && err.name === 'TimeoutError') return timeoutEnvelope();
+    if (err && err.name === 'TimeoutError') {
+      notifyUpstreamFailure('TIMEOUT');
+      return timeoutEnvelope();
+    }
     throw err;
   }
   let body;
   try { body = await res.json(); }
   catch (err) { throw new Error(`previewStream: malformed response (HTTP ${res.status})`); }
+  const reason = upstreamFailureReason(body);
+  if (reason) notifyUpstreamFailure(reason);
+  else if (body && body.ok) notifyUpstreamSuccess();
   return body;
 }
 
@@ -305,12 +408,18 @@ export async function playGuideId(guideId, name, cachedUrl) {
       cache: 'no-store',
     }, DEFAULT_WRITE_TIMEOUT_MS);
   } catch (err) {
-    if (err && err.name === 'TimeoutError') return timeoutEnvelope();
+    if (err && err.name === 'TimeoutError') {
+      notifyUpstreamFailure('TIMEOUT');
+      return timeoutEnvelope();
+    }
     throw err;
   }
   let body;
   try { body = await res.json(); }
   catch (err) { throw new Error(`playGuideId: malformed response (HTTP ${res.status})`); }
+  const reason = upstreamFailureReason(body);
+  if (reason) notifyUpstreamFailure(reason);
+  else if (body && body.ok) notifyUpstreamSuccess();
   return body;
 }
 
@@ -580,7 +689,10 @@ export async function presetsAssign(slot, payload) {
       cache: 'no-store',
     }, DEFAULT_WRITE_TIMEOUT_MS);
   } catch (err) {
-    if (err && err.name === 'TimeoutError') return timeoutEnvelope();
+    if (err && err.name === 'TimeoutError') {
+      notifyUpstreamFailure('TIMEOUT');
+      return timeoutEnvelope();
+    }
     throw err;
   }
   let body;
@@ -589,6 +701,9 @@ export async function presetsAssign(slot, payload) {
   } catch (err) {
     throw new Error(`presetsAssign: malformed response (HTTP ${res.status})`);
   }
+  const reason = upstreamFailureReason(body);
+  if (reason) notifyUpstreamFailure(reason);
+  else if (body && body.ok) notifyUpstreamSuccess();
   return body;
 }
 
@@ -600,16 +715,25 @@ export async function presetsAssign(slot, payload) {
 // Transport errors throw; structured `{ok:false, error}` envelopes
 // resolve normally.
 export async function postRefreshAll() {
-  const res = await fetchWithTimeout(`${apiBase}/refresh-all`, {
-    method: 'POST',
-    headers: { Accept: 'application/json' },
-    cache: 'no-store',
-  }, DEFAULT_WRITE_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetchWithTimeout(`${apiBase}/refresh-all`, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    }, DEFAULT_WRITE_TIMEOUT_MS);
+  } catch (err) {
+    if (err && err.name === 'TimeoutError') notifyUpstreamFailure('TIMEOUT');
+    throw err;
+  }
   let body;
   try {
     body = await res.json();
   } catch (err) {
     throw new Error(`postRefreshAll: malformed response (HTTP ${res.status})`);
   }
+  const reason = upstreamFailureReason(body);
+  if (reason) notifyUpstreamFailure(reason);
+  else if (body && body.ok) notifyUpstreamSuccess();
   return body;
 }

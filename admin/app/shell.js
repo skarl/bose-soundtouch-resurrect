@@ -13,6 +13,9 @@ import * as actions from './actions/index.js';
 import * as theme from './theme.js';
 import { transportPhase } from './transport-state.js';
 import { renderNowPlayingTitle } from './np-title.js';
+import { onUpstreamFailure } from './api.js';
+import { reconcile } from './speaker-state.js';
+import { mountSpeakerUnreachable } from './speaker-unreachable.js';
 
 // --- pill state computation ----------------------------------------
 
@@ -410,6 +413,16 @@ export function mountShell(store) {
   renderTabs(tabsEl, store);
   renderMini(miniEl, store);
   if (railEl) renderRail(railEl, store);
+
+  // Blocking error overlay for the "speaker on port 8090 unreachable"
+  // failure mode. Subscribes to api.js's upstream-failure observable;
+  // the overlay auto-clears on the next successful speaker-proxy call
+  // and the Retry button kicks off a reconcile() so the user can prod
+  // the speaker without waiting for the next WS frame or REST poll.
+  mountSpeakerUnreachable({
+    onFailure: onUpstreamFailure,
+    onRetry: () => reconcile(store),
+  });
 
   return bodyEl;
 }
