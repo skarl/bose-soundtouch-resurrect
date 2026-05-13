@@ -11,17 +11,52 @@
 
 import { html, mount, defineView } from '../dom.js';
 import { store } from '../state.js';
-import { speakerNowPlaying, presetsList } from '../api.js';
+import { speakerNowPlaying, presetsList, playGuideId, tuneinBrowse } from '../api.js';
 import { setArt } from '../art.js';
 import { hashHue } from '../tint.js';
 import * as actions from '../actions/index.js';
 import { equalizer, slider } from '../components.js';
 import { icon } from '../icons.js';
 import { formatVolumeValueText, rovingFocus } from '../a11y.js';
+import {
+  transportPhase,
+  classifyPrevNext,
+  extractGuideIdFromLocation,
+  parentKey,
+  topicsKey,
+} from '../transport-state.js';
+import { cache, TTL_DRILL_HEAD } from '../tunein-cache.js';
+import { classifyOutline } from '../tunein-outline.js';
+import { showToast } from '../toast.js';
 
 const POLL_MS = 2000;
 const PRESET_SLOTS = 6;
 const LONG_PRESS_MS = 600;
+
+// Pull the ordered list of topic guide_ids out of a Browse(c=topics)
+// JSON body. The body shape is either a flat list of topic outlines
+// or a single section container with `children` — handle both so the
+// caller doesn't have to inspect the response. Filters to t-prefix
+// rows (the only ones the firmware can resolve as a topic stream).
+function extractTopicIds(json) {
+  const out = [];
+  const visit = (entry) => {
+    if (!entry || typeof entry !== 'object') return;
+    if (Array.isArray(entry.children)) {
+      for (const c of entry.children) visit(c);
+      return;
+    }
+    // Filter on classification (drops cursors, pivots, tombstones)
+    // AND on the t-prefix so a sibling station row in the same body
+    // doesn't poison the topics list.
+    const kind = classifyOutline(entry);
+    const gid = typeof entry.guide_id === 'string' ? entry.guide_id : '';
+    if (kind === 'topic' && /^t\d+$/.test(gid)) out.push(gid);
+  };
+  const body = json && Array.isArray(json.body) ? json.body : [];
+  for (const e of body) visit(e);
+  return out;
+}
 
 function renderName(np) {
   if (!np) return '';
@@ -175,13 +210,48 @@ export default defineView({
     const presetBtns = [];
 
     function syncPlayBtn(np) {
-      const playing = np && np.playStatus === 'PLAY_STATE';
-      const next = playing ? icon('pause', 16) : icon('play', 16);
+      const phase = transportPhase(np);
+      // Glyph + label per phase. Buffering is its own glyph so the
+      // visual reads as "in flight" rather than a third "Play" state
+      // (the most common bug from the pre-#88 logic). The CSS pulse
+      // on data-phase="buffering" is what carries the motion.
+      let glyphName;
+      let title;
+      if (phase === 'playing')        { glyphName = 'pause';  title = 'Pause'; }
+      else if (phase === 'buffering') { glyphName = 'buffer'; title = 'Buffering…'; }
+      else                            { glyphName = 'play';   title = 'Play'; }
+      const next = icon(glyphName, 16);
       btnPlay.replaceChild(next, playIconRef.node);
       playIconRef.node = next;
-      btnPlay.title = playing ? 'Pause' : 'Play';
-      btnPlay.setAttribute('aria-label', playing ? 'Pause' : 'Play');
-      btnPlay.dataset.playing = playing ? '1' : '';
+      btnPlay.title = title;
+      btnPlay.setAttribute('aria-label', title);
+      btnPlay.dataset.playing = phase === 'playing' ? '1' : '';
+      btnPlay.dataset.phase = phase;
+      // aria-busy doubles for the screen-reader signal on buffering.
+      if (phase === 'buffering') btnPlay.setAttribute('aria-busy', 'true');
+      else                       btnPlay.removeAttribute('aria-busy');
+    }
+
+    function syncPrevNext(np) {
+      const guideId = extractGuideIdFromLocation(np && np.item && np.item.location);
+      let ctx = {};
+      if (guideId && guideId.charAt(0) === 't') {
+        const parent = cache.get(parentKey(guideId));
+        if (parent) {
+          const siblings = cache.get(topicsKey(parent));
+          ctx = {
+            parentShowId: parent,
+            siblings: Array.isArray(siblings) ? siblings : [],
+          };
+        }
+      }
+      const { prev, next, mode } = classifyPrevNext(np, ctx);
+      btnPrev.disabled = !prev;
+      btnNext.disabled = !next;
+      // Mark the row mode so click handlers can branch on it without
+      // re-classifying. Useful for tests too.
+      btnPrev.dataset.transportMode = mode;
+      btnNext.dataset.transportMode = mode;
     }
 
     function applyVolume(vol) {
@@ -213,6 +283,12 @@ export default defineView({
 
       eqEl.setPlaying(!!(np && np.playStatus === 'PLAY_STATE'));
 
+      // Always sync the transport classifier — even in STANDBY the
+      // buttons need their `disabled` attribute set correctly so
+      // keyboard tabs through a hidden card don't reach a live button.
+      syncPlayBtn(np);
+      syncPrevNext(np);
+
       if (standby) return;
 
       const name = renderName(np);
@@ -225,8 +301,6 @@ export default defineView({
       const artUrl = np && typeof np.art === 'string' && np.art.startsWith('http')
         ? np.art : '';
       setArt(artEl, artUrl, name);
-
-      syncPlayBtn(np);
     }
 
     // Mutate only the DOM nodes for slots that changed. Compare previous
@@ -437,6 +511,9 @@ export default defineView({
     }
 
     let keyInFlight = false;
+    // Topic-skip in-flight guard — separate from keyInFlight so a
+    // pressKey path doesn't block /play and vice versa.
+    let skipInFlight = false;
 
     async function sendKey(key) {
       if (keyInFlight) return;
@@ -448,11 +525,111 @@ export default defineView({
       }
     }
 
-    function onPrev()  { sendKey('PREV_TRACK'); }
-    function onNext()  { sendKey('NEXT_TRACK'); }
+    // resolve a topic id to a human label out of the cached topics
+    // list. The list itself stores ids only by default, but we also
+    // cache a parallel name map under the same key (see lazyFetchTopics
+    // below) so /play can pass `name` and avoid the firmware falling
+    // back to the raw guide_id. Returns the id itself when no label
+    // is cached — the CGI still works without a name, just with a less
+    // pretty mini-player label.
+    function labelForTopic(topicId) {
+      const np = store.state.speaker.nowPlaying;
+      // If the speaker is currently on this topic, the firmware already
+      // resolved a friendly name into <itemName>.
+      if (np && np.item && np.item.location
+          && extractGuideIdFromLocation(np.item.location) === topicId
+          && np.item.name) {
+        return np.item.name;
+      }
+      return topicId;
+    }
+
+    // Fan-out: lazy-fetch the topics list for `parentId` when it isn't
+    // already cached. Used by the Prev/Next path when the user arrived
+    // at a topic via search (no drill context). Idempotent — the cache
+    // entry survives until TTL_DRILL_HEAD expires.
+    async function lazyFetchTopicsList(parentId) {
+      const key = topicsKey(parentId);
+      const cached = cache.get(key);
+      if (Array.isArray(cached)) return cached;
+      try {
+        const body = await tuneinBrowse({ c: 'topics', id: parentId });
+        const ids = extractTopicIds(body);
+        if (ids.length >= 2) {
+          cache.set(key, ids, TTL_DRILL_HEAD);
+          return ids;
+        }
+        // Cache the empty / 1-entry result too so we don't refetch on
+        // every click, but flag the buttons as disabled by writing a
+        // sentinel (the classifier rejects length < 2 anyway).
+        cache.set(key, ids, TTL_DRILL_HEAD);
+        return ids;
+      } catch (_err) {
+        return [];
+      }
+    }
+
+    function onPrev() { onSkip('prev'); }
+    function onNext() { onSkip('next'); }
+
+    async function onSkip(direction) {
+      const btn = direction === 'prev' ? btnPrev : btnNext;
+      if (btn.disabled) return;
+      if (skipInFlight) return;
+
+      const np = store.state.speaker.nowPlaying;
+      const guideId = extractGuideIdFromLocation(np && np.item && np.item.location);
+      const isTopic = guideId && guideId.charAt(0) === 't';
+
+      if (!isTopic) {
+        // Firmware-key path (BLUETOOTH, BoseMusic, UPnP, ...).
+        sendKey(direction === 'prev' ? 'PREV_TRACK' : 'NEXT_TRACK');
+        return;
+      }
+
+      // Topic-list path — the classifier already confirmed parent +
+      // siblings ≥ 2 + a valid neighbour, but a long-dwelling tab can
+      // race a cache TTL expiry. Re-read and re-classify before the
+      // POST.
+      const parent = cache.get(parentKey(guideId));
+      let siblings = parent ? cache.get(topicsKey(parent)) : null;
+      if (parent && !Array.isArray(siblings)) {
+        siblings = await lazyFetchTopicsList(parent);
+      }
+      const { prev: prevOK, next: nextOK, prevId, nextId } = classifyPrevNext(np, {
+        parentShowId: parent,
+        siblings: Array.isArray(siblings) ? siblings : [],
+      });
+      const targetId = direction === 'prev' ? prevId : nextId;
+      const ok = direction === 'prev' ? prevOK : nextOK;
+      if (!ok || !targetId) {
+        // The cache moved out from under us — refresh button state and
+        // bail. The next /now_playing sync will re-paint.
+        syncPrevNext(np);
+        return;
+      }
+
+      skipInFlight = true;
+      try {
+        const result = await playGuideId(targetId, labelForTopic(targetId));
+        if (!result || !result.ok) {
+          showToast('Could not skip episode');
+        }
+      } catch (_err) {
+        showToast('Could not reach Bo');
+      } finally {
+        skipInFlight = false;
+      }
+    }
+
     function onPlayPause() {
       const np = store.state.speaker.nowPlaying;
-      const playing = np && np.playStatus === 'PLAY_STATE';
+      const phase = transportPhase(np);
+      // Re-entrancy guard — never send PLAY/PAUSE while the speaker is
+      // still buffering. The CSS already neutralises pointer events on
+      // the button, but the JS guard catches keyboard activation too.
+      if (phase === 'buffering') return;
+      const playing = phase === 'playing';
       sendKey(playing ? 'PAUSE' : 'PLAY');
     }
 

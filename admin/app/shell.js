@@ -11,6 +11,7 @@ import { icon } from './icons.js';
 import { setArt } from './art.js';
 import * as actions from './actions/index.js';
 import * as theme from './theme.js';
+import { transportPhase } from './transport-state.js';
 
 // --- pill state computation ----------------------------------------
 
@@ -326,7 +327,13 @@ function renderMini(miniEl, store) {
       return;
     }
     const np = store.state.speaker.nowPlaying;
-    const playing = np && np.playStatus === 'PLAY_STATE';
+    const phase = transportPhase(np);
+    // Re-entrancy guard — never fire PLAY/PAUSE while the speaker is
+    // still buffering. The CSS already neutralises pointer events on
+    // .shell-mini__play[data-phase="buffering"], but the JS guard
+    // catches keyboard activation too.
+    if (phase === 'buffering') return;
+    const playing = phase === 'playing';
     actions.pressKey(playing ? 'PAUSE' : 'PLAY').catch(() => {});
   });
 
@@ -340,6 +347,8 @@ function renderMini(miniEl, store) {
       setArt(img, '', '');
       playBtn.setAttribute('aria-label', 'Wake speaker');
       playBtn.replaceChildren(icon('play', 22));
+      playBtn.removeAttribute('data-phase');
+      playBtn.removeAttribute('aria-busy');
       return;
     }
 
@@ -351,9 +360,21 @@ function renderMini(miniEl, store) {
     const url = np && typeof np.art === 'string' && np.art.startsWith('http') ? np.art : '';
     setArt(img, url, itemName);
 
-    const playing = np && np.playStatus === 'PLAY_STATE';
-    playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
-    playBtn.replaceChildren(icon(playing ? 'pause' : 'play', 22));
+    // Phase-aware glyph + a11y label. transportPhase folds STANDBY,
+    // PLAY/PAUSE, and the long buffering tail into a single classifier
+    // so this surface and the now-playing main button paint the same
+    // way (see admin/app/transport-state.js).
+    const phase = transportPhase(np);
+    let glyphName;
+    let label;
+    if (phase === 'playing')        { glyphName = 'pause';  label = 'Pause'; }
+    else if (phase === 'buffering') { glyphName = 'buffer'; label = 'Buffering'; }
+    else                            { glyphName = 'play';   label = 'Play'; }
+    playBtn.setAttribute('aria-label', label);
+    playBtn.replaceChildren(icon(glyphName, 22));
+    playBtn.dataset.phase = phase;
+    if (phase === 'buffering') playBtn.setAttribute('aria-busy', 'true');
+    else                       playBtn.removeAttribute('aria-busy');
   }
 
   function applyVisibility() {
