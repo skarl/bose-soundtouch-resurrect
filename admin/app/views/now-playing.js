@@ -24,6 +24,7 @@ import {
   extractGuideIdFromLocation,
   parentKey,
   topicsKey,
+  topicNameKey,
 } from '../transport-state.js';
 import { cache, TTL_DRILL_HEAD } from '../tunein-cache.js';
 import { classifyOutline } from '../tunein-outline.js';
@@ -56,6 +57,26 @@ function extractTopicIds(json) {
   const body = json && Array.isArray(json.body) ? json.body : [];
   for (const e of body) visit(e);
   return out;
+}
+
+// #102: stash episode titles under tunein.topicname.<t<N>>. Same
+// traversal shape as extractTopicIds, isolated here so the search-
+// arrival path (lazyFetchTopicsList) gets the same priming the
+// browse-view drill already does.
+function cacheTopicNames(json) {
+  const visit = (entry) => {
+    if (!entry || typeof entry !== 'object') return;
+    if (Array.isArray(entry.children)) {
+      for (const c of entry.children) visit(c);
+      return;
+    }
+    const gid = typeof entry.guide_id === 'string' ? entry.guide_id : '';
+    if (!/^t\d+$/.test(gid)) return;
+    const text = typeof entry.text === 'string' ? entry.text.trim() : '';
+    if (text) cache.set(topicNameKey(gid), text, TTL_DRILL_HEAD);
+  };
+  const body = json && Array.isArray(json.body) ? json.body : [];
+  for (const e of body) visit(e);
 }
 
 function renderName(np) {
@@ -527,21 +548,27 @@ export default defineView({
 
     // resolve a topic id to a human label out of the cached topics
     // list. The list itself stores ids only by default, but we also
-    // cache a parallel name map under the same key (see lazyFetchTopics
-    // below) so /play can pass `name` and avoid the firmware falling
-    // back to the raw guide_id. Returns the id itself when no label
-    // is cached — the CGI still works without a name, just with a less
-    // pretty mini-player label.
+    // #102: Resolve the episode title for a /play call's `name` field.
+    // Source priority:
+    //   1. `tunein.topicname.<t<N>>` — primed by the browse view + the
+    //      lazy fetcher below; this is the canonical resolved title.
+    //   2. The firmware's own <itemName> if it's already on this topic
+    //      AND that name isn't itself the raw guide_id (defending
+    //      against a stale state written by an earlier sid-fallback).
+    // Returns null when nothing resolves — the caller must omit `name`
+    // from the POST so the CGI falls back to body_id rather than
+    // shipping the sid as a label.
     function labelForTopic(topicId) {
+      const cached = cache.get(topicNameKey(topicId));
+      if (typeof cached === 'string' && cached) return cached;
       const np = store.state.speaker.nowPlaying;
-      // If the speaker is currently on this topic, the firmware already
-      // resolved a friendly name into <itemName>.
       if (np && np.item && np.item.location
           && extractGuideIdFromLocation(np.item.location) === topicId
-          && np.item.name) {
+          && np.item.name
+          && np.item.name !== topicId) {
         return np.item.name;
       }
-      return topicId;
+      return null;
     }
 
     // Fan-out: lazy-fetch the topics list for `parentId` when it isn't
@@ -555,6 +582,11 @@ export default defineView({
       try {
         const body = await tuneinBrowse({ c: 'topics', id: parentId });
         const ids = extractTopicIds(body);
+        // #102: lift episode titles from the same body into the
+        // tunein.topicname.<t<N>> cache so the next Prev/Next can ship
+        // `name` to /play. The browse view's primer already does this
+        // on drill; this branch covers the search-arrival path.
+        cacheTopicNames(body);
         if (ids.length >= 2) {
           cache.set(key, ids, TTL_DRILL_HEAD);
           return ids;

@@ -34,6 +34,7 @@ import { cache, TTL_LABEL, TTL_DRILL_HEAD } from '../tunein-cache.js';
 import {
   parentKey as tuneinParentKey,
   topicsKey as tuneinTopicsKey,
+  topicNameKey as tuneinTopicNameKey,
   extractParentShowId,
 } from '../transport-state.js';
 import {
@@ -1211,6 +1212,10 @@ function primeTuneinSkipCaches(entries) {
       if (!parent) parent = p;
       cache.set(tuneinParentKey(gid), p, TTL_LABEL);
     }
+    // #102: stash the resolved episode title so the now-playing skip
+    // path can ship a `name` to /play instead of the raw guide_id.
+    const text = entry && typeof entry.text === 'string' ? entry.text.trim() : '';
+    if (text) cache.set(tuneinTopicNameKey(gid), text, TTL_LABEL);
   }
   if (parent && ids.length > 0) {
     cache.set(tuneinTopicsKey(parent), ids, TTL_DRILL_HEAD);

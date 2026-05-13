@@ -1022,6 +1022,94 @@ test('np Prev/Next: topic-list tap calls /play with neighbour id', async () => {
   }
 });
 
+test('np Prev/Next: topic-list tap ships cached episode title as /play name (#102)', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.set('tunein.parent.t200', 'p17', tc.TTL_LABEL);
+  tc.cache.set('tunein.topics.p17', ['t100', 't200', 't300'], tc.TTL_DRILL_HEAD);
+  tc.cache.set('tunein.topicname.t300', 'Next Episode Title', tc.TTL_LABEL);
+
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: 'Episode 2', location: '/v1/playback/station/t200' },
+      playStatus: 'PLAY_STATE',
+    },
+  });
+
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url: String(url), body: opts && opts.body });
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, url: 'http://example/stream.mp3' }),
+    };
+  };
+
+  const { root, destroy } = mountView();
+  try {
+    const btnNext = root.querySelector('.np-btn--next');
+    btnNext.dispatchEvent(ev('click'));
+    await new Promise((r) => setTimeout(r, 30));
+    const playCalls = calls.filter((c) => /\/play\b/.test(c.url));
+    assert.ok(playCalls.length >= 1, 'one /play POST issued');
+    const payload = JSON.parse(String(playCalls[0].body || '{}'));
+    assert.equal(payload.id, 't300');
+    // Regression guard for #102 — without the cache lookup the SPA
+    // shipped name=t300 and the speaker wrote the sid into <itemName>.
+    assert.equal(payload.name, 'Next Episode Title');
+  } finally {
+    globalThis.fetch = realFetch;
+    tc.cache.invalidate('tunein.parent.t200');
+    tc.cache.invalidate('tunein.topics.p17');
+    tc.cache.invalidate('tunein.topicname.t300');
+    destroy();
+  }
+});
+
+test('np Prev/Next: topic-list tap omits name when no title is cached (#102)', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.set('tunein.parent.t200', 'p17', tc.TTL_LABEL);
+  tc.cache.set('tunein.topics.p17', ['t100', 't200', 't300'], tc.TTL_DRILL_HEAD);
+  tc.cache.invalidate('tunein.topicname.t300');
+
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: 'Episode 2', location: '/v1/playback/station/t200' },
+      playStatus: 'PLAY_STATE',
+    },
+  });
+
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url: String(url), body: opts && opts.body });
+    return { ok: true, status: 200, json: async () => ({ ok: true, url: 'http://example/x.mp3' }) };
+  };
+
+  const { root, destroy } = mountView();
+  try {
+    root.querySelector('.np-btn--next').dispatchEvent(ev('click'));
+    await new Promise((r) => setTimeout(r, 30));
+    const playCalls = calls.filter((c) => /\/play\b/.test(c.url));
+    const payload = JSON.parse(String(playCalls[0].body || '{}'));
+    assert.equal(payload.id, 't300');
+    // The api wrapper omits `name` when the SPA can't resolve a title.
+    // The CGI's body_id fallback will land the sid in <itemName>, but
+    // at least the SPA never *ships* the sid as a label — the
+    // labelForTopic contract is "resolve or stay silent".
+    assert.equal(payload.name, undefined,
+      `name must be omitted when no title is cached, body=${playCalls[0].body}`);
+  } finally {
+    globalThis.fetch = realFetch;
+    tc.cache.invalidate('tunein.parent.t200');
+    tc.cache.invalidate('tunein.topics.p17');
+    destroy();
+  }
+});
+
 test('np Prev/Next: lazy-fetches topics list when parent cached but list missing', async () => {
   const tc = await import('../app/tunein-cache.js');
   tc.cache.set('tunein.parent.t200', 'p17', tc.TTL_LABEL);

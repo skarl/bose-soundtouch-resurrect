@@ -206,6 +206,14 @@ export function topicsKey(showId) {
   return `tunein.topics.${showId}`;
 }
 
+// Resolved episode title, keyed by topic id. The classifier doesn't
+// need it, but the now-playing Prev/Next path reads it to pass `name`
+// to /play so the speaker writes a human label into <itemName>
+// instead of the raw guide_id (#102).
+export function topicNameKey(topicId) {
+  return `tunein.topicname.${topicId}`;
+}
+
 // extractParentShowId(outline) — pull the `sid=p<N>` parameter out of
 // a topic outline's `URL` field. Topic rows in Browse and Search
 // responses carry a `Tune.ashx?...&sid=p<N>` URL the firmware uses to
