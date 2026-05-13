@@ -238,3 +238,74 @@ test('_renderShowLandingForTest renders the empty-state when Describe has no sho
   assert.ok(empty);
   assert.match(empty.textContent, /aren.t available/);
 });
+
+// --- issue #105: show landing primes tunein.label.<p-sid> on resolve
+
+test('_renderShowLandingForTest primes tunein.label.<show.guide_id> from the resolved Describe title (#105)', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.p17');
+  const describe = {
+    head: { status: '200' },
+    body: [{
+      element: 'show', guide_id: 'p17', title: 'Fresh Air',
+    }],
+  };
+  const body = doc.createElement('div');
+  _renderShowLandingForTest(body, describe, null, null, null);
+  assert.equal(tc.cache.get('tunein.label.p17'), 'Fresh Air',
+    'show landing primes the bare-sid label so back-and-return paints instantly');
+  tc.cache.invalidate('tunein.label.p17');
+});
+
+test('_renderShowLandingForTest primes the bare-sid label even when the crumb token carries a filter (#105)', async () => {
+  // A filter-bearing crumb token (`p17:l109`) used to be the only key
+  // primed; a subsequent drill into the bare `p17` would still flash
+  // the raw token. The bare-sid primer covers that case.
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.p17');
+  tc.cache.invalidate('tunein.label.p17:l109');
+  const describe = {
+    head: { status: '200' },
+    body: [{ element: 'show', guide_id: 'p17', title: 'Fresh Air' }],
+  };
+  const body = doc.createElement('div');
+  _renderShowLandingForTest(body, describe, null, null, {
+    titleEl: doc.createElement('span'),
+    crumbToken: 'p17:l109',
+  });
+  // Both the filter-bearing combined token AND the bare sid are primed.
+  assert.equal(tc.cache.get('tunein.label.p17:l109'), 'Fresh Air');
+  assert.equal(tc.cache.get('tunein.label.p17'), 'Fresh Air');
+  tc.cache.invalidate('tunein.label.p17');
+  tc.cache.invalidate('tunein.label.p17:l109');
+});
+
+test('renderTopicsCard primes tunein.label.<t-sid> from each topic row text (#105)', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.t105_a');
+  tc.cache.invalidate('tunein.label.t105_b');
+  renderTopicsCard([
+    {
+      type: 'link', item: 'topic', guide_id: 't105_a', text: 'Episode A',
+      URL: 'http://opml.radiotime.com/Tune.ashx?id=t105_a&sid=p17&render=json',
+    },
+    {
+      type: 'link', item: 'topic', guide_id: 't105_b', text: 'Episode B',
+      URL: 'http://opml.radiotime.com/Tune.ashx?id=t105_b&sid=p17&render=json',
+    },
+  ]);
+  assert.equal(tc.cache.get('tunein.label.t105_a'), 'Episode A');
+  assert.equal(tc.cache.get('tunein.label.t105_b'), 'Episode B');
+  tc.cache.invalidate('tunein.label.t105_a');
+  tc.cache.invalidate('tunein.label.t105_b');
+});
+
+test('renderLiveShowCard primes tunein.label.<p-sid> from the airing show entry (#105)', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.p105');
+  renderLiveShowCard([
+    { type: 'link', item: 'show', guide_id: 'p105', text: 'Fresh Air' },
+  ]);
+  assert.equal(tc.cache.get('tunein.label.p105'), 'Fresh Air');
+  tc.cache.invalidate('tunein.label.p105');
+});

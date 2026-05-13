@@ -417,6 +417,66 @@ export function renderCard(entries) {
   return card;
 }
 
+// Compose the crumb token for a drill-parts object — same shape as
+// browse.js's exported `crumbTokenFor`, duplicated here to avoid an
+// import cycle (browse.js imports from this module). Tokens are
+// `<anchor>` for plain drills and `<anchor>:<filter>` for filter-
+// bearing drills; null when no anchor.
+function crumbTokenForParts(parts) {
+  if (!parts) return null;
+  const anchor = (typeof parts.id === 'string' && parts.id !== '')
+    ? parts.id
+    : (typeof parts.c === 'string' && parts.c !== '' ? parts.c : '');
+  if (!anchor) return null;
+  if (typeof parts.filter === 'string' && parts.filter !== '') {
+    return `${anchor}:${parts.filter}`;
+  }
+  return anchor;
+}
+
+// primeLabelForEntry — stash a row / chip's resolved label under
+// `tunein.label.<crumbToken>` so the next navigation paints the
+// breadcrumb / page title instantly. Every drillable row already
+// carries the target's human label (`entry.text` / `norm.primary` —
+// the text the user is reading); writing that text to the cache costs
+// nothing and turns the otherwise-blank `r101821` raw-token flash on
+// first visit into an immediate "Bayreuth" paint.
+//
+// Skips when:
+//   - the entry has no usable drill parts (no anchor → no crumb token)
+//   - the entry has no usable label text
+//
+// Never fires a fetch — every value comes from data already in hand.
+export function primeLabelForEntry(entry) {
+  if (!entry || typeof entry !== 'object') return;
+  const text = typeof entry.text === 'string' ? entry.text.trim() : '';
+  if (!text) return;
+  const parts = drillPartsFor(entry);
+  const token = crumbTokenForParts(parts);
+  if (!token) return;
+  cache.set(`tunein.label.${token}`, text, TTL_LABEL);
+}
+
+// primeLabelForChip — same idea as primeLabelForEntry, but tailored to
+// chip semantics: filter-bearing chips' text labels the FILTER axis
+// (e.g. "Country" for `?id=r101821&filter=g26`), not the combined
+// node. So we write `tunein.label.<filter>` = chip text for the
+// filter-bearing case, and `tunein.label.<crumbToken>` = chip text for
+// plain drill chips. Writing the combined token from a filter-bearing
+// chip would mislead the h1 / current-segment renderer.
+export function primeLabelForChip(parts, label) {
+  if (!parts || typeof label !== 'string') return;
+  const text = label.trim();
+  if (!text) return;
+  if (typeof parts.filter === 'string' && parts.filter !== '') {
+    cache.set(`tunein.label.${parts.filter}`, text, TTL_LABEL);
+    return;
+  }
+  const token = crumbTokenForParts(parts);
+  if (!token) return;
+  cache.set(`tunein.label.${token}`, text, TTL_LABEL);
+}
+
 // Mine each topic outline for its `sid=p<N>` parent + collect the
 // ordered topic-id list. When at least one parent emerges (typical for
 // `c=pbrowse&id=p<N>` and `c=topics&id=p<N>` responses, which share the
@@ -462,6 +522,10 @@ export function renderPivotChips(pivots) {
     if (parts) chip.setAttribute('href', drillHashFor(parts));
     chip.textContent = pivot.label || `pivot=${pivot.axis}`;
     chip.setAttribute('data-pivot-axis', pivot.axis);
+    // Issue #105: pivot chips' text labels the axis value (e.g.
+    // "Country" for a filter-bearing chip, "Bayreuth" for a plain
+    // drill chip). primeLabelForChip picks the right cache key.
+    if (parts) primeLabelForChip(parts, pivot.label);
     wrap.appendChild(chip);
   }
   return wrap;
@@ -497,6 +561,11 @@ export function renderRelatedChips(children) {
     }
     const text = (entry && typeof entry.text === 'string') ? entry.text : '';
     chip.textContent = text || (parts && (parts.id || parts.c)) || '(unnamed)';
+    // Issue #105: prime the label cache from the chip's text. For
+    // filter-bearing chips the text labels the filter axis; for plain
+    // drill chips it labels the target node. primeLabelForChip picks
+    // the right key.
+    if (parts && text) primeLabelForChip(parts, text);
     wrap.appendChild(chip);
   }
   return wrap;
@@ -550,6 +619,12 @@ export function renderEntry(entry) {
   // text / subtext / playing / current_track without a re-classify
   // pass. Property (not attribute) so the wire format stays clean.
   node._outline = entry;
+  // Issue #105: prime the label cache from this row's drill target.
+  // The row's text is the human label of the node it links into; one
+  // cache write here means the next navigation paints the breadcrumb
+  // current-segment instantly instead of flashing the raw token.
+  // Skipped for tombstones (no drill) inside the helper.
+  primeLabelForEntry(entry);
   return node;
 }
 

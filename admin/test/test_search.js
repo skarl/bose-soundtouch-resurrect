@@ -335,3 +335,62 @@ test('addVisitedStation: rejects entries missing sid or name', async () => {
 
   assert.equal(store.state.ui.visitedStations.length, 0);
 });
+
+// --- issue #105: searchRow primes tunein.label.<sid> at render time --
+
+test('searchRow primes tunein.label.<sid> from each row text (#105)', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.s105_x');
+  searchRow({
+    type: 'audio', guide_id: 's105_x', text: 'KEXP',
+    subtext: 'Seattle, WA', item: 'station',
+  });
+  assert.equal(tc.cache.get('tunein.label.s105_x'), 'KEXP',
+    'search row stash labels the target sid for instant breadcrumbs on drill');
+  tc.cache.invalidate('tunein.label.s105_x');
+});
+
+test('searchRow primes tunein.label for p-prefix shows and t-prefix topics (#105)', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.p105_x');
+  tc.cache.invalidate('tunein.label.t105_x');
+  searchRow({
+    type: 'link', guide_id: 'p105_x', text: 'Fresh Air',
+    URL: 'http://opml.radiotime.com/Browse.ashx?id=p105_x', item: 'show',
+  });
+  searchRow({
+    type: 'link', guide_id: 't105_x', text: 'Topic Episode',
+    URL: 'http://opml.radiotime.com/Browse.ashx?id=t105_x', item: 'topic',
+  });
+  assert.equal(tc.cache.get('tunein.label.p105_x'), 'Fresh Air');
+  assert.equal(tc.cache.get('tunein.label.t105_x'), 'Topic Episode');
+  tc.cache.invalidate('tunein.label.p105_x');
+  tc.cache.invalidate('tunein.label.t105_x');
+});
+
+test('searchRow skips the primer when sid or label is empty (#105)', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  // No sid → no write key to clash with anything.
+  searchRow({ type: 'audio', text: 'No sid here' });
+  // Empty label → no write under the sid.
+  tc.cache.invalidate('tunein.label.s105_empty');
+  searchRow({ type: 'audio', guide_id: 's105_empty', text: '' });
+  assert.equal(tc.cache.get('tunein.label.s105_empty'), undefined);
+});
+
+test('searchRow does not fire a fetch when priming the cache (#105)', async () => {
+  const realFetch = globalThis.fetch;
+  let fetchCount = 0;
+  globalThis.fetch = async () => {
+    fetchCount++;
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+  try {
+    searchRow({ type: 'audio', guide_id: 's105_nofetch', text: 'KEXP' });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.s105_nofetch');
+  assert.equal(fetchCount, 0, 'search-row primer must not fire a fetch');
+});

@@ -42,6 +42,7 @@ import {
   skeleton,
   errorNode,
   primeTuneinSkipCaches,
+  primeLabelForEntry,
 } from './outline-render.js';
 
 // Drive the two-fetch composite. Describe is the load-bearing call (it
@@ -102,6 +103,17 @@ function renderShowLandingBody(body, describeJson, browseJson, headerCount, head
   if (head && head.titleEl && headTitle) head.titleEl.textContent = headTitle;
   if (head && head.crumbToken && headTitle) {
     cache.set(`tunein.label.${head.crumbToken}`, headTitle, TTL_LABEL);
+  }
+  // Issue #105: prime the show's bare-sid label too. The crumb token
+  // captured at frame-mount time can be filter-bearing (`p<NN>:l109`),
+  // in which case writing only the combined token leaves a back-and-
+  // return visit to the bare `p<NN>` drill flashing the raw token. The
+  // show.guide_id is authoritative and unambiguous — stash the title
+  // there too so any future drill that lands on this show paints
+  // instantly.
+  const showSid = typeof show.guide_id === 'string' ? show.guide_id : '';
+  if (showSid && headTitle) {
+    cache.set(`tunein.label.${showSid}`, headTitle, TTL_LABEL);
   }
 
   // Browse(bare id) is best-effort. When it returns a body, render
@@ -237,6 +249,12 @@ export function renderLiveShowCard(entries) {
   card.className = 'browse-card';
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
+    // Issue #105: liveShow row carries the airing show's title — stash
+    // it under `tunein.label.<p-sid>` so a future drill into the show
+    // paints instantly. The liveShow card is a hero (no drill anchor of
+    // its own), but the same p-prefix surfaces elsewhere as a row /
+    // chip and benefits from the cache hit.
+    primeLabelForEntry(entry);
     const row = renderLiveShowRow(entry);
     if (i === entries.length - 1) row.classList.add('is-last');
     row._outline = entry;
@@ -280,6 +298,12 @@ export function renderTopicsCard(entries) {
 
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i];
+    // Issue #105: prime `tunein.label.<t-sid>` from the topic row's
+    // text so the next drill into this topic paints the breadcrumb
+    // current-segment immediately. (primeTuneinSkipCaches above already
+    // writes the topic NAME under the separate `tunein.topicname.*`
+    // key for the now-playing skip path — different cache, same idea.)
+    primeLabelForEntry(entry);
     const row = renderTopicRow(entry);
     if (i === entries.length - 1) row.classList.add('is-last');
     row._outline = entry;

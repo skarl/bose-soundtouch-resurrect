@@ -19,10 +19,14 @@ const {
   renderCard,
   renderSection,
   renderFlatSection,
+  renderPivotChips,
+  renderRelatedChips,
   drillHashFor,
   drillPartsFor,
   drillPartsForUrl,
   primeTuneinSkipCaches,
+  primeLabelForEntry,
+  primeLabelForChip,
   emptyNode,
   skeleton,
   errorNode,
@@ -315,4 +319,153 @@ test('renderEntry stashes the raw outline on the rendered node._outline', () => 
   const entry = { type: 'audio', guide_id: 's1', text: 'Stash' };
   const node = renderEntry(entry);
   assert.equal(node._outline, entry);
+});
+
+// --- issue #105: primeLabelForEntry / primeLabelForChip + render-time
+// label-cache priming ---------------------------------------------------
+
+test('primeLabelForEntry stashes tunein.label.<guide_id> from a station outline', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.s105_a');
+  primeLabelForEntry({ type: 'audio', guide_id: 's105_a', text: 'KEXP' });
+  assert.equal(tc.cache.get('tunein.label.s105_a'), 'KEXP');
+  tc.cache.invalidate('tunein.label.s105_a');
+});
+
+test('primeLabelForEntry uses the canonicalised URL anchor when guide_id is absent', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.g79');
+  primeLabelForEntry({
+    text: 'Folk',
+    URL: 'http://opml.radiotime.com/Browse.ashx?id=g79&render=json',
+  });
+  assert.equal(tc.cache.get('tunein.label.g79'), 'Folk');
+  tc.cache.invalidate('tunein.label.g79');
+});
+
+test('primeLabelForEntry emits a `<anchor>:<filter>` combined token for filter-bearing drills', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.r101821:g26');
+  primeLabelForEntry({
+    text: 'Bayreuth · Country',
+    URL: 'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=g26',
+  });
+  assert.equal(tc.cache.get('tunein.label.r101821:g26'), 'Bayreuth · Country');
+  tc.cache.invalidate('tunein.label.r101821:g26');
+});
+
+test('primeLabelForEntry skips entries with no usable label or drill target', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  // No text → no write
+  tc.cache.invalidate('tunein.label.s105_b');
+  primeLabelForEntry({ type: 'audio', guide_id: 's105_b' });
+  assert.equal(tc.cache.get('tunein.label.s105_b'), undefined);
+  // Whitespace-only text → no write
+  primeLabelForEntry({ type: 'audio', guide_id: 's105_b', text: '   ' });
+  assert.equal(tc.cache.get('tunein.label.s105_b'), undefined);
+  // No drill parts → no write
+  primeLabelForEntry({ type: 'text', text: 'No drill here' });
+  // No throw for nullish input
+  primeLabelForEntry(null);
+  primeLabelForEntry(undefined);
+});
+
+test('primeLabelForChip writes the bare anchor key for a plain drill chip', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.r101821');
+  primeLabelForChip({ id: 'r101821' }, 'Bayreuth');
+  assert.equal(tc.cache.get('tunein.label.r101821'), 'Bayreuth');
+  tc.cache.invalidate('tunein.label.r101821');
+});
+
+test('primeLabelForChip writes the bare filter key for a filter-bearing chip', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.g26');
+  tc.cache.invalidate('tunein.label.r101821:g26');
+  // Filter-bearing chips' text labels the filter axis (e.g. "Country"),
+  // not the combined node — so the write must go under the bare filter
+  // key and NOT under the combined token.
+  primeLabelForChip({ id: 'r101821', filter: 'g26' }, 'Country');
+  assert.equal(tc.cache.get('tunein.label.g26'), 'Country');
+  assert.equal(tc.cache.get('tunein.label.r101821:g26'), undefined);
+  tc.cache.invalidate('tunein.label.g26');
+});
+
+test('primeLabelForChip tolerates empty inputs without throwing', () => {
+  primeLabelForChip(null, 'X');
+  primeLabelForChip({ id: 'r1' }, '');
+  primeLabelForChip({ id: 'r1' }, '   ');
+  primeLabelForChip({}, 'no anchor');
+});
+
+test('renderEntry primes tunein.label from the row text at render time (#105)', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.r101821');
+  renderEntry({
+    text: 'Bayreuth',
+    URL: 'http://opml.radiotime.com/Browse.ashx?id=r101821&render=json',
+  });
+  assert.equal(tc.cache.get('tunein.label.r101821'), 'Bayreuth');
+  tc.cache.invalidate('tunein.label.r101821');
+});
+
+test('renderEntry primes tunein.label for a station row too (defence-in-depth) (#105)', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.s12345');
+  renderEntry({ type: 'audio', guide_id: 's12345', text: 'KEXP' });
+  assert.equal(tc.cache.get('tunein.label.s12345'), 'KEXP');
+  tc.cache.invalidate('tunein.label.s12345');
+});
+
+test('renderPivotChips primes tunein.label.<filter> from pivot chip text (#105)', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.g26');
+  renderPivotChips([{
+    url:   'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=g26',
+    label: 'Country',
+    axis:  'genre',
+  }]);
+  assert.equal(tc.cache.get('tunein.label.g26'), 'Country');
+  tc.cache.invalidate('tunein.label.g26');
+});
+
+test('renderRelatedChips primes tunein.label from each chip (#105)', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.g79');
+  tc.cache.invalidate('tunein.label.l109');
+  renderRelatedChips([
+    { text: 'Folk', URL: 'http://opml.radiotime.com/Browse.ashx?id=g79', key: 'pivotGenre' },
+    {
+      text: 'German',
+      URL:  'http://opml.radiotime.com/Browse.ashx?id=g79&filter=l109',
+      key:  'pivotLanguage',
+    },
+  ]);
+  // Plain drill chip → bare anchor key.
+  assert.equal(tc.cache.get('tunein.label.g79'), 'Folk');
+  // Filter-bearing chip → bare filter key.
+  assert.equal(tc.cache.get('tunein.label.l109'), 'German');
+  tc.cache.invalidate('tunein.label.g79');
+  tc.cache.invalidate('tunein.label.l109');
+});
+
+test('renderEntry does not fire a fetch when priming the cache (#105)', async () => {
+  // Wrap fetch and count calls — the primer must be pure cache I/O.
+  const realFetch = globalThis.fetch;
+  let fetchCount = 0;
+  globalThis.fetch = async () => {
+    fetchCount++;
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+  try {
+    renderEntry({
+      text: 'Bayreuth',
+      URL: 'http://opml.radiotime.com/Browse.ashx?id=r105_nofetch&render=json',
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.r105_nofetch');
+  assert.equal(fetchCount, 0, 'primer must not fire a fetch');
 });

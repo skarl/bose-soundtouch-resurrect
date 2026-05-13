@@ -36,6 +36,7 @@ import { icon } from '../icons.js';
 import { classifyOutline, normaliseRow } from '../tunein-outline.js';
 import { canonicaliseBrowseUrl, extractDrillKey } from '../tunein-url.js';
 import { parseSid } from '../tunein-sid.js';
+import { cache, TTL_LABEL } from '../tunein-cache.js';
 
 export const DEBOUNCE_MS = 300;
 export const SEARCH_PLACEHOLDER = 'Search TuneIn — try "jazz", "bbc", "ffh"';
@@ -162,6 +163,15 @@ export function searchRow(entry) {
   const norm = normaliseRow(entry);
   const kind = classifyOutline(entry);
   const sid = norm.id || (entry && entry.guide_id) || '';
+
+  // Issue #105: prime the label cache from the search row's text so
+  // tapping into the row's show / station / topic / artist drill paints
+  // the breadcrumb current-segment instantly on first visit. Keyed by
+  // the row's sid (the same crumb token a subsequent #/browse drill or
+  // station-detail view would read). Skips when sid or label is empty.
+  if (sid && typeof norm.primary === 'string' && norm.primary.trim() !== '') {
+    cache.set(`tunein.label.${sid}`, norm.primary.trim(), TTL_LABEL);
+  }
 
   // station / topic / show share the stationRow shape — art + meta +
   // optional badges/chips. station and topic drill to #/station/<sid>
