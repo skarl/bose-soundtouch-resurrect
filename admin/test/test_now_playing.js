@@ -672,7 +672,13 @@ test('np Prev/Next: topic-list tap ships cached episode title as /play name (#10
   }
 });
 
-test('np Prev/Next: topic-list tap omits name when no title is cached (#102)', async () => {
+test('np Prev/Next: topic-list tap falls back to the sid when no title is cached (#102/#99)', async () => {
+  // #99 makes `name` structurally required on playGuideId, so the
+  // SPA always sends a label. When no cached title exists for the
+  // skip target, labelForTopic falls back to the sid — the known
+  // c9d8396 degrade. The browse-drill primer + lazyFetchTopicsList
+  // populate the cache so this fallback only fires on the
+  // never-drilled / never-fetched topic edge case.
   const tc = await import('../app/tunein-cache.js');
   tc.cache.set('tunein.parent.t200', 'p17', tc.TTL_LABEL);
   tc.cache.set('tunein.topics.p17', ['t100', 't200', 't300'], tc.TTL_DRILL_HEAD);
@@ -700,12 +706,8 @@ test('np Prev/Next: topic-list tap omits name when no title is cached (#102)', a
     const playCalls = calls.filter((c) => /\/play\b/.test(c.url));
     const payload = JSON.parse(String(playCalls[0].body || '{}'));
     assert.equal(payload.id, 't300');
-    // The api wrapper omits `name` when the SPA can't resolve a title.
-    // The CGI's body_id fallback will land the sid in <itemName>, but
-    // at least the SPA never *ships* the sid as a label — the
-    // labelForTopic contract is "resolve or stay silent".
-    assert.equal(payload.name, undefined,
-      `name must be omitted when no title is cached, body=${playCalls[0].body}`);
+    assert.equal(payload.name, 't300',
+      `last-resort fallback ships the sid as label, body=${playCalls[0].body}`);
   } finally {
     globalThis.fetch = realFetch;
     tc.cache.invalidate('tunein.parent.t200');

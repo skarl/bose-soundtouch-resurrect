@@ -9,12 +9,8 @@ import { setArt } from './art.js';
 import { icon } from './icons.js';
 import * as theme from './theme.js';
 import { canonicaliseBrowseUrl } from './tunein-url.js';
-import { playGuideId } from './api.js';
-import { cgiErrorMessage } from './error-messages.js';
-import { cache, TTL_STREAM, TTL_LABEL } from './tunein-cache.js';
-import { showToast } from './toast.js';
-import { parentKey as tuneinParentKey, extractParentShowId } from './transport-state.js';
 import { parseSid, isPlayableSid } from './tunein-sid.js';
+import { createPlayButton } from './play-button.js';
 
 export { isPlayableSid };
 
@@ -562,7 +558,7 @@ export function stationRow({
   row.appendChild(body);
 
   if (isPlayableSid(sid)) {
-    row.appendChild(playButton(sid, name || sid));
+    row.appendChild(createPlayButton({ sid, label: name || sid }));
   }
 
   const chev = document.createElement('span');
@@ -697,77 +693,5 @@ function tertiaryLine(spec) {
   }
   // Unknown spec shape — render an empty span so callers don't crash.
   return el;
-}
-
-// Build the inline Play button. The button is a <span role="button">
-// inside the <a> row so the click target is its own and we can
-// preventDefault + stopPropagation cleanly without losing keyboard
-// navigability of the row itself.
-function playButton(sid, label) {
-  const btn = document.createElement('span');
-  btn.className = 'station-row__play';
-  btn.setAttribute('role', 'button');
-  btn.setAttribute('tabindex', '0');
-  btn.setAttribute('aria-label', `Play ${label} on Bo`);
-  // Mobile tap target — 44x44 css per the issue.
-  btn.setAttribute('data-tap', '44');
-
-  const glyph = icon('play', 20);
-  btn.appendChild(glyph);
-
-  // Re-entrancy guard so a double-tap doesn't fire two POSTs.
-  let busy = false;
-
-  async function trigger(evt) {
-    if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
-    if (evt && typeof evt.stopPropagation === 'function') evt.stopPropagation();
-    if (busy) return;
-    busy = true;
-    btn.classList.add('is-loading');
-
-    // Issue #88: prime the parent-show cache the moment a topic plays.
-    // Topic outlines carry a `Tune.ashx?...&sid=p<N>` URL; mine the
-    // sid here so the now-playing Prev/Next classifier can answer
-    // "what show is this from?" without re-fetching. The outline is
-    // stashed on the row anchor by browse.js / search rendering paths;
-    // when absent (hand-crafted callers, tests) the write is silently
-    // skipped — the classifier falls back to its disabled default.
-    if (typeof sid === 'string' && sid.charAt(0) === 't') {
-      const outline = btn.parentNode && btn.parentNode._outline;
-      const parent = outline ? extractParentShowId(outline) : null;
-      if (parent) cache.set(tuneinParentKey(sid), parent, TTL_LABEL);
-    }
-
-    const cacheKey = `tunein.stream.${sid}`;
-    const cached = cache.get(cacheKey);
-
-    try {
-      const result = await playGuideId(sid, label, cached);
-      if (result && result.ok) {
-        if (typeof result.url === 'string' && result.url) {
-          cache.set(cacheKey, result.url, TTL_STREAM);
-        }
-        showToast(`Playing on Bo: ${label}`);
-      } else {
-        // Stale cache entry that resolved to a placeholder — drop it so
-        // the next click re-resolves cleanly.
-        cache.invalidate(cacheKey);
-        showToast(cgiErrorMessage(result));
-      }
-    } catch (err) {
-      cache.invalidate(cacheKey);
-      showToast('Could not reach Bo');
-    } finally {
-      btn.classList.remove('is-loading');
-      busy = false;
-    }
-  }
-
-  btn.addEventListener('click', trigger);
-  btn.addEventListener('keydown', (evt) => {
-    if (evt && (evt.key === ' ' || evt.key === 'Enter')) trigger(evt);
-  });
-
-  return btn;
 }
 

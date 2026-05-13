@@ -560,9 +560,13 @@ export default defineView({
     //   2. The firmware's own <itemName> if it's already on this topic
     //      AND that name isn't itself the raw guide_id (defending
     //      against a stale state written by an earlier sid-fallback).
-    // Returns null when nothing resolves — the caller must omit `name`
-    // from the POST so the CGI falls back to body_id rather than
-    // shipping the sid as a label.
+    // Falls back to the topic id as a last resort: #99 makes `name`
+    // structurally required on playGuideId, so we always return a
+    // string. The fallback is the known c9d8396 degrade (itemName
+    // surfaces the sid); the topic-name primer in the browse drill +
+    // the lazy fetcher below populate the cache so the fallback fires
+    // only on a never-drilled, never-fetched topic — vanishingly rare
+    // in practice.
     function labelForTopic(topicId) {
       const cached = cache.get(topicNameKey(topicId));
       if (typeof cached === 'string' && cached) return cached;
@@ -575,7 +579,7 @@ export default defineView({
           && itemName !== topicId) {
         return itemName;
       }
-      return null;
+      return topicId;
     }
 
     // Fan-out: lazy-fetch the topics list for `parentId` when it isn't

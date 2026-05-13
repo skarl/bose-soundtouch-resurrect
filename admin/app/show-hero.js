@@ -22,12 +22,7 @@
 import { stationArt } from './components.js';
 import { isPlayableSid } from './tunein-sid.js';
 import { canonicaliseBrowseUrl } from './tunein-url.js';
-import { cache, TTL_STREAM, TTL_LABEL } from './tunein-cache.js';
-import { parentKey as tuneinParentKey, extractParentShowId } from './transport-state.js';
-import { playGuideId } from './api.js';
-import { cgiErrorMessage } from './error-messages.js';
-import { showToast } from './toast.js';
-import { icon } from './icons.js';
+import { createPlayButton } from './play-button.js';
 
 // Drill-only prefixes / unknown specs render nothing useful as a hero,
 // but the caller is in charge of whether to mount one. We mirror the
@@ -78,7 +73,7 @@ export function showHero({
   hero.appendChild(body);
 
   if (isPlayableSid(sid)) {
-    hero.appendChild(playButton(sid, name || sid));
+    hero.appendChild(createPlayButton({ sid, label: name || sid }));
   }
 
   return hero;
@@ -134,62 +129,5 @@ function browseUrlToHash(canonical) {
   qs.delete('render');
   const out = qs.toString();
   return out ? `#/browse?${out}` : '#/browse';
-}
-
-function playButton(sid, label) {
-  const btn = document.createElement('span');
-  btn.className = 'station-row__play';
-  btn.setAttribute('role', 'button');
-  btn.setAttribute('tabindex', '0');
-  btn.setAttribute('aria-label', `Play ${label} on Bo`);
-  btn.setAttribute('data-tap', '44');
-
-  const glyph = icon('play', 20);
-  btn.appendChild(glyph);
-
-  let busy = false;
-
-  async function trigger(evt) {
-    if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
-    if (evt && typeof evt.stopPropagation === 'function') evt.stopPropagation();
-    if (busy) return;
-    busy = true;
-    btn.classList.add('is-loading');
-
-    if (typeof sid === 'string' && sid.charAt(0) === 't') {
-      const outline = btn.parentNode && btn.parentNode._outline;
-      const parent = outline ? extractParentShowId(outline) : null;
-      if (parent) cache.set(tuneinParentKey(sid), parent, TTL_LABEL);
-    }
-
-    const cacheKey = `tunein.stream.${sid}`;
-    const cached = cache.get(cacheKey);
-
-    try {
-      const result = await playGuideId(sid, label, cached);
-      if (result && result.ok) {
-        if (typeof result.url === 'string' && result.url) {
-          cache.set(cacheKey, result.url, TTL_STREAM);
-        }
-        showToast(`Playing on Bo: ${label}`);
-      } else {
-        cache.invalidate(cacheKey);
-        showToast(cgiErrorMessage(result));
-      }
-    } catch (_err) {
-      cache.invalidate(cacheKey);
-      showToast('Could not reach Bo');
-    } finally {
-      btn.classList.remove('is-loading');
-      busy = false;
-    }
-  }
-
-  btn.addEventListener('click', trigger);
-  btn.addEventListener('keydown', (evt) => {
-    if (evt && (evt.key === ' ' || evt.key === 'Enter')) trigger(evt);
-  });
-
-  return btn;
 }
 

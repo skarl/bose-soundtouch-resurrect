@@ -221,13 +221,15 @@ export async function previewStream(payload) {
 // goes straight to /select, but still applies the placeholder filter
 // so a stale cache entry can never select a tombstone.
 export async function playGuideId(guideId, name, cachedUrl) {
-  // Note: name is the resolved station / show / topic text. The CGI
-  // writes it into both the resolver's `name` field and <itemName> on
-  // the /select POST. Without it the firmware's persistent now-playing
-  // label degrades to the raw guide_id (visible in mini-player + now-
-  // playing view).
-  const payload = { id: guideId };
-  if (typeof name === 'string' && name) payload.name = name;
+  // #99: `name` is structurally required. The CGI writes it into both
+  // the resolver's `name` field and <itemName> on the /select POST;
+  // without it the mini-player surfaces the raw guide_id (the c9d8396
+  // regression). Throw synchronously so the bug is caught at the
+  // callsite rather than waiting for the user to see the sid live.
+  if (typeof name !== 'string' || !name) {
+    throw new Error('playGuideId: label is required');
+  }
+  const payload = { id: guideId, name };
   if (typeof cachedUrl === 'string' && cachedUrl) payload.url = cachedUrl;
   const res = await fetch(`${apiBase}/play`, {
     method: 'POST',
