@@ -31,6 +31,7 @@ import {
   renderEntry,
   drillHashFor,
   setChildCrumbs,
+  setCurrentParts,
   pluralize,
   skeleton,
   errorNode,
@@ -159,14 +160,43 @@ export function stringifyCrumbs(crumbs) {
   return crumbs.join(',');
 }
 
+// Helpers for the `filters` array shape. Always returns a fresh array
+// of trimmed non-empty strings. Tolerates legacy callers still passing
+// `parts.filter` as a single string (or a pre-joined comma list).
+function filtersOf(parts) {
+  if (!parts) return [];
+  if (Array.isArray(parts.filters)) {
+    return parts.filters.filter((s) => typeof s === 'string' && s !== '');
+  }
+  if (typeof parts.filter === 'string' && parts.filter !== '') {
+    return parts.filter.split(',').map((s) => s.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+// Stash a `filters: string[]` (and back-compat `filter: string`) on a
+// parts object. Empty arrays drop both fields so the URL composer emits
+// the bare drill (no `filter=` param).
+function setFilters(parts, list) {
+  const cleaned = (Array.isArray(list) ? list : []).filter((s) => typeof s === 'string' && s !== '');
+  if (cleaned.length > 0) {
+    parts.filters = cleaned;
+    parts.filter  = cleaned.join(',');
+  } else {
+    delete parts.filters;
+    delete parts.filter;
+  }
+  return parts;
+}
+
 // Crumb token for a drill-parts object. The token is the value the
 // user would land on if they clicked Back to this level: prefer `id`,
-// fall back to `c`. When a `filter` accompanies the anchor we encode
-// it as `<anchor>:<filter>` so two drills that share the same anchor
-// but differ in their filter (e.g. the language tree, where every
+// fall back to `c`. When filters accompany the anchor we encode them
+// as `<anchor>:<f1>+<f2>+…` so two drills that share the same anchor
+// but differ in their filters (e.g. the language tree, where every
 // level emits `c=lang` or `c=music` with a different `filter=l<NNN>`)
-// produce distinct, navigable crumbs (#89). pivots / offsets remain
-// refinements that do not become crumbs.
+// produce distinct, navigable crumbs (#89, #106). pivots / offsets
+// remain refinements that do not become crumbs.
 // Returns null when neither anchor is set (root view).
 export function crumbTokenFor(parts) {
   if (!parts) return null;
@@ -174,8 +204,9 @@ export function crumbTokenFor(parts) {
   if (typeof parts.id === 'string' && parts.id !== '') anchor = parts.id;
   else if (typeof parts.c === 'string' && parts.c !== '') anchor = parts.c;
   if (!anchor) return null;
-  if (typeof parts.filter === 'string' && parts.filter !== '') {
-    return `${anchor}:${parts.filter}`;
+  const filters = filtersOf(parts);
+  if (filters.length > 0) {
+    return `${anchor}:${filters.join('+')}`;
   }
   return anchor;
 }
@@ -184,35 +215,44 @@ export function crumbTokenFor(parts) {
 // parts the user should land on. Heuristic:
 //   - bare tokens matching /^[a-z]\d+$/ are guide_ids (`id=` anchor)
 //   - bare tokens otherwise are category short names (`c=`)
-//   - tokens with a `:filter` suffix attach the filter to whichever
-//     anchor form applies (so `lang:l109` → `{c:'lang', filter:'l109'}`,
-//     `c123:l109` → `{id:'c123', filter:'l109'}`)
+//   - tokens with a `:f1+f2+…` suffix attach N filters to whichever
+//     anchor form applies (so `lang:l109` → `{c:'lang', filters:['l109']}`,
+//     `r101821:g26+l170` → `{id:'r101821', filters:['g26','l170']}`)
 export function partsFromCrumb(token) {
   if (typeof token !== 'string' || token === '') return null;
   const colonIdx = token.indexOf(':');
   let anchor = token;
-  let filter = '';
+  let filterRaw = '';
   if (colonIdx >= 0) {
     anchor = token.slice(0, colonIdx);
-    filter = token.slice(colonIdx + 1);
+    filterRaw = token.slice(colonIdx + 1);
   }
   if (!anchor) return null;
   const parts = /^[a-z]\d+$/.test(anchor) ? { id: anchor } : { c: anchor };
-  if (filter) parts.filter = filter;
+  if (filterRaw) {
+    const list = filterRaw.split('+').map((s) => s.trim()).filter(Boolean);
+    setFilters(parts, list);
+  }
   return parts;
 }
 
 // A drill URL can carry any of {id, c, filter, pivot, offset}. The
 // presence of `id` or `c` is the load-bearing signal; the others
-// modify the drill. Returns null when neither anchor is set (root
-// view).
+// modify the drill. The URL's `filter=` may be comma-separated values
+// (multi-filter wire shape, #106); the resulting parts object carries
+// `filters: string[]` plus back-compat `filter: string`. Returns null
+// when neither anchor is set (root view).
 function pickDrillParts(query) {
   if (!query || (typeof query.id !== 'string' && typeof query.c !== 'string')) {
     return null;
   }
   const out = {};
-  for (const key of ['id', 'c', 'filter', 'pivot', 'offset']) {
+  for (const key of ['id', 'c', 'pivot', 'offset']) {
     if (typeof query[key] === 'string' && query[key] !== '') out[key] = query[key];
+  }
+  if (typeof query.filter === 'string' && query.filter !== '') {
+    const list = query.filter.split(',').map((s) => s.trim()).filter(Boolean);
+    setFilters(out, list);
   }
   return out;
 }
@@ -221,18 +261,22 @@ function pickDrillParts(query) {
 // `c=music&filter=l216` reads more usefully than just `music`. When
 // the filter is an lcode (`l<NNN>`) and we have a cached language
 // name for it, append the human form so end users get an at-a-glance
-// translation of the otherwise opaque numeric filter (#90).
+// translation of the otherwise opaque numeric filter (#90). With
+// multi-filter drills (#106) the comma-joined wire value is shown;
+// a single-lcode filter still resolves to its language name.
 // Exported for unit testing — production callers stay inside this file.
 export function crumbLabelFor(parts) {
   const segs = [];
+  const filters = filtersOf(parts);
+  const filterStr = filters.join(',');
   if (parts.id) segs.push(parts.id);
   if (parts.c)  segs.push(`c=${parts.c}`);
-  if (parts.filter) segs.push(`filter=${parts.filter}`);
+  if (filterStr) segs.push(`filter=${filterStr}`);
   if (parts.pivot)  segs.push(`pivot=${parts.pivot}`);
   if (parts.offset) segs.push(`offset=${parts.offset}`);
   let label = segs.join(' · ');
-  if (typeof parts.filter === 'string' && /^l\d+$/.test(parts.filter)) {
-    const name = lcodeLabel(parts.filter);
+  if (filters.length === 1 && /^l\d+$/.test(filters[0])) {
+    const name = lcodeLabel(filters[0]);
     if (name) label += ` (${name})`;
   }
   return label;
@@ -241,6 +285,9 @@ export function crumbLabelFor(parts) {
 // ---- root view (segmented tabs) -------------------------------------
 
 function renderRoot(root) {
+  // Root tabs view has no current parts (no drill).
+  setCurrentParts(null);
+
   const tabsBar = document.createElement('div');
   tabsBar.className = 'browse-tabs';
   tabsBar.setAttribute('role', 'tablist');
@@ -377,6 +424,11 @@ function buildDrillFrame(parts, crumbs) {
 }
 
 function renderDrill(root, parts, crumbs) {
+  // Hand the current parts to outline-render so refinement chips
+  // (renderPivotChips / renderRelatedChips) can append THIS page's
+  // filters to their own when composing chip hrefs (#106).
+  setCurrentParts(parts);
+
   const frame = buildDrillFrame(parts, crumbs);
 
   // Page-top filter input, always visible (not behind an icon).
@@ -433,22 +485,30 @@ function renderDrill(root, parts, crumbs) {
 // anchor whose token carries an unresolved language filter. `{ once:
 // true }`; no teardown on view unmount because the DOM-patch is a
 // no-op when the elements are gone.
-function registerLcodeRepatch(parts, crumbIdEl, trailEl, stack, backEl, filterBadge) {
+function registerLcodeRepatch(parts, crumbIdEl, trailEl, stack, backEl, filterBar) {
   if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
-  const hasFilterableToken = (typeof parts.filter === 'string' && /^l\d+$/.test(parts.filter))
-    || (Array.isArray(stack) && stack.some((tok) => /:l\d+$/.test(tok || '')));
+  const filters = filtersOf(parts);
+  const hasFilterableToken = filters.some((f) => /^l\d+$/.test(f))
+    || (Array.isArray(stack) && stack.some((tok) => /:l\d+(?:\+|$)/.test(tok || '') || /:l\d+/.test(tok || '')));
   if (!hasFilterableToken) return;
   window.addEventListener(LCODES_LOADED_EVENT, () => {
     if (crumbIdEl && typeof crumbIdEl.textContent === 'string') {
       crumbIdEl.textContent = crumbLabelFor(parts);
     }
     if (trailEl) hydrateCrumbLabels(stack, trailEl, backEl);
-    // Active-filter badge: when the drill's filter is an lcode, re-
-    // resolve the badge label from the freshly-loaded catalogue.
-    if (filterBadge && filterBadge._label
-        && typeof parts.filter === 'string' && /^l\d+$/.test(parts.filter)) {
-      const name = lcodeLabel(parts.filter);
-      if (name) filterBadge._label.textContent = name;
+    // Active-filter badges: when a filter is an lcode, re-resolve the
+    // badge label from the freshly-loaded catalogue. The bar carries
+    // one badge per filter (#106); each exposes `._badges[]` for the
+    // hydrator.
+    if (filterBar && Array.isArray(filterBar._badges)) {
+      for (const badge of filterBar._badges) {
+        if (!badge || !badge._label) continue;
+        const tok = badge.dataset && badge.dataset.filterToken;
+        if (typeof tok === 'string' && /^l\d+$/.test(tok)) {
+          const name = lcodeLabel(tok);
+          if (name) badge._label.textContent = name;
+        }
+      }
     }
   }, { once: true });
 }
@@ -461,6 +521,10 @@ function registerLcodeRepatch(parts, crumbIdEl, trailEl, stack, backEl, filterBa
 // the show landing has no list tall enough to need filtering. The
 // body is filled by loadShowLanding.
 function renderShowLanding(root, parts, crumbs) {
+  // Show-landing isn't a filterable drill, but keep _currentParts in
+  // sync so the chip composers see a consistent state across mounts.
+  setCurrentParts(parts);
+
   const frame = buildDrillFrame(parts, crumbs);
 
   const body = document.createElement('div');
@@ -619,26 +683,32 @@ export function renderPillBar(parts, stack) {
   const trail = renderCrumbTrail(stack, parts);
   bar.appendChild(trail);
 
-  // Active-filter badge — mounted in-bar, peer to the trail (#104).
-  // Renders only when `parts.filter` is non-empty; carries the
-  // resolved filter label + a × close affordance that navigates to
-  // the same drill without the filter (stack + id preserved).
-  const filter = renderFilterBadge(parts, stack);
-  if (filter) bar.appendChild(filter);
+  // Active-filter badges — mounted in-bar, peers to the trail (#104,
+  // #106). One badge per filter in `parts.filters`; each carries the
+  // resolved filter label + a × close affordance that navigates to the
+  // same drill minus that filter only (the other filters + stack + id
+  // are preserved).
+  const badges = renderFilterBadges(parts, stack);
+  for (const badge of badges) bar.appendChild(badge);
 
   // Sub-handle accessors for the drill frame (hydrateCrumbLabels
   // mutates the trail anchors + the back aria-label in place).
   bar._back = back;
   bar._trail = trail;
-  bar._filter = filter;
+  // Back-compat: `_filter` points at the first badge so single-filter
+  // callers keep working. Multi-filter callers should read `_badges`.
+  bar._filter = badges[0] || null;
+  bar._badges = badges;
   return bar;
 }
 
-// Build the active-filter badge for the pill bar. Returns null when
-// the drill has no filter applied. The badge is a peer of the trail
-// inside the bar, carrying the resolved filter label and a trailing
-// × close affordance that navigates to the same drill minus the
-// filter (preserves the existing stack + primary id / c).
+// Build the active-filter badges for the pill bar. Returns an array
+// (possibly empty) of badge nodes — one per filter in `parts.filters`.
+// Each badge mounts as a peer of the trail inside the bar, carrying
+// the resolved filter label and a trailing × close affordance that
+// navigates to the same drill MINUS THIS ONE FILTER (the other
+// filters + stack + primary anchor are preserved). When all filters
+// are dropped, the URL reverts to the bare drill (#106).
 //
 // Label resolution order — same ladder hydrateCrumbLabels uses for
 // trail anchors:
@@ -651,12 +721,21 @@ export function renderPillBar(parts, stack) {
 //
 // Exported for unit testing — production callers go through
 // renderPillBar.
-export function renderFilterBadge(parts, stack) {
-  if (!parts || typeof parts.filter !== 'string' || parts.filter === '') {
-    return null;
+export function renderFilterBadges(parts, stack) {
+  const filters = filtersOf(parts);
+  if (filters.length === 0) return [];
+  const stackArr = Array.isArray(stack) ? stack : [];
+  const out = [];
+  for (const filterToken of filters) {
+    out.push(buildFilterBadge(filterToken, parts, filters, stackArr));
   }
-  const filterToken = parts.filter;
+  return out;
+}
 
+// Build one badge node for `filterToken`, given the full filter list
+// and current parts / stack so the × close anchor can drop only this
+// filter while preserving the rest.
+function buildFilterBadge(filterToken, parts, filters, stack) {
   const badge = document.createElement('span');
   badge.className = 'browse-bar__filter';
   badge.dataset.filterToken = filterToken;
@@ -666,14 +745,15 @@ export function renderFilterBadge(parts, stack) {
   label.textContent = initialFilterLabel(filterToken);
   badge.appendChild(label);
 
-  // × close affordance — anchor that navigates to the same drill
-  // without `filter=`. Hash-router routes go through anchors so the
-  // back/forward history stays consistent with the trail anchors.
+  // × close affordance — anchor that navigates to the same drill with
+  // this filter dropped (the others are preserved). When the last
+  // filter is removed the URL reverts to the bare drill.
+  const remaining = filters.filter((f) => f !== filterToken);
   const stripped = Object.assign({}, parts);
-  delete stripped.filter;
+  setFilters(stripped, remaining);
   const close = document.createElement('a');
   close.className = 'browse-bar__filter-close';
-  close.setAttribute('href', drillHashFor(stripped, Array.isArray(stack) ? stack : []));
+  close.setAttribute('href', drillHashFor(stripped, stack));
   close.setAttribute('aria-label', 'Remove filter');
   close.appendChild(icon('x', 12));
   badge.appendChild(close);
@@ -691,6 +771,15 @@ export function renderFilterBadge(parts, stack) {
   }
 
   return badge;
+}
+
+// Back-compat shim: legacy callers expect a single badge node (or
+// null) for a single-filter drill. Wraps renderFilterBadges and
+// returns its first element. New code should consume the array form
+// directly via renderFilterBadges.
+export function renderFilterBadge(parts, stack) {
+  const badges = renderFilterBadges(parts, stack);
+  return badges.length > 0 ? badges[0] : null;
 }
 
 // Pick the best already-known label for a filter token without any

@@ -126,6 +126,11 @@ export function writeIncludePodcasts(value) {
 // extract drill keys, encode them as a #/browse?... hash. Returns null
 // when the URL can't be parsed into drill keys — caller falls back to
 // the bare guide_id form.
+//
+// Multi-filter (#106): `extractDrillKey` returns `filters: string[]`
+// when the URL's filter is comma-separated. Emit the joined wire form
+// `filter=l109,g22` on the hash. Falls back to the legacy single-
+// string `parts.filter` when callers still hold the old shape.
 function drillHashForUrl(rawUrl) {
   if (typeof rawUrl !== 'string' || rawUrl === '') return null;
   try {
@@ -135,7 +140,10 @@ function drillHashForUrl(rawUrl) {
     const qs = new URLSearchParams();
     if (parts.id) qs.set('id', parts.id);
     if (parts.c)  qs.set('c', parts.c);
-    if (parts.filter) qs.set('filter', parts.filter);
+    const filterStr = Array.isArray(parts.filters)
+      ? parts.filters.filter((s) => typeof s === 'string' && s !== '').join(',')
+      : (typeof parts.filter === 'string' ? parts.filter : '');
+    if (filterStr) qs.set('filter', filterStr);
     if (parts.pivot)  qs.set('pivot', parts.pivot);
     if (parts.offset) qs.set('offset', parts.offset);
     return `#/browse?${qs.toString()}`;

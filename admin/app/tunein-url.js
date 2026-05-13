@@ -132,13 +132,31 @@ export function canonicaliseBrowseUrl(rawUrl) {
 
 // Public: parse a Browse.ashx URL (or any URL with these params) into
 // a plain object. Missing keys are omitted (not set to undefined).
+//
+// `filter=` accepts comma-separated values (TuneIn's multi-filter
+// wire shape, e.g. `filter=g26,l170`). The parsed object surfaces both
+// `filters: string[]` (the canonical multi-value form used by the
+// browse view) and the legacy `filter: string` (the raw comma-joined
+// value). `filter` is kept for back-compat with single-filter callers
+// and is deprecated — new code should read `filters`.
 export function extractDrillKey(rawUrl) {
   const out = {};
   if (typeof rawUrl !== 'string' || rawUrl === '') return out;
   const { params } = splitUrl(rawUrl);
-  for (const key of ['id', 'c', 'filter', 'pivot', 'offset']) {
+  for (const key of ['id', 'c', 'pivot', 'offset']) {
     const v = params.get(key);
     if (v != null && v !== '') out[key] = v;
+  }
+  const rawFilter = params.get('filter');
+  if (rawFilter != null && rawFilter !== '') {
+    const filters = rawFilter.split(',').map((s) => s.trim()).filter(Boolean);
+    if (filters.length > 0) {
+      out.filters = filters;
+      // Deprecated alias — kept so callers that haven't migrated to
+      // `filters` still see a sensible single-string value. New code
+      // should read `out.filters` (string[]).
+      out.filter = filters.join(',');
+    }
   }
   return out;
 }
@@ -146,19 +164,37 @@ export function extractDrillKey(rawUrl) {
 // Public: compose a Browse.ashx URL from a parts object. Order of
 // emitted keys matches the order the service itself emits. Always
 // appends `render=json`. Refuses colon-form lcode filters.
+//
+// Accepts either `filters: string[]` (the canonical multi-value form)
+// or the deprecated `filter: string` (single or comma-joined). When
+// both are present, `filters` wins.
 export function composeDrillUrl(parts) {
   const p = parts && typeof parts === 'object' ? parts : {};
-  if (typeof p.filter === 'string' && isColonFormLcode(p.filter)) {
-    throw new Error(`tunein-url: refusing colon-form lcode filter "${p.filter}"`);
+  const filterStr = joinFilters(p);
+  if (filterStr && isColonFormLcode(filterStr)) {
+    throw new Error(`tunein-url: refusing colon-form lcode filter "${filterStr}"`);
   }
   const params = new URLSearchParams();
   // Service-natural ordering: id|c, then filter, pivot, offset.
   if (p.id != null && p.id !== '') params.set('id', String(p.id));
   if (p.c  != null && p.c  !== '') params.set('c',  String(p.c));
-  if (p.filter != null && p.filter !== '') params.set('filter', String(p.filter));
+  if (filterStr) params.set('filter', filterStr);
   if (p.pivot  != null && p.pivot  !== '') params.set('pivot',  String(p.pivot));
   if (p.offset != null && p.offset !== '') params.set('offset', String(p.offset));
   return emitBrowseUrl('Browse.ashx', params);
+}
+
+// Internal: resolve a parts object's filter list to the wire string
+// (`l109,g22`). Prefers `parts.filters` (string[]); falls back to the
+// legacy `parts.filter` (single value or pre-joined comma list). Empty
+// arrays / strings return ''.
+function joinFilters(p) {
+  if (Array.isArray(p.filters)) {
+    const cleaned = p.filters.filter((s) => typeof s === 'string' && s !== '');
+    return cleaned.join(',');
+  }
+  if (typeof p.filter === 'string' && p.filter !== '') return p.filter;
+  return '';
 }
 
 // --- lcode allow-list cache ----------------------------------------

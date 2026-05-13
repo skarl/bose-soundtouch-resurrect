@@ -249,6 +249,86 @@ test('compose then extract round-trips the drill keys', () => {
   assert.equal(parsed.filter, original.filter);
 });
 
+// --- multi-filter (#106) --------------------------------------------
+//
+// TuneIn's Browse / Search wire shape accepts comma-separated values
+// inside a single `filter=` query param (e.g. `filter=l109,g22`). The
+// client surfaces this as `filters: string[]` on the parts object;
+// `filter` is kept as a back-compat alias holding the joined value.
+
+test('extractDrillKey surfaces a single-filter URL as filters: [oneEntry] (back-compat for in-the-wild URLs)', () => {
+  const parts = extractDrillKey('http://opml.radiotime.com/Browse.ashx?id=r101821&filter=g26');
+  assert.equal(parts.id, 'r101821');
+  assert.deepEqual(parts.filters, ['g26']);
+  // The legacy `filter` alias stays populated for callers not yet on
+  // the array shape.
+  assert.equal(parts.filter, 'g26');
+});
+
+test('extractDrillKey splits a comma-separated filter= into filters: string[]', () => {
+  const parts = extractDrillKey('http://opml.radiotime.com/Browse.ashx?id=r101821&filter=g26,l170');
+  assert.equal(parts.id, 'r101821');
+  assert.deepEqual(parts.filters, ['g26', 'l170']);
+  assert.equal(parts.filter, 'g26,l170');
+});
+
+test('extractDrillKey handles three filters stacked on one drill', () => {
+  const parts = extractDrillKey('http://opml.radiotime.com/Browse.ashx?id=r101821&filter=g26,l170,s:popular');
+  assert.deepEqual(parts.filters, ['g26', 'l170', 's:popular']);
+  assert.equal(parts.filter, 'g26,l170,s:popular');
+});
+
+test('extractDrillKey omits filters when the URL has no filter= param', () => {
+  const parts = extractDrillKey('http://opml.radiotime.com/Browse.ashx?id=r101821');
+  assert.equal(parts.id, 'r101821');
+  assert.ok(!('filters' in parts), 'no filters key when absent');
+  assert.ok(!('filter' in parts),  'no filter alias when absent');
+});
+
+test('composeDrillUrl emits a comma-joined filter= from parts.filters: string[]', () => {
+  const url = composeDrillUrl({ id: 'r101821', filters: ['g26', 'l170'] });
+  // Service-natural order: id, filter, render=json. URLSearchParams
+  // emits the comma as %2C (the OPML service decodes either way; the
+  // browser hash router decodes %2C back to ',').
+  assert.match(url, /\bid=r101821\b/);
+  assert.match(url, /\bfilter=g26%2Cl170\b/);
+  assert.match(url, /\brender=json\b/);
+});
+
+test('composeDrillUrl prefers parts.filters over the deprecated parts.filter when both are set', () => {
+  const url = composeDrillUrl({ id: 'r101821', filters: ['g26', 'l170'], filter: 'stale' });
+  assert.match(url, /\bfilter=g26%2Cl170\b/);
+  assert.doesNotMatch(url, /\bfilter=stale\b/);
+});
+
+test('composeDrillUrl emits no filter= when parts.filters is empty', () => {
+  const url = composeDrillUrl({ id: 'r101821', filters: [] });
+  assert.match(url, /\bid=r101821\b/);
+  assert.doesNotMatch(url, /\bfilter=/);
+});
+
+test('extractDrillKey → composeDrillUrl round-trips zero / one / two / three filters', () => {
+  for (const filters of [[], ['g26'], ['g26', 'l170'], ['g26', 'l170', 's:popular']]) {
+    const original = { id: 'r101821' };
+    if (filters.length > 0) original.filters = filters;
+    const url = composeDrillUrl(original);
+    const parsed = extractDrillKey(url);
+    assert.equal(parsed.id, 'r101821', `id round-trips for ${filters.length} filters`);
+    if (filters.length === 0) {
+      assert.ok(!('filters' in parsed), `no filters key for 0 filters`);
+    } else {
+      assert.deepEqual(parsed.filters, filters, `filters round-trip for ${filters.length} filters`);
+    }
+  }
+});
+
+test('composeDrillUrl refuses colon-form lcode hidden inside a multi-filter list', () => {
+  assert.throws(
+    () => composeDrillUrl({ id: 'r101821', filters: ['g26', 'l:170'] }),
+    /colon-form lcode filter/,
+  );
+});
+
 // --- isValidLcode against a fixture catalogue ------------------------
 
 test('isValidLcode returns true for codes present in the cached catalogue', () => {

@@ -32,7 +32,9 @@ const {
   errorNode,
   pluralize,
   setChildCrumbs,
+  setCurrentParts,
   _setChildCrumbsForTest,
+  _setCurrentPartsForTest,
 } = await import('../app/views/browse/outline-render.js');
 
 function classOf(el) { return el.getAttribute('class') || ''; }
@@ -468,4 +470,172 @@ test('renderEntry does not fire a fetch when priming the cache (#105)', async ()
   const tc = await import('../app/tunein-cache.js');
   tc.cache.invalidate('tunein.label.r105_nofetch');
   assert.equal(fetchCount, 0, 'primer must not fire a fetch');
+});
+
+// --- #106 — multi-filter chip composition ---------------------------
+//
+// Refinement chips (renderPivotChips / renderRelatedChips) compose
+// their hrefs by APPENDING to the current page's filters, not
+// replacing them. The composer reads `_currentParts` (set by
+// browse.js before each drill mount); tests drive it through
+// _setCurrentPartsForTest.
+
+test('drillHashFor emits parts.filters: [N] as a comma-joined filter= — #106', () => {
+  _setChildCrumbsForTest([]);
+  const h = drillHashFor({ id: 'r101821', filters: ['g26', 'l170'] });
+  // URLSearchParams encodes the comma as %2C; the hash router decodes
+  // it back to ',' on the receiving end. Either form is wire-correct.
+  assert.match(h, /filter=g26%2Cl170/);
+});
+
+test('drillHashFor falls back to legacy parts.filter when filters is absent — #106 back-compat', () => {
+  _setChildCrumbsForTest([]);
+  const h = drillHashFor({ id: 'r101821', filter: 'g26,l170' });
+  assert.match(h, /filter=g26%2Cl170/);
+});
+
+test('drillHashFor with empty parts.filters omits filter= entirely — #106', () => {
+  _setChildCrumbsForTest([]);
+  const h = drillHashFor({ id: 'r101821', filters: [] });
+  assert.doesNotMatch(h, /filter=/);
+});
+
+test('renderPivotChips appends to current page filters when composing the chip href — #106', () => {
+  // Current page is Bayreuth refined by Country (g26). A pivot chip
+  // adding a Language filter (l170) must produce filter=g26,l170 on
+  // its href so the click stacks rather than replaces.
+  _setCurrentPartsForTest({ id: 'r101821', filters: ['g26'] });
+  try {
+    const wrap = renderPivotChips([{
+      url:   'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=l170',
+      label: 'Hungarian',
+      axis:  'language',
+    }]);
+    const chip = findFirstByClass(wrap, 'browse-pivot');
+    assert.ok(chip);
+    const href = chip.getAttribute('href');
+    assert.match(href, /filter=g26%2Cl170/, `expected filter=g26,l170 in ${href}`);
+    assert.match(href, /id=r101821/);
+  } finally {
+    _setCurrentPartsForTest(null);
+  }
+});
+
+test('renderRelatedChips appends to current page filters when composing chip hrefs — #106', () => {
+  _setCurrentPartsForTest({ id: 'r101821', filters: ['g26'] });
+  try {
+    const wrap = renderRelatedChips([
+      {
+        text: 'Hungarian',
+        URL:  'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=l170',
+        key:  'pivotLanguage',
+      },
+    ]);
+    const chip = findFirstByClass(wrap, 'browse-pivot');
+    assert.ok(chip);
+    const href = chip.getAttribute('href');
+    assert.match(href, /filter=g26%2Cl170/, `expected filter=g26,l170 in ${href}`);
+  } finally {
+    _setCurrentPartsForTest(null);
+  }
+});
+
+test('renderPivotChips with no current parts emits the chip URL verbatim — #106', () => {
+  // No current parts (root view or test default) — chip composition
+  // falls through to the URL-derived parts unchanged.
+  _setCurrentPartsForTest(null);
+  const wrap = renderPivotChips([{
+    url:   'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=l170',
+    label: 'Hungarian',
+    axis:  'language',
+  }]);
+  const chip = findFirstByClass(wrap, 'browse-pivot');
+  const href = chip.getAttribute('href');
+  assert.match(href, /filter=l170/);
+  assert.doesNotMatch(href, /g26/, `no inherited filters when _currentParts is null: ${href}`);
+});
+
+test('renderPivotChips cumulative stack — Bayreuth → +Country → +German lands on filter=g26,l170 — #106', () => {
+  // The end-to-end "chain three refinements" scenario from the issue.
+  // Step 1: user is on Bayreuth (no filters).
+  // Step 2: clicks Country chip → URL adds filter=g26.
+  // Step 3: clicks Language chip with current parts {filters: ['g26']}
+  //         → URL becomes filter=g26,l170.
+  _setCurrentPartsForTest({ id: 'r101821', filters: ['g26'] });
+  try {
+    const wrap = renderPivotChips([{
+      url:   'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=l170',
+      label: 'German',
+      axis:  'language',
+    }]);
+    const chip = findFirstByClass(wrap, 'browse-pivot');
+    const href = chip.getAttribute('href');
+    assert.match(href, /filter=g26%2Cl170/, `cumulative stack: ${href}`);
+  } finally {
+    _setCurrentPartsForTest(null);
+  }
+});
+
+test('renderPivotChips dedupes when the chip filter is already in current parts — #106', () => {
+  // Defence: a chip pointing at a filter that's already active should
+  // not appear twice in the URL.
+  _setCurrentPartsForTest({ id: 'r101821', filters: ['g26', 'l170'] });
+  try {
+    const wrap = renderPivotChips([{
+      url:   'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=g26',
+      label: 'Country',
+      axis:  'genre',
+    }]);
+    const chip = findFirstByClass(wrap, 'browse-pivot');
+    const href = chip.getAttribute('href');
+    // The chip's g26 collapses into the existing g26; the URL keeps
+    // both filters but doesn't double up.
+    assert.match(href, /filter=g26%2Cl170/);
+    assert.doesNotMatch(href, /g26%2Cl170%2Cg26/);
+  } finally {
+    _setCurrentPartsForTest(null);
+  }
+});
+
+test('drillPartsForUrl surfaces parts.filters: [oneEntry] for single-filter URLs (back-compat) — #106', () => {
+  const parts = drillPartsForUrl('http://opml.radiotime.com/Browse.ashx?id=r101821&filter=g26');
+  assert.equal(parts.id, 'r101821');
+  assert.deepEqual(parts.filters, ['g26']);
+});
+
+test('drillPartsForUrl surfaces parts.filters: string[] for multi-filter URLs — #106', () => {
+  const parts = drillPartsForUrl('http://opml.radiotime.com/Browse.ashx?id=r101821&filter=g26,l170');
+  assert.equal(parts.id, 'r101821');
+  assert.deepEqual(parts.filters, ['g26', 'l170']);
+});
+
+test('primeLabelForChip with parts.filters: [N] keys on the last (new) filter — #106', async () => {
+  // Multi-filter chips inherit earlier filters from the current page;
+  // the chip's text labels the LAST (new) filter only. Earlier
+  // filters already have their own cached labels.
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.l170');
+  tc.cache.invalidate('tunein.label.g26');
+  primeLabelForChip({ id: 'r101821', filters: ['g26', 'l170'] }, 'Hungarian');
+  assert.equal(tc.cache.get('tunein.label.l170'), 'Hungarian');
+  // The earlier filter is not overwritten.
+  assert.equal(tc.cache.get('tunein.label.g26'), undefined);
+  tc.cache.invalidate('tunein.label.l170');
+});
+
+test('setCurrentParts is the production setter for current parts — #106', () => {
+  // Equivalent to _setCurrentPartsForTest; verify both wire the same
+  // module-level value.
+  setCurrentParts({ id: 'r101821', filters: ['g26'] });
+  try {
+    const wrap = renderPivotChips([{
+      url:   'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=l170',
+      label: 'Hungarian',
+      axis:  'language',
+    }]);
+    const chip = findFirstByClass(wrap, 'browse-pivot');
+    assert.match(chip.getAttribute('href'), /filter=g26%2Cl170/);
+  } finally {
+    setCurrentParts(null);
+  }
 });

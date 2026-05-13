@@ -58,6 +58,21 @@ export function _setChildCrumbsForTest(crumbs) {
   _childCrumbs = Array.isArray(crumbs) ? crumbs.slice() : [];
 }
 
+// Current-page parts (#106). The pivot / related chip composers append
+// THIS page's filters to the chip's own filter list so multi-filter
+// drills stack cleanly (e.g. Bayreuth → +Country → +German lands on
+// `?id=r101821&filter=g26,l170`). browse.js renderDrill sets this
+// before rendering the outline; root view / tests clear it.
+let _currentParts = null;
+
+export function setCurrentParts(parts) {
+  _currentParts = (parts && typeof parts === 'object') ? parts : null;
+}
+
+export function _setCurrentPartsForTest(parts) {
+  _currentParts = (parts && typeof parts === 'object') ? parts : null;
+}
+
 // Compose the hash anchor for a drill row from its parts. Mirrors
 // composeDrillUrl but emits the SPA-internal hash form. The keys are
 // already plain strings; URLSearchParams handles encoding.
@@ -65,17 +80,48 @@ export function _setChildCrumbsForTest(crumbs) {
 // `crumbs` is the prefix the child link should embed in `from=...`.
 // Defaults to the module-level `_childCrumbs` so renderEntry callers
 // don't need to pass it through. Empty arrays omit `from=` entirely.
+//
+// Multi-filter (#106): emits the joined wire form `filter=l109,g22`
+// when `parts.filters: string[]` is non-empty. Falls back to the
+// legacy single-string `parts.filter` for callers still on the old
+// shape (e.g. tunein-outline pivots whose URL parsed to {filter:'…'}).
 export function drillHashFor(parts, crumbs) {
   const qs = new URLSearchParams();
   if (parts.id)     qs.set('id', parts.id);
   if (parts.c)      qs.set('c', parts.c);
-  if (parts.filter) qs.set('filter', parts.filter);
+  const filterStr = joinFilters(parts);
+  if (filterStr)    qs.set('filter', filterStr);
   if (parts.pivot)  qs.set('pivot', parts.pivot);
   if (parts.offset) qs.set('offset', parts.offset);
   const fromList = Array.isArray(crumbs) ? crumbs : _childCrumbs;
   const fromStr  = stringifyCrumbs(fromList);
   if (fromStr) qs.set('from', fromStr);
   return `#/browse?${qs.toString()}`;
+}
+
+// Resolve a parts object's filter list to the wire string `l109,g22`.
+// Prefers `parts.filters: string[]` (the canonical multi-value form);
+// falls back to the legacy `parts.filter: string`. Empty → ''.
+function joinFilters(parts) {
+  if (Array.isArray(parts.filters)) {
+    const cleaned = parts.filters.filter((s) => typeof s === 'string' && s !== '');
+    return cleaned.join(',');
+  }
+  if (typeof parts.filter === 'string' && parts.filter !== '') return parts.filter;
+  return '';
+}
+
+// Return the canonical filter list for parts (always an array). See
+// joinFilters; this is the same source-of-truth read but in array form.
+function filtersOfParts(parts) {
+  if (!parts) return [];
+  if (Array.isArray(parts.filters)) {
+    return parts.filters.filter((s) => typeof s === 'string' && s !== '');
+  }
+  if (typeof parts.filter === 'string' && parts.filter !== '') {
+    return parts.filter.split(',').map((s) => s.trim()).filter(Boolean);
+  }
+  return [];
 }
 
 // Local copy of stringifyCrumbs so drillHashFor doesn't pull in the
@@ -420,16 +466,17 @@ export function renderCard(entries) {
 // Compose the crumb token for a drill-parts object — same shape as
 // browse.js's exported `crumbTokenFor`, duplicated here to avoid an
 // import cycle (browse.js imports from this module). Tokens are
-// `<anchor>` for plain drills and `<anchor>:<filter>` for filter-
-// bearing drills; null when no anchor.
+// `<anchor>` for plain drills and `<anchor>:<f1>+<f2>+…` for
+// filter-bearing drills (#106); null when no anchor.
 function crumbTokenForParts(parts) {
   if (!parts) return null;
   const anchor = (typeof parts.id === 'string' && parts.id !== '')
     ? parts.id
     : (typeof parts.c === 'string' && parts.c !== '' ? parts.c : '');
   if (!anchor) return null;
-  if (typeof parts.filter === 'string' && parts.filter !== '') {
-    return `${anchor}:${parts.filter}`;
+  const filters = filtersOfParts(parts);
+  if (filters.length > 0) {
+    return `${anchor}:${filters.join('+')}`;
   }
   return anchor;
 }
@@ -464,12 +511,20 @@ export function primeLabelForEntry(entry) {
 // filter-bearing case, and `tunein.label.<crumbToken>` = chip text for
 // plain drill chips. Writing the combined token from a filter-bearing
 // chip would mislead the h1 / current-segment renderer.
+//
+// Multi-filter (#106): when a chip's parts carry multiple filters
+// (rare — typical upstream pivot URLs emit one axis value per chip),
+// the chip's text labels the last (newest) filter only. Earlier
+// filters are inherited from the current page and already have their
+// own cached labels.
 export function primeLabelForChip(parts, label) {
   if (!parts || typeof label !== 'string') return;
   const text = label.trim();
   if (!text) return;
-  if (typeof parts.filter === 'string' && parts.filter !== '') {
-    cache.set(`tunein.label.${parts.filter}`, text, TTL_LABEL);
+  const filters = filtersOfParts(parts);
+  if (filters.length > 0) {
+    const newFilter = filters[filters.length - 1];
+    cache.set(`tunein.label.${newFilter}`, text, TTL_LABEL);
     return;
   }
   const token = crumbTokenForParts(parts);
@@ -512,6 +567,14 @@ export function primeTuneinSkipCaches(entries) {
 // an anchor whose href goes through canonicaliseBrowseUrl so the
 // language-tree rewrite (§ 7.3) and magic-param strip (§ 7.4) happen
 // once at the seam.
+//
+// Multi-filter (#106): when the current page already carries filters,
+// the chip's filter is APPENDED to the existing list rather than
+// replacing it — so chaining `Bayreuth → +Country → +German` lands on
+// `?id=r101821&filter=g26,l170`. The chip's URL-derived parts hold the
+// new filter axis (typically one value); the merge happens at href
+// composition time, the label-cache prime stays keyed on the new
+// filter only (`primeLabelForChip` writes the bare filter key).
 export function renderPivotChips(pivots) {
   const wrap = document.createElement('div');
   wrap.className = 'browse-pivots';
@@ -519,16 +582,46 @@ export function renderPivotChips(pivots) {
     const parts = drillPartsForUrl(pivot.url);
     const chip = document.createElement(parts ? 'a' : 'span');
     chip.className = parts ? 'browse-pivot' : 'browse-pivot is-disabled';
-    if (parts) chip.setAttribute('href', drillHashFor(parts));
+    if (parts) chip.setAttribute('href', drillHashFor(mergeFiltersFromCurrent(parts)));
     chip.textContent = pivot.label || `pivot=${pivot.axis}`;
     chip.setAttribute('data-pivot-axis', pivot.axis);
     // Issue #105: pivot chips' text labels the axis value (e.g.
     // "Country" for a filter-bearing chip, "Bayreuth" for a plain
-    // drill chip). primeLabelForChip picks the right cache key.
+    // drill chip). primeLabelForChip picks the right cache key — the
+    // bare filter (axis value) when the chip is filter-bearing.
     if (parts) primeLabelForChip(parts, pivot.label);
     wrap.appendChild(chip);
   }
   return wrap;
+}
+
+// Merge the current page's filters into a chip's parts so chaining
+// refinement chips stacks rather than replaces. Pure: returns a fresh
+// parts object, never mutates input. New filters from the chip are
+// appended after the current page's filters (deduped — TuneIn's
+// upstream accepts repeats but emitting the same filter twice is just
+// noise on the wire).
+function mergeFiltersFromCurrent(chipParts) {
+  if (!_currentParts) return chipParts;
+  const current = filtersOfParts(_currentParts);
+  if (current.length === 0) return chipParts;
+  const chipFilters = filtersOfParts(chipParts);
+  const seen = new Set();
+  const merged = [];
+  for (const f of current.concat(chipFilters)) {
+    if (typeof f !== 'string' || f === '' || seen.has(f)) continue;
+    seen.add(f);
+    merged.push(f);
+  }
+  const out = Object.assign({}, chipParts);
+  // Reset filter fields then re-stamp from the merged list.
+  delete out.filter;
+  delete out.filters;
+  if (merged.length > 0) {
+    out.filters = merged;
+    out.filter  = merged.join(',');
+  }
+  return out;
 }
 
 // Render every visible child of a `related` section as a flat wrap-
@@ -552,7 +645,11 @@ export function renderRelatedChips(children) {
     const parts = drillPartsFor(entry);
     const chip = document.createElement(parts ? 'a' : 'span');
     chip.className = parts ? 'browse-pivot' : 'browse-pivot is-disabled';
-    if (parts) chip.setAttribute('href', drillHashFor(parts));
+    // Multi-filter (#106): refinement chips append to the current
+    // page's filters so chaining filter chips stacks rather than
+    // replaces. Plain drill chips (no filter axis) pass through
+    // unchanged.
+    if (parts) chip.setAttribute('href', drillHashFor(mergeFiltersFromCurrent(parts)));
     chip.setAttribute('data-chip-kind', kind);
     if (kind === 'pivot') {
       const k = typeof entry.key === 'string' ? entry.key : '';

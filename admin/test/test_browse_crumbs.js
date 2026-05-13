@@ -21,6 +21,7 @@ const {
   renderCrumbTrail,
   renderPillBar,
   renderFilterBadge,
+  renderFilterBadges,
   renderEntry,
   backHrefFor,
   crumbLabelFor,
@@ -119,9 +120,12 @@ test('crumbTokenFor omits the filter suffix when no filter is set', () => {
 });
 
 test('partsFromCrumb round-trips the <anchor>:<filter> form back to drill parts', () => {
-  assert.deepEqual(partsFromCrumb('lang:l109'),       { c: 'lang',  filter: 'l109' });
-  assert.deepEqual(partsFromCrumb('music:l109'),      { c: 'music', filter: 'l109' });
-  assert.deepEqual(partsFromCrumb('c100000948:l109'), { id: 'c100000948', filter: 'l109' });
+  // #106: parts carry `filters: string[]` plus a back-compat `filter`
+  // alias (the comma-joined wire value). Single-filter tokens land as
+  // single-element arrays.
+  assert.deepEqual(partsFromCrumb('lang:l109'),       { c: 'lang',  filters: ['l109'],       filter: 'l109' });
+  assert.deepEqual(partsFromCrumb('music:l109'),      { c: 'music', filters: ['l109'],       filter: 'l109' });
+  assert.deepEqual(partsFromCrumb('c100000948:l109'), { id: 'c100000948', filters: ['l109'], filter: 'l109' });
 });
 
 test('crumbTokenFor → partsFromCrumb round-trip for the language-tree path emits distinct tokens', () => {
@@ -137,9 +141,10 @@ test('crumbTokenFor → partsFromCrumb round-trip for the language-tree path emi
   assert.equal(music,  'music:l109');
   assert.notEqual(lang, german);
   assert.notEqual(german, music);
-  // Round-trip back to drill parts.
-  assert.deepEqual(partsFromCrumb(german), { c: 'lang',  filter: 'l109' });
-  assert.deepEqual(partsFromCrumb(music),  { c: 'music', filter: 'l109' });
+  // Round-trip back to drill parts (now carrying the `filters` array
+  // plus the back-compat `filter` alias — #106).
+  assert.deepEqual(partsFromCrumb(german), { c: 'lang',  filters: ['l109'], filter: 'l109' });
+  assert.deepEqual(partsFromCrumb(music),  { c: 'music', filters: ['l109'], filter: 'l109' });
 });
 
 // --- renderCrumbTrail (legacy ancestor-only shape) ------------------
@@ -638,4 +643,199 @@ test('renderPillBar + filter chip click shape produces a clean trail + badge —
   const badge = bar.querySelector('.browse-bar__filter');
   assert.ok(badge);
   assert.equal(badge.querySelector('.browse-bar__filter-label').textContent, 'Country');
+});
+
+// --- #106 — multi-filter support: parts.filters: string[] -----------
+//
+// TuneIn upstream accepts comma-separated values inside a single
+// `filter=` query param (e.g. `filter=l109,g22` for "rock stations in
+// German-speaking countries"). The SPA's state shape is
+// `parts.filters: string[]`; the crumb-token form is
+// `<anchor>:<f1>+<f2>+…` (plus sign separates filters inside one
+// crumb so the comma-separated `from=` stack is unambiguous).
+
+test('crumbTokenFor encodes parts.filters: string[] as <anchor>:<f1>+<f2>+… — #106', () => {
+  assert.equal(crumbTokenFor({ id: 'r101821', filters: ['g26', 'l170'] }),       'r101821:g26+l170');
+  assert.equal(crumbTokenFor({ c: 'music',    filters: ['l109', 'g22'] }),       'music:l109+g22');
+  assert.equal(crumbTokenFor({ id: 'r101821', filters: ['g26', 'l170', 'm:5'] }), 'r101821:g26+l170+m:5');
+});
+
+test('crumbTokenFor with a single filter emits the legacy <anchor>:<filter> shape — #106', () => {
+  // Single-filter case must produce the same token as the old single-
+  // string callers so bookmarks / pasted URLs from before #106 keep
+  // resolving against the same cache keys.
+  assert.equal(crumbTokenFor({ id: 'r101821', filters: ['g26'] }), 'r101821:g26');
+  assert.equal(crumbTokenFor({ c: 'lang',     filters: ['l109'] }), 'lang:l109');
+});
+
+test('crumbTokenFor with an empty filters array drops to the bare anchor — #106', () => {
+  assert.equal(crumbTokenFor({ id: 'r101821', filters: [] }), 'r101821');
+  assert.equal(crumbTokenFor({ c: 'music',    filters: [] }), 'music');
+});
+
+test('partsFromCrumb splits a <anchor>:<f1>+<f2> token back to filters: [f1, f2] — #106', () => {
+  assert.deepEqual(
+    partsFromCrumb('r101821:g26+l170'),
+    { id: 'r101821', filters: ['g26', 'l170'], filter: 'g26,l170' },
+  );
+  assert.deepEqual(
+    partsFromCrumb('music:l109+g22'),
+    { c: 'music', filters: ['l109', 'g22'], filter: 'l109,g22' },
+  );
+});
+
+test('partsFromCrumb round-trips three stacked filters — #106', () => {
+  const tok = 'r101821:g26+l170+m:5';
+  const parts = partsFromCrumb(tok);
+  assert.deepEqual(parts.filters, ['g26', 'l170', 'm:5']);
+  assert.equal(crumbTokenFor(parts), tok, 'token round-trips');
+});
+
+test('crumbTokenFor → partsFromCrumb round-trips zero / one / two / three filters — #106', () => {
+  for (const filters of [[], ['g26'], ['g26', 'l170'], ['g26', 'l170', 's:popular']]) {
+    const parts = { id: 'r101821' };
+    if (filters.length > 0) parts.filters = filters;
+    const token = crumbTokenFor(parts);
+    const round = partsFromCrumb(token);
+    if (filters.length === 0) {
+      assert.equal(token, 'r101821');
+      assert.deepEqual(round, { id: 'r101821' });
+    } else {
+      assert.deepEqual(round.filters, filters, `${filters.length}-filter round-trip`);
+      assert.equal(round.id, 'r101821');
+    }
+  }
+});
+
+// --- #106 — trail-tail dedupe still fires with multi-filter ---------
+
+test('renderCrumbTrail dedupes the trail tail when current parts have N filters refining the stack-tail anchor — #106', () => {
+  // Stack tail is the bare anchor; the current parts add multiple
+  // filters. Same drill node, just refined — trail must dedupe.
+  cache.set('tunein.label.r101821', 'Bayreuth', TTL_LABEL);
+  const trail = renderCrumbTrail(
+    ['r0', 'r101217', 'r100346', 'r101821'],
+    { id: 'r101821', filters: ['g26', 'l170'] },
+  );
+  const crumbs = trailCrumbs(trail);
+  // Browse + r0 + r101217 + r100346 + (current=Bayreuth) — five total.
+  assert.equal(crumbs.length, 5);
+  assert.equal(crumbs[4].tagName, 'span');
+  assert.equal(crumbs[4].getAttribute('aria-current'), 'page');
+  assert.equal(crumbs[4].textContent, 'Bayreuth');
+});
+
+// --- #106 — renderFilterBadges: one badge per filter -----------------
+
+test('renderFilterBadges returns one badge per filter in parts.filters — #106', async () => {
+  cache.set('tunein.label.g26', 'Country', TTL_LABEL);
+  const { cacheLcodes } = await import('../app/tunein-url.js');
+  cacheLcodes([{ id: 'l170', name: 'Hungarian' }]);
+  const badges = renderFilterBadges(
+    { id: 'r101821', filters: ['g26', 'l170'] },
+    ['r0', 'r101217', 'r100346', 'r101821'],
+  );
+  assert.equal(badges.length, 2, 'one badge per filter');
+  assert.equal(badges[0].dataset.filterToken, 'g26');
+  assert.equal(badges[1].dataset.filterToken, 'l170');
+  assert.equal(badges[0].querySelector('.browse-bar__filter-label').textContent, 'Country');
+  assert.equal(badges[1].querySelector('.browse-bar__filter-label').textContent, 'Hungarian');
+});
+
+test('renderFilterBadges returns [] when parts has no filters — #106', () => {
+  assert.deepEqual(renderFilterBadges({ id: 'r101821' }, []), []);
+  assert.deepEqual(renderFilterBadges({ id: 'r101821', filters: [] }, []), []);
+});
+
+test('renderFilterBadges per-filter × removes only that filter from the URL — #106', () => {
+  // Three filters; clicking the middle × must drop just `l170` and
+  // keep the other two in the URL.
+  cache.set('tunein.label.g26',  'Country',    TTL_LABEL);
+  cache.set('tunein.label.l170', 'Hungarian',  TTL_LABEL);
+  cache.set('tunein.label.s:popular', 'Popular', TTL_LABEL);
+  const stack = ['r0', 'r101217', 'r100346', 'r101821'];
+  const badges = renderFilterBadges(
+    { id: 'r101821', filters: ['g26', 'l170', 's:popular'] },
+    stack,
+  );
+  assert.equal(badges.length, 3);
+  // Middle filter's × — drops only l170.
+  const middleClose = badges[1].querySelector('.browse-bar__filter-close');
+  const href = middleClose.getAttribute('href');
+  assert.match(href, /^#\/browse\?id=r101821/);
+  // The remaining filters are joined with %2C (URLSearchParams comma).
+  assert.match(href, /filter=g26%2Cs%3Apopular/, `expected g26 + s:popular preserved in ${href}`);
+  assert.doesNotMatch(href, /l170/, `l170 dropped from ${href}`);
+  // Stack still preserved.
+  assert.match(href, /from=r0%2Cr101217%2Cr100346%2Cr101821/);
+});
+
+test('renderFilterBadges last-filter × reverts to the bare drill (no empty filter= param) — #106', () => {
+  cache.set('tunein.label.g26', 'Country', TTL_LABEL);
+  const badges = renderFilterBadges({ id: 'r101821', filters: ['g26'] }, ['r0', 'r101821']);
+  assert.equal(badges.length, 1);
+  const close = badges[0].querySelector('.browse-bar__filter-close');
+  const href = close.getAttribute('href');
+  // Bare drill, no lingering filter= or filter= with empty value.
+  assert.match(href, /^#\/browse\?id=r101821/);
+  assert.doesNotMatch(href, /filter=/, `no filter= param in ${href}`);
+});
+
+test('renderFilterBadges first-filter × drops the first and keeps the rest — #106', () => {
+  cache.set('tunein.label.g26',  'Country',   TTL_LABEL);
+  cache.set('tunein.label.l170', 'Hungarian', TTL_LABEL);
+  const badges = renderFilterBadges(
+    { id: 'r101821', filters: ['g26', 'l170'] },
+    [],
+  );
+  const firstClose = badges[0].querySelector('.browse-bar__filter-close');
+  const href = firstClose.getAttribute('href');
+  assert.match(href, /filter=l170(?:&|$)/, `only l170 remains in ${href}`);
+  assert.doesNotMatch(href, /g26/);
+});
+
+test('renderPillBar mounts N badges side-by-side when parts has N filters — #106', () => {
+  cache.set('tunein.label.g26',  'Country',    TTL_LABEL);
+  cache.set('tunein.label.l170', 'Hungarian',  TTL_LABEL);
+  const bar = renderPillBar(
+    { id: 'r101821', filters: ['g26', 'l170'] },
+    ['r0', 'r101217', 'r100346', 'r101821'],
+  );
+  // querySelectorAll isn't available on xmldom — walk children instead.
+  const badges = [];
+  for (const child of bar.childNodes || []) {
+    if (child && child.nodeType === 1
+        && (child.getAttribute('class') || '').split(/\s+/).includes('browse-bar__filter')) {
+      badges.push(child);
+    }
+  }
+  assert.equal(badges.length, 2, 'two badges mount as peers in the bar');
+  assert.equal(badges[0].dataset.filterToken, 'g26');
+  assert.equal(badges[1].dataset.filterToken, 'l170');
+});
+
+test('renderPillBar back-compat: renderFilterBadge still returns a single badge for the single-filter case — #106', () => {
+  // The shim keeps old test-fixture calls working: passing a single
+  // filter still returns one badge node (or null when no filter).
+  cache.set('tunein.label.g26', 'Country', TTL_LABEL);
+  const badge = renderFilterBadge({ id: 'r101821', filter: 'g26' }, []);
+  assert.ok(badge);
+  assert.equal(badge.dataset.filterToken, 'g26');
+});
+
+test('renderPillBar in-the-wild single-filter URL still mounts one badge — #106 back-compat', () => {
+  // The bookmark / paste scenario: a URL stashed before #106 lands
+  // with a single `filter=l109` and partsFromCrumb on its from= stack
+  // produces `parts.filter = 'l109'`. Treated as filters: ['l109'].
+  cache.set('tunein.label.l109', 'German', TTL_LABEL);
+  const bar = renderPillBar({ c: 'music', filter: 'l109' }, ['lang', 'lang:l109']);
+  const badges = [];
+  for (const child of bar.childNodes || []) {
+    if (child && child.nodeType === 1
+        && (child.getAttribute('class') || '').split(/\s+/).includes('browse-bar__filter')) {
+      badges.push(child);
+    }
+  }
+  assert.equal(badges.length, 1);
+  assert.equal(badges[0].dataset.filterToken, 'l109');
 });
