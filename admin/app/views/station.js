@@ -25,6 +25,7 @@ import { showToast } from '../toast.js';
 import { setArt } from '../art.js';
 import { stationGradient } from '../tint.js';
 import { pill } from '../components.js';
+import { icon } from '../icons.js';
 import { probe, assignToPreset, buildBosePayload } from '../probe.js';
 import { previewStream } from '../actions/index.js';
 import { cgiErrorMessage } from '../error-messages.js';
@@ -103,7 +104,31 @@ function presetGenreLabel(preset) {
   return src ? src.toLowerCase() : '';
 }
 
+// Chevron-only back affordance styled like the browse-bar pill. Clicking
+// pops one entry off the SPA history stack via history.back() so the
+// user returns to wherever they came from (browse drill, search results,
+// preset row) instead of being teleported to #/browse.
+function buildBackBar() {
+  const bar = document.createElement('div');
+  bar.className = 'browse-bar';
+
+  const back = document.createElement('a');
+  back.className = 'browse-bar__back';
+  back.href = '#';
+  back.setAttribute('aria-label', 'Back');
+  back.appendChild(icon('chevron-left', 16));
+  back.addEventListener('click', (e) => {
+    e.preventDefault();
+    history.back();
+  });
+
+  bar.appendChild(back);
+  return bar;
+}
+
 function renderSkeleton(root, sid) {
+  const backBar = buildBackBar();
+
   const verdictBox = document.createElement('div');
   verdictBox.className = 'station-verdict';
   verdictBox.textContent = 'Probing stream...';
@@ -118,7 +143,7 @@ function renderSkeleton(root, sid) {
 
   mount(root, html`
     <section class="station-detail" data-view="station" data-sid="${sid}">
-      <p class="breadcrumb"><a href="#/browse">&larr; Browse</a></p>
+      ${backBar}
       <header class="station-header">
         <div class="station-art" hidden></div>
         <div class="station-header__body">
