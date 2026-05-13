@@ -8,111 +8,7 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 
-import { DOMImplementation } from '@xmldom/xmldom';
-
-// --- DOM shim (lifted from test_components.js) ----------------------
-
-const doc = new DOMImplementation().createDocument(null, null, null);
-if (!doc.querySelector) doc.querySelector = () => null;
-if (!doc.documentElement) {
-  const html = doc.createElement('html');
-  doc.appendChild(html);
-}
-if (!doc.documentElement.dataset) doc.documentElement.dataset = {};
-globalThis.document = doc;
-
-const _sample = doc.createElement('span');
-const ElementProto = Object.getPrototypeOf(_sample);
-
-if (!ElementProto.classList) {
-  Object.defineProperty(ElementProto, 'classList', {
-    get() {
-      const el = this;
-      return {
-        add(...names) {
-          const cur = (el.getAttribute('class') || '').split(/\s+/).filter(Boolean);
-          for (const n of names) if (!cur.includes(n)) cur.push(n);
-          el.setAttribute('class', cur.join(' '));
-        },
-        remove(...names) {
-          const cur = (el.getAttribute('class') || '').split(/\s+/).filter(Boolean);
-          el.setAttribute('class', cur.filter((c) => !names.includes(c)).join(' '));
-        },
-        contains(name) {
-          return (el.getAttribute('class') || '').split(/\s+/).includes(name);
-        },
-        toggle(name, force) {
-          const has = this.contains(name);
-          const want = force == null ? !has : !!force;
-          if (want && !has) this.add(name);
-          else if (!want && has) this.remove(name);
-          return want;
-        },
-      };
-    },
-  });
-}
-
-if (!ElementProto.addEventListener) {
-  ElementProto.addEventListener = function (type, fn) {
-    const map = this.__listeners__ || (this.__listeners__ = new Map());
-    if (!map.has(type)) map.set(type, new Set());
-    map.get(type).add(fn);
-  };
-  ElementProto.removeEventListener = function (type, fn) {
-    const map = this.__listeners__;
-    if (map && map.has(type)) map.get(type).delete(fn);
-  };
-  ElementProto.dispatchEvent = function (evt) {
-    const map = this.__listeners__;
-    if (!map || !map.has(evt.type)) return true;
-    for (const fn of map.get(evt.type)) {
-      try { fn.call(this, evt); } catch (_e) { /* swallow */ }
-    }
-    return !evt.defaultPrevented;
-  };
-}
-
-// xmldom keeps className / href / src as JS-only properties; the
-// production code (browse.js, art.js) writes via the property and our
-// assertions read via getAttribute. Mirror property → attribute so
-// both sides see the same value.
-if (!Object.getOwnPropertyDescriptor(ElementProto, 'className')) {
-  Object.defineProperty(ElementProto, 'className', {
-    get() { return this.getAttribute('class') || ''; },
-    set(v) { this.setAttribute('class', String(v == null ? '' : v)); },
-  });
-}
-for (const attr of ['href', 'src', 'alt', 'id']) {
-  if (!Object.getOwnPropertyDescriptor(ElementProto, attr)) {
-    Object.defineProperty(ElementProto, attr, {
-      get() { return this.getAttribute(attr) || ''; },
-      set(v) { this.setAttribute(attr, String(v == null ? '' : v)); },
-    });
-  }
-}
-// dataset Proxy: data-foo ↔ dataset.foo round-trip via attributes.
-if (!Object.getOwnPropertyDescriptor(ElementProto, 'dataset')) {
-  Object.defineProperty(ElementProto, 'dataset', {
-    get() {
-      const el = this;
-      return new Proxy({}, {
-        get(_t, key) {
-          if (typeof key !== 'string') return undefined;
-          const attr = 'data-' + key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
-          const v = el.getAttribute(attr);
-          return v == null ? undefined : v;
-        },
-        set(_t, key, value) {
-          if (typeof key !== 'string') return true;
-          const attr = 'data-' + key.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase());
-          el.setAttribute(attr, String(value));
-          return true;
-        },
-      });
-    },
-  });
-}
+import { doc } from './fixtures/dom-shim.js';
 
 const {
   renderEntry,
@@ -411,44 +307,10 @@ test('browse css: .browse-tabs is a sunken 3-tab segmented control', async () =>
 // extension. browse.js orchestration tests above stay untouched so #76
 // (Load-more button mounting) can land without merge churn.
 
-// Bottom-of-file shims for the things the Play handler needs at runtime.
-// document.body is required by toast.showToast (it appends a container).
-// sessionStorage is needed by tunein-cache's defaultStorage.
-if (!doc.body) {
-  const body = doc.createElement('body');
-  doc.documentElement.appendChild(body);
-  // Make doc.body resolve to the same node we just attached.
-  Object.defineProperty(doc, 'body', { value: body, configurable: true });
-}
-if (!doc.getElementById) {
-  doc.getElementById = function (id) {
-    function walk(node) {
-      if (!node) return null;
-      if (node.nodeType === 1 && node.getAttribute && node.getAttribute('id') === id) return node;
-      for (const c of node.childNodes || []) {
-        const r = walk(c);
-        if (r) return r;
-      }
-      return null;
-    }
-    return walk(doc);
-  };
-}
-if (typeof globalThis.sessionStorage === 'undefined') {
-  const m = new Map();
-  globalThis.sessionStorage = {
-    getItem(k)         { return m.has(k) ? m.get(k) : null; },
-    setItem(k, v)      { m.set(k, String(v)); },
-    removeItem(k)      { m.delete(k); },
-    clear()            { m.clear(); },
-  };
-}
-// xmldom's <span> doesn't expose offsetWidth; the toast nudges layout
-// with `void node.offsetWidth`. A getter returning 0 is enough — we
-// just need the property access to not throw.
-if (!Object.getOwnPropertyDescriptor(ElementProto, 'offsetWidth')) {
-  Object.defineProperty(ElementProto, 'offsetWidth', { get() { return 0; } });
-}
+// sessionStorage is needed by tunein-cache's defaultStorage; doc.body
+// and doc.getElementById already come from the shared shim.
+import { installSessionStorage } from './fixtures/dom-shim.js';
+installSessionStorage();
 
 // Lazy import — tunein-cache + toast import lazily-bound globals we set up above.
 const { cache: playCache } = await import('../app/tunein-cache.js');
