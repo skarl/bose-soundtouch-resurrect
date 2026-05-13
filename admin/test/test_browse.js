@@ -1654,6 +1654,54 @@ test('#87 show landing hero: clicking Play calls playGuideId (mock) and toasts s
   }
 });
 
+// --- #88 skip-cache priming on the topics drill --------------------
+
+test('#88 topics drill primes tunein.parent.<t> and tunein.topics.<p> caches', () => {
+  // A synthetic c=pbrowse-shaped body: one section with key="topics"
+  // and three topic outlines that all carry a Tune.ashx URL with
+  // `sid=p17`. renderOutline walks the section, hits renderTopicsCard,
+  // and primes both caches as a side effect.
+  const json = {
+    head: { status: '200' },
+    body: [
+      {
+        text: 'Recent Episodes',
+        key: 'topics',
+        children: [
+          {
+            type: 'link', item: 'topic', guide_id: 't1001', text: 'Episode 1',
+            URL: 'http://opml.radiotime.com/Tune.ashx?id=t1001&sid=p17&render=json',
+          },
+          {
+            type: 'link', item: 'topic', guide_id: 't1002', text: 'Episode 2',
+            URL: 'http://opml.radiotime.com/Tune.ashx?id=t1002&sid=p17&render=json',
+          },
+          {
+            type: 'link', item: 'topic', guide_id: 't1003', text: 'Episode 3',
+            URL: 'http://opml.radiotime.com/Tune.ashx?id=t1003&sid=p17&render=json',
+          },
+        ],
+      },
+    ],
+  };
+
+  const body = doc.createElement('div');
+  renderOutline(body, json);
+
+  // Assert the cache writes landed.
+  return import('../app/tunein-cache.js').then((tc) => {
+    assert.equal(tc.cache.get('tunein.parent.t1001'), 'p17');
+    assert.equal(tc.cache.get('tunein.parent.t1002'), 'p17');
+    assert.equal(tc.cache.get('tunein.parent.t1003'), 'p17');
+    assert.deepEqual(tc.cache.get('tunein.topics.p17'), ['t1001', 't1002', 't1003']);
+    // Cleanup for downstream tests.
+    tc.cache.invalidate('tunein.parent.t1001');
+    tc.cache.invalidate('tunein.parent.t1002');
+    tc.cache.invalidate('tunein.parent.t1003');
+    tc.cache.invalidate('tunein.topics.p17');
+  });
+});
+
 test('#87 show landing hero: chip click stays an anchor with the canonical genre drill href', async () => {
   const fs = await import('node:fs');
   const path = await import('node:path');

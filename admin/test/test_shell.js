@@ -504,3 +504,144 @@ test('index.html: mini and tabs come after body in DOM order (mobile pin)', asyn
   assert.ok(idxBody > 0 && idxMini > idxBody, 'mini after body');
   assert.ok(idxTabs > idxMini, 'tabs after mini');
 });
+
+// --- mini-player buffering glyph (#88) -----------------------------
+
+function findMiniPlayBtn() {
+  // The .shell-mini contains two <button> elements — body wrapper + play.
+  // The play button is the one carrying the 'shell-mini__play' class.
+  const mini = doc.querySelector('.shell-mini');
+  const buttons = mini.getElementsByTagName('button');
+  for (let i = 0; i < buttons.length; i++) {
+    const b = buttons.item(i);
+    if ((b.getAttribute('class') || '').includes('shell-mini__play')) return b;
+  }
+  return null;
+}
+
+test('mini-player: BUFFERING_STATE renders the buffer glyph + data-phase', async () => {
+  setupShellDOM();
+  globalThis.location.hash = '#/browse';
+  const store = makeStore({
+    speaker: {
+      info: null,
+      nowPlaying: {
+        source: 'TUNEIN',
+        item: { name: 'Fresh Air', location: '/v1/playback/station/p17' },
+        playStatus: 'BUFFERING_STATE',
+      },
+    },
+    ws: { mode: 'ws' },
+    ui: { activeTab: 'now' },
+    caches: {},
+  });
+  const { mountShell } = await import('../app/shell.js');
+  mountShell(store);
+
+  const playBtn = findMiniPlayBtn();
+  assert.ok(playBtn, 'play button exists');
+  assert.equal(playBtn.getAttribute('data-phase'), 'buffering',
+    'data-phase="buffering" surfaces on the play control');
+  assert.equal(playBtn.getAttribute('aria-busy'), 'true',
+    'aria-busy is set for SR users');
+  // Glyph is the 3-dot buffer icon — its child contains three <circle>s.
+  const svg = playBtn.getElementsByTagName('svg').item(0);
+  assert.ok(svg, 'svg glyph mounted');
+  assert.equal(svg.getElementsByTagName('circle').length, 3,
+    'buffer glyph renders three dots');
+});
+
+test('mini-player: PLAY_STATE renders pause glyph (data-phase=playing)', async () => {
+  setupShellDOM();
+  globalThis.location.hash = '#/browse';
+  const store = makeStore({
+    speaker: {
+      info: null,
+      nowPlaying: {
+        source: 'TUNEIN',
+        item: { name: 'KEXP', location: '/v1/playback/station/s12345' },
+        playStatus: 'PLAY_STATE',
+      },
+    },
+    ws: { mode: 'ws' },
+    ui: { activeTab: 'now' },
+    caches: {},
+  });
+  const { mountShell } = await import('../app/shell.js');
+  mountShell(store);
+
+  const playBtn = findMiniPlayBtn();
+  assert.equal(playBtn.getAttribute('data-phase'), 'playing');
+  assert.equal(playBtn.getAttribute('aria-label'), 'Pause');
+  assert.equal(playBtn.getAttribute('aria-busy'), null,
+    'aria-busy cleared in playing phase');
+  // pause glyph has two <rect>s.
+  const svg = playBtn.getElementsByTagName('svg').item(0);
+  assert.equal(svg.getElementsByTagName('rect').length, 2);
+});
+
+test('mini-player: STOP_STATE with no item → idle play glyph', async () => {
+  setupShellDOM();
+  globalThis.location.hash = '#/browse';
+  const store = makeStore({
+    speaker: {
+      info: null,
+      nowPlaying: {
+        source: 'TUNEIN',
+        item: { name: '', location: '' },
+        playStatus: 'STOP_STATE',
+      },
+    },
+    ws: { mode: 'ws' },
+    ui: { activeTab: 'now' },
+    caches: {},
+  });
+  const { mountShell } = await import('../app/shell.js');
+  mountShell(store);
+
+  const playBtn = findMiniPlayBtn();
+  assert.equal(playBtn.getAttribute('data-phase'), 'idle');
+  assert.equal(playBtn.getAttribute('aria-label'), 'Play');
+});
+
+test('mini-player: tap on buffering control is a no-op (re-entrancy guard)', async () => {
+  setupShellDOM();
+  globalThis.location.hash = '#/browse';
+
+  // Stub fetch — any PRESS that escapes will hit this and increment calls.
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, opts) => {
+    calls.push(String(opts && opts.body));
+    return { ok: true, status: 200 };
+  };
+
+  try {
+    const store = makeStore({
+      speaker: {
+        info: null,
+        nowPlaying: {
+          source: 'TUNEIN',
+          item: { name: 'Fresh Air', location: '/v1/playback/station/p17' },
+          playStatus: 'BUFFERING_STATE',
+        },
+      },
+      ws: { mode: 'ws' },
+      ui: { activeTab: 'now' },
+      caches: {},
+    });
+    const { mountShell } = await import('../app/shell.js');
+    mountShell(store);
+
+    const playBtn = findMiniPlayBtn();
+    playBtn.dispatchEvent(ev('click'));
+    // Give the press/release await chain a beat — should fire nothing.
+    await new Promise((r) => setTimeout(r, 10));
+
+    const playPauseHits = calls.filter((b) => /PLAY|PAUSE/.test(b));
+    assert.equal(playPauseHits.length, 0,
+      `tap on buffering control must not emit a PLAY/PAUSE key, got ${JSON.stringify(playPauseHits)}`);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

@@ -676,6 +676,423 @@ test('actions.playPreset: returns silently when the slot is empty', async () => 
   assert.equal(noPresets, undefined, 'missing presets list resolves to undefined');
 });
 
+// --- buffering glyph + Prev/Next classifier wiring (#88) ------------
+
+test('np play button: BUFFERING_STATE → buffer glyph + data-phase="buffering"', () => {
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: 'Fresh Air', location: '/v1/playback/station/p17' },
+      playStatus: 'BUFFERING_STATE',
+    },
+  });
+
+  const { root, destroy } = mountView();
+  try {
+    const btnPlay = root.querySelector('.np-btn--play');
+    assert.ok(btnPlay, 'play button mounted');
+    assert.equal(btnPlay.getAttribute('data-phase'), 'buffering');
+    assert.equal(btnPlay.getAttribute('aria-busy'), 'true');
+    // Buffer glyph has 3 circles (three-dot indicator).
+    const svg = btnPlay.getElementsByTagName('svg').item(0);
+    assert.equal(svg.getElementsByTagName('circle').length, 3,
+      'buffer glyph: three circles');
+  } finally {
+    destroy();
+  }
+});
+
+test('np play button: PLAY_STATE → pause glyph, data-phase="playing"', () => {
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: 'KEXP', location: '/v1/playback/station/s12345' },
+      playStatus: 'PLAY_STATE',
+    },
+  });
+
+  const { root, destroy } = mountView();
+  try {
+    const btnPlay = root.querySelector('.np-btn--play');
+    assert.equal(btnPlay.getAttribute('data-phase'), 'playing');
+    assert.equal(btnPlay.getAttribute('aria-busy'), null);
+    const svg = btnPlay.getElementsByTagName('svg').item(0);
+    assert.equal(svg.getElementsByTagName('rect').length, 2,
+      'pause glyph: two rects');
+  } finally {
+    destroy();
+  }
+});
+
+test('np play button: STOP_STATE with no item → data-phase="idle", play glyph', () => {
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: '', location: '' },
+      playStatus: 'STOP_STATE',
+    },
+  });
+
+  const { root, destroy } = mountView();
+  try {
+    const btnPlay = root.querySelector('.np-btn--play');
+    assert.equal(btnPlay.getAttribute('data-phase'), 'idle');
+    const svg = btnPlay.getElementsByTagName('svg').item(0);
+    // Play glyph is a single polygon.
+    assert.equal(svg.getElementsByTagName('polygon').length, 1);
+  } finally {
+    destroy();
+  }
+});
+
+test('np play button: tap during BUFFERING is a no-op (re-entrancy guard)', async () => {
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: 'Fresh Air', location: '/v1/playback/station/p17' },
+      playStatus: 'BUFFERING_STATE',
+    },
+  });
+
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, opts) => {
+    calls.push(String(opts && opts.body));
+    return { ok: true, status: 200 };
+  };
+
+  const { root, destroy } = mountView();
+  try {
+    const btnPlay = root.querySelector('.np-btn--play');
+    btnPlay.dispatchEvent(ev('click'));
+    await new Promise((r) => setTimeout(r, 10));
+    const playPauseHits = calls.filter((b) => /PLAY|PAUSE/.test(b));
+    assert.equal(playPauseHits.length, 0,
+      `tapping the buffering control must not emit a PLAY/PAUSE key, got ${JSON.stringify(playPauseHits)}`);
+  } finally {
+    globalThis.fetch = realFetch;
+    destroy();
+  }
+});
+
+test('np Prev/Next: TUNEIN station → both disabled (no skip)', () => {
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: 'SWR3', location: '/v1/playback/station/s24896' },
+      playStatus: 'PLAY_STATE',
+    },
+  });
+
+  const { root, destroy } = mountView();
+  try {
+    const btnPrev = root.querySelector('.np-btn--prev');
+    const btnNext = root.querySelector('.np-btn--next');
+    assert.equal(btnPrev.disabled, true, 'Prev disabled for station');
+    assert.equal(btnNext.disabled, true, 'Next disabled for station');
+  } finally {
+    destroy();
+  }
+});
+
+test('np Prev/Next: TUNEIN show (p-prefix) → both disabled', () => {
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: 'Fresh Air', location: '/v1/playback/station/p17' },
+      playStatus: 'PLAY_STATE',
+    },
+  });
+
+  const { root, destroy } = mountView();
+  try {
+    const btnPrev = root.querySelector('.np-btn--prev');
+    const btnNext = root.querySelector('.np-btn--next');
+    assert.equal(btnPrev.disabled, true);
+    assert.equal(btnNext.disabled, true);
+  } finally {
+    destroy();
+  }
+});
+
+test('np Prev/Next: BLUETOOTH → both enabled (firmware-key path)', () => {
+  setSpeakerState({
+    nowPlaying: {
+      source: 'BLUETOOTH',
+      item: { name: 'iPhone', location: '' },
+      playStatus: 'PLAY_STATE',
+    },
+  });
+
+  const { root, destroy } = mountView();
+  try {
+    const btnPrev = root.querySelector('.np-btn--prev');
+    const btnNext = root.querySelector('.np-btn--next');
+    assert.equal(btnPrev.disabled, false, 'Prev enabled for BLUETOOTH');
+    assert.equal(btnNext.disabled, false, 'Next enabled for BLUETOOTH');
+    assert.equal(btnPrev.getAttribute('data-transport-mode'), 'firmware');
+  } finally {
+    destroy();
+  }
+});
+
+test('np Prev/Next: STANDBY → both disabled', () => {
+  setSpeakerState({
+    nowPlaying: { source: 'STANDBY' },
+  });
+
+  const { root, destroy } = mountView();
+  try {
+    const btnPrev = root.querySelector('.np-btn--prev');
+    const btnNext = root.querySelector('.np-btn--next');
+    assert.equal(btnPrev.disabled, true);
+    assert.equal(btnNext.disabled, true);
+  } finally {
+    destroy();
+  }
+});
+
+test('np Prev/Next: TUNEIN topic with cached parent + ≥2 siblings → enabled', async () => {
+  // Prime the cache before mounting so syncPrevNext picks it up.
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.set('tunein.parent.t200', 'p17', tc.TTL_LABEL);
+  tc.cache.set('tunein.topics.p17', ['t100', 't200', 't300'], tc.TTL_DRILL_HEAD);
+
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: 'Episode 2', location: '/v1/playback/station/t200' },
+      playStatus: 'PLAY_STATE',
+    },
+  });
+
+  const { root, destroy } = mountView();
+  try {
+    const btnPrev = root.querySelector('.np-btn--prev');
+    const btnNext = root.querySelector('.np-btn--next');
+    assert.equal(btnPrev.disabled, false, 'Prev enabled mid-list');
+    assert.equal(btnNext.disabled, false, 'Next enabled mid-list');
+    assert.equal(btnPrev.getAttribute('data-transport-mode'), 'topic-list');
+  } finally {
+    tc.cache.invalidate('tunein.parent.t200');
+    tc.cache.invalidate('tunein.topics.p17');
+    destroy();
+  }
+});
+
+test('np Prev/Next: topic at first index → Prev disabled, Next enabled', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.set('tunein.parent.t100', 'p17', tc.TTL_LABEL);
+  tc.cache.set('tunein.topics.p17', ['t100', 't200', 't300'], tc.TTL_DRILL_HEAD);
+
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: 'Episode 1', location: '/v1/playback/station/t100' },
+      playStatus: 'PLAY_STATE',
+    },
+  });
+
+  const { root, destroy } = mountView();
+  try {
+    assert.equal(root.querySelector('.np-btn--prev').disabled, true);
+    assert.equal(root.querySelector('.np-btn--next').disabled, false);
+  } finally {
+    tc.cache.invalidate('tunein.parent.t100');
+    tc.cache.invalidate('tunein.topics.p17');
+    destroy();
+  }
+});
+
+test('np Prev/Next: topic at last index → Next disabled, Prev enabled', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.set('tunein.parent.t300', 'p17', tc.TTL_LABEL);
+  tc.cache.set('tunein.topics.p17', ['t100', 't200', 't300'], tc.TTL_DRILL_HEAD);
+
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: 'Episode 3', location: '/v1/playback/station/t300' },
+      playStatus: 'PLAY_STATE',
+    },
+  });
+
+  const { root, destroy } = mountView();
+  try {
+    assert.equal(root.querySelector('.np-btn--prev').disabled, false);
+    assert.equal(root.querySelector('.np-btn--next').disabled, true);
+  } finally {
+    tc.cache.invalidate('tunein.parent.t300');
+    tc.cache.invalidate('tunein.topics.p17');
+    destroy();
+  }
+});
+
+test('np Prev/Next: topic with cached parent but only 1 sibling → disabled', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.set('tunein.parent.t100', 'p38913', tc.TTL_LABEL);
+  tc.cache.set('tunein.topics.p38913', ['t100'], tc.TTL_DRILL_HEAD);
+
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: 'Only', location: '/v1/playback/station/t100' },
+      playStatus: 'PLAY_STATE',
+    },
+  });
+
+  const { root, destroy } = mountView();
+  try {
+    assert.equal(root.querySelector('.np-btn--prev').disabled, true,
+      'Prev disabled when topics list has 1 entry');
+    assert.equal(root.querySelector('.np-btn--next').disabled, true,
+      'Next disabled when topics list has 1 entry');
+  } finally {
+    tc.cache.invalidate('tunein.parent.t100');
+    tc.cache.invalidate('tunein.topics.p38913');
+    destroy();
+  }
+});
+
+test('np Prev/Next: topic without cached parent → disabled (defence-in-depth)', () => {
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: 'Orphan', location: '/v1/playback/station/t999' },
+      playStatus: 'PLAY_STATE',
+    },
+  });
+
+  const { root, destroy } = mountView();
+  try {
+    assert.equal(root.querySelector('.np-btn--prev').disabled, true);
+    assert.equal(root.querySelector('.np-btn--next').disabled, true);
+  } finally {
+    destroy();
+  }
+});
+
+test('np Prev/Next: topic-list tap calls /play with neighbour id', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.set('tunein.parent.t200', 'p17', tc.TTL_LABEL);
+  tc.cache.set('tunein.topics.p17', ['t100', 't200', 't300'], tc.TTL_DRILL_HEAD);
+
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: 'Episode 2', location: '/v1/playback/station/t200' },
+      playStatus: 'PLAY_STATE',
+    },
+  });
+
+  // Capture fetch calls; resolve /play with ok:true.
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url: String(url), body: opts && opts.body });
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, url: 'http://example/stream.mp3' }),
+    };
+  };
+
+  const { root, destroy } = mountView();
+  try {
+    const btnNext = root.querySelector('.np-btn--next');
+    assert.equal(btnNext.disabled, false, 'Next is enabled mid-list');
+    btnNext.dispatchEvent(ev('click'));
+    // Drain the await chain.
+    await new Promise((r) => setTimeout(r, 30));
+    const playCalls = calls.filter((c) => /\/play\b/.test(c.url));
+    assert.ok(playCalls.length >= 1,
+      `expected at least one /play POST, got ${JSON.stringify(calls.map((c) => c.url))}`);
+    const body = String(playCalls[0].body || '');
+    assert.ok(body.includes('"id":"t300"'),
+      `Next should /play the t300 neighbour, body=${body}`);
+    // The topic-list path must NOT also fire a NEXT_TRACK key.
+    const keyCalls = calls.filter((c) => /NEXT_TRACK|PREV_TRACK/.test(String(c.body || '')));
+    assert.equal(keyCalls.length, 0,
+      'topic-list path intercepts the firmware key entirely');
+  } finally {
+    globalThis.fetch = realFetch;
+    tc.cache.invalidate('tunein.parent.t200');
+    tc.cache.invalidate('tunein.topics.p17');
+    destroy();
+  }
+});
+
+test('np Prev/Next: lazy-fetches topics list when parent cached but list missing', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.set('tunein.parent.t200', 'p17', tc.TTL_LABEL);
+  // No topics list cached — the skip handler should lazy-fetch.
+  tc.cache.invalidate('tunein.topics.p17');
+
+  setSpeakerState({
+    nowPlaying: {
+      source: 'TUNEIN',
+      item: { name: 'Episode 2', location: '/v1/playback/station/t200' },
+      playStatus: 'PLAY_STATE',
+    },
+  });
+
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    const u = String(url);
+    calls.push({ url: u, body: opts && opts.body });
+    if (u.includes('/tunein/browse') && u.includes('c=topics')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          head: { status: '200' },
+          body: [
+            { type: 'link', item: 'topic', guide_id: 't100',
+              URL: 'Tune.ashx?id=t100&sid=p17' },
+            { type: 'link', item: 'topic', guide_id: 't200',
+              URL: 'Tune.ashx?id=t200&sid=p17' },
+            { type: 'link', item: 'topic', guide_id: 't300',
+              URL: 'Tune.ashx?id=t300&sid=p17' },
+          ],
+        }),
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, url: 'http://example/stream.mp3' }),
+    };
+  };
+
+  // Initial mount: Prev/Next disabled because no list cached. Force-
+  // enable for the click by writing a transient list — the test's job
+  // is to verify the lazy refetch fires when the cache empties between
+  // syncs. Simpler path: stage a Prev with the cache primed, then
+  // delete the topics list right before click. The button stays
+  // enabled (state set at sync) but the click handler must refetch.
+  tc.cache.set('tunein.topics.p17', ['t100', 't200', 't300'], tc.TTL_DRILL_HEAD);
+
+  const { root, destroy } = mountView();
+  try {
+    // Drop the topics list to force the lazy refetch path inside onSkip.
+    tc.cache.invalidate('tunein.topics.p17');
+
+    const btnNext = root.querySelector('.np-btn--next');
+    btnNext.dispatchEvent(ev('click'));
+    await new Promise((r) => setTimeout(r, 30));
+
+    const topicsCalls = calls.filter((c) => c.url.includes('c=topics') && c.url.includes('p17'));
+    assert.ok(topicsCalls.length >= 1,
+      'lazy fetch fires when the topics list isn\'t cached at click time');
+  } finally {
+    globalThis.fetch = realFetch;
+    tc.cache.invalidate('tunein.parent.t200');
+    tc.cache.invalidate('tunein.topics.p17');
+    destroy();
+  }
+});
+
 test('volume slider: WS-driven re-render mutates in place (focus survives)', () => {
   setSpeakerState({
     volume: { targetVolume: 30, actualVolume: 30, muteEnabled: false },
