@@ -415,7 +415,7 @@ function renderDrill(root, parts, crumbs) {
   // initial render happens first, so without this hook the user would
   // see `c=music · filter=l109` with no "(German)" suffix until the
   // next navigation. (#89, #90)
-  registerLcodeRepatch(parts, frame.crumbId, frame.trailEl, frame.stack, frame.backEl);
+  registerLcodeRepatch(parts, frame.crumbId, frame.trailEl, frame.stack, frame.backEl, frame.bar && frame.bar._filter);
 
   // tuneinBrowse accepts a parts object as the c-style top-level form
   // (`{c: 'music', filter: 'l216'}`) or a bare id string. The c+filter
@@ -433,7 +433,7 @@ function renderDrill(root, parts, crumbs) {
 // anchor whose token carries an unresolved language filter. `{ once:
 // true }`; no teardown on view unmount because the DOM-patch is a
 // no-op when the elements are gone.
-function registerLcodeRepatch(parts, crumbIdEl, trailEl, stack, backEl) {
+function registerLcodeRepatch(parts, crumbIdEl, trailEl, stack, backEl, filterBadge) {
   if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
   const hasFilterableToken = (typeof parts.filter === 'string' && /^l\d+$/.test(parts.filter))
     || (Array.isArray(stack) && stack.some((tok) => /:l\d+$/.test(tok || '')));
@@ -443,6 +443,13 @@ function registerLcodeRepatch(parts, crumbIdEl, trailEl, stack, backEl) {
       crumbIdEl.textContent = crumbLabelFor(parts);
     }
     if (trailEl) hydrateCrumbLabels(stack, trailEl, backEl);
+    // Active-filter badge: when the drill's filter is an lcode, re-
+    // resolve the badge label from the freshly-loaded catalogue.
+    if (filterBadge && filterBadge._label
+        && typeof parts.filter === 'string' && /^l\d+$/.test(parts.filter)) {
+      const name = lcodeLabel(parts.filter);
+      if (name) filterBadge._label.textContent = name;
+    }
   }, { once: true });
 }
 
@@ -498,10 +505,22 @@ export function backHrefFor(stack) {
 // Initial page-header title before the API response arrives. Prefer
 // the cached label for this node's token; fall back to crumbLabelFor
 // so the user sees *something* during the load.
+//
+// Filter-bearing tokens (`<anchor>:<filter>`) try the bare anchor too:
+// the page IS the anchor node (just filtered), so a cached title for
+// `r101821` should surface as the h1 / current-crumb text for the
+// `r101821:g26` drill too. The filter surface is the badge, not the
+// title.
 function initialHeaderTitle(parts, token) {
   if (token) {
     const cached = cache.get(`tunein.label.${token}`);
     if (typeof cached === 'string' && cached !== '') return cached;
+    const colon = token.indexOf(':');
+    if (colon > 0) {
+      const bare = token.slice(0, colon);
+      const cachedBare = cache.get(`tunein.label.${bare}`);
+      if (typeof cachedBare === 'string' && cachedBare !== '') return cachedBare;
+    }
   }
   return crumbLabelFor(parts);
 }
@@ -600,11 +619,130 @@ export function renderPillBar(parts, stack) {
   const trail = renderCrumbTrail(stack, parts);
   bar.appendChild(trail);
 
+  // Active-filter badge — mounted in-bar, peer to the trail (#104).
+  // Renders only when `parts.filter` is non-empty; carries the
+  // resolved filter label + a × close affordance that navigates to
+  // the same drill without the filter (stack + id preserved).
+  const filter = renderFilterBadge(parts, stack);
+  if (filter) bar.appendChild(filter);
+
   // Sub-handle accessors for the drill frame (hydrateCrumbLabels
   // mutates the trail anchors + the back aria-label in place).
   bar._back = back;
   bar._trail = trail;
+  bar._filter = filter;
   return bar;
+}
+
+// Build the active-filter badge for the pill bar. Returns null when
+// the drill has no filter applied. The badge is a peer of the trail
+// inside the bar, carrying the resolved filter label and a trailing
+// × close affordance that navigates to the same drill minus the
+// filter (preserves the existing stack + primary id / c).
+//
+// Label resolution order — same ladder hydrateCrumbLabels uses for
+// trail anchors:
+//   1. lcode catalogue for `lXXX` filters (instant, no fetch).
+//   2. cache lookup `tunein.label.<filter>` (a previous Describe /
+//      Browse landed and stashed the title).
+//   3. raw token while a one-shot Describe / Browse runs in the
+//      background; the badge text upgrades in place when the title
+//      resolves.
+//
+// Exported for unit testing — production callers go through
+// renderPillBar.
+export function renderFilterBadge(parts, stack) {
+  if (!parts || typeof parts.filter !== 'string' || parts.filter === '') {
+    return null;
+  }
+  const filterToken = parts.filter;
+
+  const badge = document.createElement('span');
+  badge.className = 'browse-bar__filter';
+  badge.dataset.filterToken = filterToken;
+
+  const label = document.createElement('span');
+  label.className = 'browse-bar__filter-label';
+  label.textContent = initialFilterLabel(filterToken);
+  badge.appendChild(label);
+
+  // × close affordance — anchor that navigates to the same drill
+  // without `filter=`. Hash-router routes go through anchors so the
+  // back/forward history stays consistent with the trail anchors.
+  const stripped = Object.assign({}, parts);
+  delete stripped.filter;
+  const close = document.createElement('a');
+  close.className = 'browse-bar__filter-close';
+  close.setAttribute('href', drillHashFor(stripped, Array.isArray(stack) ? stack : []));
+  close.setAttribute('aria-label', 'Remove filter');
+  close.appendChild(icon('x', 12));
+  badge.appendChild(close);
+
+  // Stash sub-handles for the hydrator to patch the label in place.
+  badge._label = label;
+  badge._close = close;
+
+  // Kick off async label hydration when the initial label is still the
+  // raw token (no cache hit, no catalogue hit). The hydrator writes the
+  // resolved title back into the cache so subsequent navigations land
+  // pre-resolved.
+  if (label.textContent === filterToken) {
+    hydrateFilterLabel(filterToken, badge);
+  }
+
+  return badge;
+}
+
+// Pick the best already-known label for a filter token without any
+// network work. Mirrors the trail's `initialCrumbLabel` ladder for the
+// filter-only case: lcode catalogue for `lXXX`, then the cache, then
+// the raw token as a last resort.
+function initialFilterLabel(filterToken) {
+  if (/^l\d+$/.test(filterToken)) {
+    const name = lcodeLabel(filterToken);
+    if (name) return name;
+  }
+  const cached = cache.get(`tunein.label.${filterToken}`);
+  if (typeof cached === 'string' && cached !== '') return cached;
+  return filterToken;
+}
+
+// One-shot label fetch for a filter token whose initial render is the
+// raw form. Lcode tokens are catalogue-only; everything else (gNNN /
+// cNNN / etc.) gets a Browse.ashx lookup, with Describe as a fallback
+// for entity prefixes. The badge's label updates in place once the
+// title resolves; failures stay silent (the raw token stays put).
+async function hydrateFilterLabel(filterToken, badge) {
+  // Lcode catalogue is authoritative — never fall through to Describe
+  // for `lXXX`. If it didn't resolve in initialFilterLabel and the
+  // catalogue lands later, the LCODES_LOADED_EVENT listener (mounted
+  // by renderDrill) re-patches the badge.
+  if (/^l\d+$/.test(filterToken)) return;
+  let title = '';
+  try {
+    if (/^[spt]\d+$/.test(filterToken)) {
+      // Entity prefixes — Describe returns title in body[0].
+      const json = await tuneinDescribe({ id: filterToken });
+      const e = json && Array.isArray(json.body) && json.body[0];
+      if (e) {
+        if (typeof e.title === 'string' && e.title !== '') title = e.title;
+        else if (typeof e.name === 'string' && e.name !== '') title = e.name;
+      }
+    } else {
+      // Category / generic — Browse returns head.title.
+      const parts = /^[a-z]\d+$/.test(filterToken)
+        ? { id: filterToken }
+        : { c: filterToken };
+      const json = await tuneinBrowse(parts);
+      const t = json && json.head && json.head.title;
+      if (typeof t === 'string' && t !== '') title = t;
+    }
+  } catch (_err) {
+    return;
+  }
+  if (!title) return;
+  cache.set(`tunein.label.${filterToken}`, title, TTL_LABEL);
+  if (badge && badge._label) badge._label.textContent = title;
 }
 
 // Build the inline trail inside the pill bar. Always leads with the
@@ -626,6 +764,28 @@ export function renderCrumbTrail(stack, currentParts) {
   if (Array.isArray(stack)) {
     for (const token of stack) {
       if (dedup.length === 0 || dedup[dedup.length - 1] !== token) dedup.push(token);
+    }
+  }
+
+  // Tail-dedupe against the current parts (#104). When the user clicks
+  // an end-of-page filter chip, the link appends the current id to
+  // `from=` AND keeps the same primary id (just adds `filter=…`). The
+  // stack's last crumb is then the same node as the current segment;
+  // rendering both produces a duplicated tail like
+  //   Browse › Location › … › Bayreuth › **Bayreuth**
+  // Two shapes count as a match:
+  //   - bare equality (`r101821` === `r101821`)
+  //   - the current token carries a filter while the stack tail does
+  //     not — current `r101821:g26` and stack tail `r101821` refer to
+  //     the same drill node. Drop the duplicate; the filter surface
+  //     is the badge, not a trail anchor.
+  if (currentParts && dedup.length > 0) {
+    const curTok = crumbTokenFor(currentParts);
+    if (curTok) {
+      const tail = dedup[dedup.length - 1];
+      const colon = curTok.indexOf(':');
+      const curAnchor = colon >= 0 ? curTok.slice(0, colon) : curTok;
+      if (tail === curTok || tail === curAnchor) dedup.pop();
     }
   }
 

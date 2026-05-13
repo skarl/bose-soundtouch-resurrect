@@ -20,6 +20,7 @@ const {
   partsFromCrumb,
   renderCrumbTrail,
   renderPillBar,
+  renderFilterBadge,
   renderEntry,
   backHrefFor,
   crumbLabelFor,
@@ -434,4 +435,207 @@ test('crumbLabelFor leaves non-lcode filters unchanged', async () => {
     crumbLabelFor({ id: 'g79', filter: 'top' }),
     'g79 · filter=top',
   );
+});
+
+// --- #104 — dedupe trail tail when current parts match last stack ---
+//
+// When the user clicks an end-of-page filter chip, the link appends
+// the current id to `from=` AND keeps the same primary id. Without
+// the tail-dedupe, the breadcrumb renders
+//   Browse › Location › … › Bayreuth › **Bayreuth**
+// with the bolded current segment duplicating the last stack crumb.
+
+test('renderCrumbTrail dedupes the trail tail when the current token equals the last stack token — #104', () => {
+  // Real-world shape: `#/browse?id=r101821&from=r0,r101217,r100346,r101821`
+  cache.set('tunein.label.r101217', 'Europe',  TTL_LABEL);
+  cache.set('tunein.label.r100346', 'Germany', TTL_LABEL);
+  cache.set('tunein.label.r101821', 'Bayreuth', TTL_LABEL);
+  const trail = renderCrumbTrail(
+    ['r0', 'r101217', 'r100346', 'r101821'],
+    { id: 'r101821' },
+  );
+  const crumbs = trailCrumbs(trail);
+  // Browse + r0 (Location) + r101217 + r100346 + (current=r101821).
+  // The trailing r101821 in the stack is dropped — IS the current node.
+  assert.equal(crumbs.length, 5);
+  assert.deepEqual(
+    crumbs.map((c) => c.textContent),
+    ['Browse', 'Location', 'Europe', 'Germany', 'Bayreuth'],
+  );
+  // The Bayreuth segment is the bolded current span, not a stack anchor.
+  assert.equal(crumbs[4].tagName, 'span');
+  assert.equal(crumbs[4].getAttribute('aria-current'), 'page');
+});
+
+test('renderCrumbTrail dedupes the trail tail when the current parts add a filter to a stack anchor — #104', () => {
+  // The filter chip click shape: stack tail is `r101821` (bare), and
+  // the current parts are `{id:'r101821', filter:'g26'}` whose token
+  // is `r101821:g26`. They refer to the same drill node — dedupe the
+  // duplicate tail.
+  cache.set('tunein.label.r101821', 'Bayreuth', TTL_LABEL);
+  const trail = renderCrumbTrail(
+    ['r0', 'r101217', 'r100346', 'r101821'],
+    { id: 'r101821', filter: 'g26' },
+  );
+  const crumbs = trailCrumbs(trail);
+  // Browse + r0 + r101217 + r100346 + (current=r101821:g26).
+  assert.equal(crumbs.length, 5);
+  assert.equal(crumbs[4].tagName, 'span');
+  assert.equal(crumbs[4].textContent, 'Bayreuth');
+});
+
+test('renderCrumbTrail does NOT dedupe when the current parts token does not match the last stack token — #104', () => {
+  // The language-tree case: stack tail is `lang:l170`, current parts
+  // are `{c:'music', filter:'l170'}` → token `music:l170`. The anchors
+  // differ (lang vs music) so no dedupe; the trail keeps both.
+  cache.set('tunein.label.lang:l170', 'Hungarian', TTL_LABEL);
+  cache.set('tunein.label.music:l170', 'Music', TTL_LABEL);
+  const trail = renderCrumbTrail(
+    ['lang', 'lang:l170'],
+    { c: 'music', filter: 'l170' },
+  );
+  const crumbs = trailCrumbs(trail);
+  // Browse + Language + Hungarian + (current=Music).
+  assert.equal(crumbs.length, 4);
+  assert.deepEqual(
+    crumbs.map((c) => c.textContent),
+    ['Browse', 'Language', 'Hungarian', 'Music'],
+  );
+});
+
+test('renderCrumbTrail tail-dedupe is a no-op when stack is empty — #104', () => {
+  // Defence: dedupe must not blow up when there are no stack crumbs.
+  const trail = renderCrumbTrail([], { id: 'g999' });
+  const crumbs = trailCrumbs(trail);
+  // Browse + (current).
+  assert.equal(crumbs.length, 2);
+  assert.equal(crumbs[1].getAttribute('aria-current'), 'page');
+});
+
+// --- #104 — filter badge in the pill bar ----------------------------
+//
+// When `parts.filter` is non-empty, the bar mounts a `.browse-bar__filter`
+// peer to the trail. It carries the resolved filter label and a × close
+// affordance that navigates to the same drill minus the filter.
+
+test('renderFilterBadge returns null when parts has no filter — #104', () => {
+  assert.equal(renderFilterBadge({ id: 'r101821' }, []), null);
+  assert.equal(renderFilterBadge({ id: 'r101821', filter: '' }, []), null);
+  assert.equal(renderFilterBadge({}, []), null);
+});
+
+test('renderFilterBadge mounts label + × close anchor for an lcode filter — #104', async () => {
+  // Prime the lcode catalogue so the badge resolves "l109" → "German"
+  // synchronously, no fetch.
+  const { cacheLcodes } = await import('../app/tunein-url.js');
+  cacheLcodes([{ id: 'l109', name: 'German' }]);
+  const badge = renderFilterBadge({ c: 'music', filter: 'l109' }, ['lang', 'lang:l109']);
+  assert.ok(badge, 'badge returned for lcode filter');
+  assert.ok((badge.getAttribute('class') || '').includes('browse-bar__filter'));
+  assert.equal(badge.dataset.filterToken, 'l109');
+  const label = badge.querySelector('.browse-bar__filter-label');
+  assert.ok(label, 'label child present');
+  assert.equal(label.textContent, 'German', 'label resolved from lcode catalogue');
+  const close = badge.querySelector('.browse-bar__filter-close');
+  assert.ok(close, 'close affordance present');
+  assert.equal(close.tagName, 'a', 'close is an anchor (hash-router)');
+  assert.equal(close.getAttribute('aria-label'), 'Remove filter');
+});
+
+test('renderFilterBadge × close navigates to the same drill without the filter — #104', () => {
+  // The close anchor preserves the stack and the primary id; it just
+  // drops the filter query param.
+  cache.set('tunein.label.g26', 'Country', TTL_LABEL);
+  const stack = ['r0', 'r101217', 'r100346', 'r101821'];
+  const badge = renderFilterBadge({ id: 'r101821', filter: 'g26' }, stack);
+  const close = badge.querySelector('.browse-bar__filter-close');
+  const href = close.getAttribute('href');
+  // Same drill, no filter, full stack preserved.
+  assert.match(href, /^#\/browse\?id=r101821/, `id preserved: ${href}`);
+  assert.doesNotMatch(href, /filter=/, `filter dropped: ${href}`);
+  assert.match(href, /from=r0%2Cr101217%2Cr100346%2Cr101821/, `stack preserved: ${href}`);
+});
+
+test('renderFilterBadge × close preserves the c-style anchor and drops only the filter — #104', async () => {
+  // c-style drill: `c=music&filter=l109&from=lang,lang:l109` — close
+  // strips the filter, leaves c=music + the stack.
+  const { cacheLcodes } = await import('../app/tunein-url.js');
+  cacheLcodes([{ id: 'l109', name: 'German' }]);
+  const badge = renderFilterBadge(
+    { c: 'music', filter: 'l109' },
+    ['lang', 'lang:l109'],
+  );
+  const close = badge.querySelector('.browse-bar__filter-close');
+  const href = close.getAttribute('href');
+  assert.match(href, /^#\/browse\?c=music/);
+  assert.doesNotMatch(href, /filter=/);
+  assert.match(href, /from=lang%2Clang%3Al109/);
+});
+
+test('renderFilterBadge uses the cached label when present (no network) — #104', () => {
+  // Non-lcode filter; cache hit resolves the label without hitting fetch.
+  cache.set('tunein.label.g26', 'Country', TTL_LABEL);
+  const badge = renderFilterBadge({ id: 'r101821', filter: 'g26' }, []);
+  const label = badge.querySelector('.browse-bar__filter-label');
+  assert.equal(label.textContent, 'Country');
+});
+
+test('renderFilterBadge falls back to the raw token when no label is resolvable yet — #104', () => {
+  // No cache, no catalogue — the badge initially shows the raw token
+  // and (in production) kicks an async Describe / Browse to upgrade.
+  // The async branch is fire-and-forget; we just assert the initial
+  // render. Stub fetch so the async path doesn't hit the network.
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = () => new Promise(() => {});
+  try {
+    const badge = renderFilterBadge({ id: 'r101821', filter: 'g9999' }, []);
+    const label = badge.querySelector('.browse-bar__filter-label');
+    assert.equal(label.textContent, 'g9999');
+  } finally {
+    globalThis.fetch = prevFetch;
+  }
+});
+
+test('renderPillBar mounts the filter badge inside the bar when parts.filter is set — #104', () => {
+  cache.set('tunein.label.g26', 'Country', TTL_LABEL);
+  const bar = renderPillBar(
+    { id: 'r101821', filter: 'g26' },
+    ['r0', 'r101217', 'r100346', 'r101821'],
+  );
+  const badge = bar.querySelector('.browse-bar__filter');
+  assert.ok(badge, 'filter badge mounted in the bar');
+  assert.equal(badge.querySelector('.browse-bar__filter-label').textContent, 'Country');
+  // The bar still carries the back affordance + trail.
+  assert.ok(bar.querySelector('.browse-bar__back'), 'back affordance still present');
+  assert.ok(bar.querySelector('.browse-bar__trail'), 'trail still present');
+});
+
+test('renderPillBar omits the filter badge when parts has no filter — #104', () => {
+  const bar = renderPillBar({ id: 'g79' }, ['music']);
+  assert.equal(bar.querySelector('.browse-bar__filter'), null);
+});
+
+test('renderPillBar + filter chip click shape produces a clean trail + badge — #104', () => {
+  // The end-to-end shape from the issue: stack tail equals the current
+  // anchor; current parts carries filter=g26. Expect the trail to
+  // dedupe the duplicate tail AND the badge to mount with the resolved
+  // filter label.
+  cache.set('tunein.label.r101217', 'Europe',   TTL_LABEL);
+  cache.set('tunein.label.r100346', 'Germany',  TTL_LABEL);
+  cache.set('tunein.label.r101821', 'Bayreuth', TTL_LABEL);
+  cache.set('tunein.label.g26',     'Country',  TTL_LABEL);
+  const bar = renderPillBar(
+    { id: 'r101821', filter: 'g26' },
+    ['r0', 'r101217', 'r100346', 'r101821'],
+  );
+  const trail = bar.querySelector('.browse-bar__trail');
+  const crumbs = trailCrumbs(trail);
+  assert.deepEqual(
+    crumbs.map((c) => c.textContent),
+    ['Browse', 'Location', 'Europe', 'Germany', 'Bayreuth'],
+    'trail tail dedupes the duplicated r101821',
+  );
+  const badge = bar.querySelector('.browse-bar__filter');
+  assert.ok(badge);
+  assert.equal(badge.querySelector('.browse-bar__filter-label').textContent, 'Country');
 });
