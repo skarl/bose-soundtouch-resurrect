@@ -111,6 +111,7 @@ const {
   renderCrumbTrail,
   renderEntry,
   backHrefFor,
+  crumbLabelFor,
   _setChildCrumbsForTest,
 } = await import('../app/views/browse.js');
 
@@ -192,6 +193,43 @@ test('partsFromCrumb returns null for empty / non-string', () => {
   assert.equal(partsFromCrumb(123), null);
 });
 
+// --- filter-aware crumb encoding (#89) ------------------------------
+
+test('crumbTokenFor encodes a filter as <anchor>:<filter> so language-tree drills produce distinct tokens', () => {
+  assert.equal(crumbTokenFor({ c: 'lang',  filter: 'l109' }), 'lang:l109');
+  assert.equal(crumbTokenFor({ c: 'music', filter: 'l109' }), 'music:l109');
+  assert.equal(crumbTokenFor({ id: 'c100000948', filter: 'l109' }), 'c100000948:l109');
+});
+
+test('crumbTokenFor omits the filter suffix when no filter is set', () => {
+  assert.equal(crumbTokenFor({ c: 'lang' }), 'lang');
+  assert.equal(crumbTokenFor({ id: 'g79' }), 'g79');
+});
+
+test('partsFromCrumb round-trips the <anchor>:<filter> form back to drill parts', () => {
+  assert.deepEqual(partsFromCrumb('lang:l109'),       { c: 'lang',  filter: 'l109' });
+  assert.deepEqual(partsFromCrumb('music:l109'),      { c: 'music', filter: 'l109' });
+  assert.deepEqual(partsFromCrumb('c100000948:l109'), { id: 'c100000948', filter: 'l109' });
+});
+
+test('crumbTokenFor → partsFromCrumb round-trip for the language-tree path emits distinct tokens', () => {
+  // The bug from issue #89: drilling root → Language → German → Music
+  // in German used to collapse every step's token to "lang", giving a
+  // breadcrumb of "By Language › By Language › By Language". After the
+  // filter-aware fix each step produces its own token.
+  const lang   = crumbTokenFor({ c: 'lang' });
+  const german = crumbTokenFor({ c: 'lang', filter: 'l109' });
+  const music  = crumbTokenFor({ c: 'music', filter: 'l109' });
+  assert.equal(lang,   'lang');
+  assert.equal(german, 'lang:l109');
+  assert.equal(music,  'music:l109');
+  assert.notEqual(lang, german);
+  assert.notEqual(german, music);
+  // Round-trip back to drill parts.
+  assert.deepEqual(partsFromCrumb(german), { c: 'lang',  filter: 'l109' });
+  assert.deepEqual(partsFromCrumb(music),  { c: 'music', filter: 'l109' });
+});
+
 // --- renderCrumbTrail ------------------------------------------------
 
 function findChildrenByClass(root, cls) {
@@ -246,6 +284,75 @@ test('renderCrumbTrail returns an empty nav for an empty stack', () => {
   assert.equal(trail.tagName, 'nav');
   const crumbs = findChildrenByClass(trail, 'browse-trail__crumb');
   assert.equal(crumbs.length, 0);
+});
+
+test('renderCrumbTrail dedupes consecutive identical tokens (defence against legacy URLs) — #89', () => {
+  // A from=lang,lang,lang that pre-dates the filter-aware emitter must
+  // not render three "By Language" anchors.
+  cache.set('tunein.label.lang', 'By Language', TTL_LABEL);
+  const trail = renderCrumbTrail(['lang', 'lang', 'lang']);
+  const crumbs = findChildrenByClass(trail, 'browse-trail__crumb');
+  assert.equal(crumbs.length, 1, 'collapses to one anchor');
+  assert.equal(crumbs[0].textContent, 'By Language');
+});
+
+test('renderCrumbTrail resolves <anchor>:l<NNN> tokens to the cached language name — #89', async () => {
+  // Prime the lcode catalogue and assert the breadcrumb picks up the
+  // language name without any network work.
+  const { cacheLcodes } = await import('../app/tunein-url.js');
+  cacheLcodes([
+    { id: 'l109', name: 'German' },
+    { id: 'l216', name: 'English' },
+  ]);
+  cache.set('tunein.label.lang', 'By Language', TTL_LABEL);
+  const trail = renderCrumbTrail(['lang', 'lang:l109']);
+  const crumbs = findChildrenByClass(trail, 'browse-trail__crumb');
+  assert.equal(crumbs.length, 2);
+  assert.equal(crumbs[0].textContent, 'By Language');
+  assert.equal(crumbs[1].textContent, 'German');
+  // The lang:l109 anchor navigates back to the German language root.
+  const h1 = crumbs[1].getAttribute('href');
+  assert.match(h1, /c=lang/);
+  assert.match(h1, /filter=l109/);
+  assert.match(h1, /from=lang/);
+});
+
+test('renderCrumbTrail falls back to the raw token when neither cache nor lcode catalogue resolves the label', () => {
+  // No catalogue, no tunein.label cache — lang:l9999 has no human name
+  // to show, so the anchor renders the raw token.
+  const trail = renderCrumbTrail(['lang:l9999']);
+  const crumbs = findChildrenByClass(trail, 'browse-trail__crumb');
+  assert.equal(crumbs.length, 1);
+  assert.equal(crumbs[0].textContent, 'lang:l9999');
+});
+
+// --- crumbLabelFor surfaces the resolved language name (#90) --------
+
+test('crumbLabelFor appends the resolved language name when filter is a known lcode', async () => {
+  const { cacheLcodes } = await import('../app/tunein-url.js');
+  cacheLcodes([{ id: 'l109', name: 'German' }]);
+  assert.equal(
+    crumbLabelFor({ c: 'music', filter: 'l109' }),
+    'c=music · filter=l109 (German)',
+  );
+});
+
+test('crumbLabelFor leaves the badge unchanged when the lcode catalogue does not know the filter', () => {
+  // No cacheLcodes — lcodeLabel returns undefined → no "(name)" suffix.
+  assert.equal(
+    crumbLabelFor({ c: 'music', filter: 'l9999' }),
+    'c=music · filter=l9999',
+  );
+});
+
+test('crumbLabelFor leaves non-lcode filters unchanged', async () => {
+  const { cacheLcodes } = await import('../app/tunein-url.js');
+  cacheLcodes([{ id: 'l109', name: 'German' }]);
+  // A non-l filter shape — even if a cached catalogue exists.
+  assert.equal(
+    crumbLabelFor({ id: 'g79', filter: 'top' }),
+    'g79 · filter=top',
+  );
 });
 
 // --- renderEntry picks up the module-level child crumb stack --------

@@ -163,10 +163,18 @@ export function composeDrillUrl(parts) {
 
 // --- lcode allow-list cache ----------------------------------------
 //
-// Populated once at app load via cacheLcodeCatalogue() and read by
-// isValidLcode(). Storage backend is sessionStorage so the cache is
-// scoped to the current admin SPA tab — it survives soft navigations
-// but not a full reload (which is fine; one fetch per session).
+// Populated once at app load via cacheLcodesFromDescribe() and read by
+// isValidLcode() + lcodeLabel(). Storage backend is sessionStorage so
+// the cache is scoped to the current admin SPA tab — it survives soft
+// navigations but not a full reload (which is fine; one fetch per
+// session).
+//
+// Shape on disk: `{ "l109": "German", "l216": "English", ... }`. The
+// label half drives the breadcrumb + drill-header rendering for any
+// lcode filter (issues #89, #90). Tolerant of legacy string-array
+// inputs from older test fixtures — those round-trip to an entry with
+// an empty label, so isValidLcode still works while lcodeLabel falls
+// back to undefined.
 
 function readLcodeCache() {
   try {
@@ -175,28 +183,54 @@ function readLcodeCache() {
       : null;
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : null;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return parsed;
   } catch (_err) {
     return null;
   }
 }
 
-// Stash an array of `l<NNN>` strings under LCODE_CACHE_KEY. Public
-// so admin/app/main.js can call it after fetching the catalogue,
-// and so tests can prime the cache directly.
-export function cacheLcodes(codes) {
-  if (!Array.isArray(codes)) return;
-  const cleaned = codes
-    .filter((c) => typeof c === 'string' && /^l\d+$/.test(c));
+// Stash a map of `l<NNN>` → label under LCODE_CACHE_KEY. Accepts
+// either an array of `{id, name}` entries or an array of bare code
+// strings (legacy / test-fixture path; labels default to ''). Public
+// so admin/app/main.js can call it after fetching the catalogue and
+// so tests can prime the cache directly.
+export function cacheLcodes(entries) {
+  if (!Array.isArray(entries)) return;
+  const map = {};
+  for (const entry of entries) {
+    let id; let name = '';
+    if (typeof entry === 'string') {
+      id = entry;
+    } else if (entry && typeof entry === 'object') {
+      id = entry.id;
+      if (typeof entry.name === 'string') name = entry.name;
+    }
+    if (typeof id === 'string' && /^l\d+$/.test(id)) map[id] = name;
+  }
   try {
     if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.setItem(LCODE_CACHE_KEY, JSON.stringify(cleaned));
+      sessionStorage.setItem(LCODE_CACHE_KEY, JSON.stringify(map));
     }
   } catch (_err) {
     // sessionStorage may throw under quota / private-mode; isValidLcode
     // then returns false, which fails closed — the safe default.
   }
+  // Broadcast that the catalogue is available so any view that
+  // rendered before the boot-time fetch landed can patch in resolved
+  // language names (drill header badge, breadcrumb anchors — #89, #90).
+  // No-op in non-browser environments (tests run under @xmldom/xmldom,
+  // which leaves `window` undefined).
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    try { window.dispatchEvent(new Event(LCODES_LOADED_EVENT)); }
+    catch (_err) { /* CustomEvent ctor may be unavailable; ignore */ }
+  }
 }
+
+// Event name dispatched on `window` once cacheLcodes writes a fresh
+// catalogue. Views that render filter-bearing crumbs / badges before
+// the boot-time fetch lands subscribe to this to re-patch their DOM.
+export const LCODES_LOADED_EVENT = 'tunein-lcodes-loaded';
 
 // Public: is `code` (e.g. `'l109'`) present in the cached language
 // catalogue? Returns false when the cache is empty or missing — the
@@ -205,22 +239,38 @@ export function isValidLcode(code) {
   if (typeof code !== 'string' || !/^l\d+$/.test(code)) return false;
   const cache = readLcodeCache();
   if (!cache) return false;
-  return cache.includes(code);
+  return Object.prototype.hasOwnProperty.call(cache, code);
 }
 
-// Helper for app init: extract the `l<NNN>` guide_id values out of
-// a `Describe.ashx?c=languages` response body and stash them.
-// Tolerant of both the OPML body shape (array of outlines with
-// `guide_id`) and a pre-extracted array of code strings.
+// Public: resolve `code` (e.g. `'l109'`) to its human-readable
+// language name (`'German'`). Returns undefined when the code is
+// unknown, the cache is empty, or the entry has no recorded label
+// (legacy string-only inputs). Used by the browse view's breadcrumb
+// + drill-header to render readable filter chips (#89, #90).
+export function lcodeLabel(code) {
+  if (typeof code !== 'string' || !/^l\d+$/.test(code)) return undefined;
+  const cache = readLcodeCache();
+  if (!cache) return undefined;
+  const v = cache[code];
+  return (typeof v === 'string' && v !== '') ? v : undefined;
+}
+
+// Helper for app init: extract the `{guide_id, text}` pairs out of a
+// `Describe.ashx?c=languages` response body and stash them.
+// Tolerant of both the OPML body shape (array of outlines) and a
+// pre-extracted array of `{id, name}` objects or bare code strings.
 export function cacheLcodesFromDescribe(json) {
   if (!json) return;
   if (Array.isArray(json.body)) {
-    const codes = [];
+    const entries = [];
     for (const e of json.body) {
       const gid = e && (e.guide_id || e.id);
-      if (typeof gid === 'string' && /^l\d+$/.test(gid)) codes.push(gid);
+      if (typeof gid === 'string' && /^l\d+$/.test(gid)) {
+        const name = (e && typeof e.text === 'string') ? e.text : '';
+        entries.push({ id: gid, name });
+      }
     }
-    cacheLcodes(codes);
+    cacheLcodes(entries);
     return;
   }
   if (Array.isArray(json)) cacheLcodes(json);

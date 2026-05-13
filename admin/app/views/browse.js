@@ -24,7 +24,12 @@ import { tuneinBrowse, tuneinDescribe } from '../api.js';
 import { stationRow } from '../components.js';
 import { showHero } from '../show-hero.js';
 import { icon } from '../icons.js';
-import { canonicaliseBrowseUrl, extractDrillKey } from '../tunein-url.js';
+import {
+  canonicaliseBrowseUrl,
+  extractDrillKey,
+  lcodeLabel,
+  LCODES_LOADED_EVENT,
+} from '../tunein-url.js';
 import { cache, TTL_LABEL, TTL_DRILL_HEAD } from '../tunein-cache.js';
 import {
   parentKey as tuneinParentKey,
@@ -174,25 +179,45 @@ export function stringifyCrumbs(crumbs) {
 
 // Crumb token for a drill-parts object. The token is the value the
 // user would land on if they clicked Back to this level: prefer `id`,
-// fall back to `c`. Filters / pivots / offsets are *refinements* on
-// a level, not levels of their own, so they do not become crumbs.
+// fall back to `c`. When a `filter` accompanies the anchor we encode
+// it as `<anchor>:<filter>` so two drills that share the same anchor
+// but differ in their filter (e.g. the language tree, where every
+// level emits `c=lang` or `c=music` with a different `filter=l<NNN>`)
+// produce distinct, navigable crumbs (#89). pivots / offsets remain
+// refinements that do not become crumbs.
 // Returns null when neither anchor is set (root view).
 export function crumbTokenFor(parts) {
   if (!parts) return null;
-  if (typeof parts.id === 'string' && parts.id !== '') return parts.id;
-  if (typeof parts.c  === 'string' && parts.c  !== '') return parts.c;
-  return null;
+  let anchor = '';
+  if (typeof parts.id === 'string' && parts.id !== '') anchor = parts.id;
+  else if (typeof parts.c === 'string' && parts.c !== '') anchor = parts.c;
+  if (!anchor) return null;
+  if (typeof parts.filter === 'string' && parts.filter !== '') {
+    return `${anchor}:${parts.filter}`;
+  }
+  return anchor;
 }
 
 // Inverse of crumbTokenFor: turn a crumb token back into the drill
-// parts the user should land on. Heuristic mirrors the convention in
-// the issue example `from=c100000948,g79,music`:
-//   - tokens matching /^[a-z]\d+$/ are guide_ids (`id=` anchor)
-//   - everything else is treated as a category short name (`c=`)
+// parts the user should land on. Heuristic:
+//   - bare tokens matching /^[a-z]\d+$/ are guide_ids (`id=` anchor)
+//   - bare tokens otherwise are category short names (`c=`)
+//   - tokens with a `:filter` suffix attach the filter to whichever
+//     anchor form applies (so `lang:l109` → `{c:'lang', filter:'l109'}`,
+//     `c123:l109` → `{id:'c123', filter:'l109'}`)
 export function partsFromCrumb(token) {
   if (typeof token !== 'string' || token === '') return null;
-  if (/^[a-z]\d+$/.test(token)) return { id: token };
-  return { c: token };
+  const colonIdx = token.indexOf(':');
+  let anchor = token;
+  let filter = '';
+  if (colonIdx >= 0) {
+    anchor = token.slice(0, colonIdx);
+    filter = token.slice(colonIdx + 1);
+  }
+  if (!anchor) return null;
+  const parts = /^[a-z]\d+$/.test(anchor) ? { id: anchor } : { c: anchor };
+  if (filter) parts.filter = filter;
+  return parts;
 }
 
 // A drill URL can carry any of {id, c, filter, pivot, offset}. The
@@ -232,15 +257,24 @@ function drillHashFor(parts, crumbs) {
 }
 
 // Display label for the drill crumb — a compact form of the parts.
-// `c=music&filter=l216` reads more usefully than just `music`.
-function crumbLabelFor(parts) {
+// `c=music&filter=l216` reads more usefully than just `music`. When
+// the filter is an lcode (`l<NNN>`) and we have a cached language
+// name for it, append the human form so end users get an at-a-glance
+// translation of the otherwise opaque numeric filter (#90).
+// Exported for unit testing — production callers stay inside this file.
+export function crumbLabelFor(parts) {
   const segs = [];
   if (parts.id) segs.push(parts.id);
   if (parts.c)  segs.push(`c=${parts.c}`);
   if (parts.filter) segs.push(`filter=${parts.filter}`);
   if (parts.pivot)  segs.push(`pivot=${parts.pivot}`);
   if (parts.offset) segs.push(`offset=${parts.offset}`);
-  return segs.join(' · ');
+  let label = segs.join(' · ');
+  if (typeof parts.filter === 'string' && /^l\d+$/.test(parts.filter)) {
+    const name = lcodeLabel(parts.filter);
+    if (name) label += ` (${name})`;
+  }
+  return label;
 }
 
 // ---- root view (segmented tabs) -------------------------------------
@@ -385,6 +419,15 @@ function renderDrill(root, parts, crumbs) {
   // Updates the trail in-place as labels resolve.
   if (trail) hydrateCrumbLabels(stack, trail);
 
+  // Re-patch the filter-aware badge + breadcrumb anchors whenever the
+  // lcode catalogue lands after this view mounted. The boot-time
+  // Describe.ashx?c=languages fetch typically resolves within ~1 s of
+  // app start; on a cold load straight into a deep language drill the
+  // initial render happens first, so without this hook the user would
+  // see `c=music · filter=l109` with no "(German)" suffix until the
+  // next navigation. (#89, #90)
+  registerLcodeRepatch(parts, crumbId, trail, stack);
+
   // tuneinBrowse accepts a parts object as the c-style top-level form
   // (`{c: 'music', filter: 'l216'}`) or a bare id string. The c+filter
   // shape is the language-tree rewrite output (§ 7.3); pass parts
@@ -393,6 +436,27 @@ function renderDrill(root, parts, crumbs) {
     titleEl,
     crumbToken: currentToken,
   });
+}
+
+// One-shot listener: when the lcode catalogue is broadcast as loaded,
+// re-evaluate the drill-header badge and re-hydrate any crumb trail
+// anchor whose token carries an unresolved language filter. The
+// listener is `{ once: true }`; we don't tear it down on view unmount
+// because the DOM-patch is a no-op when the elements are gone (they're
+// looked up by reference / selector, not by walking the document).
+function registerLcodeRepatch(parts, crumbIdEl, trailEl, stack) {
+  if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+  // Skip the listener when no filter is in play — there's nothing to
+  // re-patch on this surface.
+  const hasFilterableToken = (typeof parts.filter === 'string' && /^l\d+$/.test(parts.filter))
+    || (Array.isArray(stack) && stack.some((tok) => /:l\d+$/.test(tok || '')));
+  if (!hasFilterableToken) return;
+  window.addEventListener(LCODES_LOADED_EVENT, () => {
+    if (crumbIdEl && typeof crumbIdEl.textContent === 'string') {
+      crumbIdEl.textContent = crumbLabelFor(parts);
+    }
+    if (trailEl) hydrateCrumbLabels(stack, trailEl);
+  }, { once: true });
 }
 
 // ---- show-landing view (c=pbrowse&id=p<N>) --------------------------
@@ -1672,8 +1736,17 @@ export function renderCrumbTrail(stack) {
   const trail = document.createElement('nav');
   trail.className = 'browse-trail';
   trail.setAttribute('aria-label', 'Breadcrumb');
-  for (let i = 0; i < stack.length; i++) {
-    const token = stack[i];
+  // Defence-in-depth dedupe of consecutive identical tokens (#89). The
+  // emitter shouldn't produce them after the filter-aware crumbTokenFor
+  // fix landed, but an old URL pasted from an earlier session could
+  // still carry `from=lang,lang,lang` — render it as a single anchor
+  // rather than three identical ones.
+  const dedup = [];
+  for (const token of stack) {
+    if (dedup.length === 0 || dedup[dedup.length - 1] !== token) dedup.push(token);
+  }
+  for (let i = 0; i < dedup.length; i++) {
+    const token = dedup[i];
     const parts = partsFromCrumb(token);
     const a = document.createElement('a');
     a.className = 'browse-trail__crumb';
@@ -1681,16 +1754,31 @@ export function renderCrumbTrail(stack) {
     if (parts) {
       // Each ancestor's own crumb stack is the prefix up to (and not
       // including) itself, so a click on crumb[i] navigates to that
-      // node with from=stack[0..i-1].
-      a.href = drillHashFor(parts, stack.slice(0, i));
+      // node with from=dedup[0..i-1].
+      a.href = drillHashFor(parts, dedup.slice(0, i));
     } else {
       a.className += ' is-disabled';
     }
-    const cached = cache.get(`tunein.label.${token}`);
-    a.textContent = (typeof cached === 'string' && cached !== '') ? cached : token;
+    a.textContent = initialCrumbLabel(token, parts);
     trail.appendChild(a);
   }
   return trail;
+}
+
+// Pick the best already-known label for a crumb token without doing
+// any network work. Order of preference: cached label under
+// `tunein.label.<token>` (from a previous resolve), in-memory lcode
+// catalogue (free for `<anchor>:l<NNN>` tokens), then raw token. The
+// async hydrateCrumbLabels path upgrades any token still rendered as
+// raw once its Describe / Browse lookup completes.
+function initialCrumbLabel(token, parts) {
+  const cached = cache.get(`tunein.label.${token}`);
+  if (typeof cached === 'string' && cached !== '') return cached;
+  if (parts && typeof parts.filter === 'string' && /^l\d+$/.test(parts.filter)) {
+    const name = lcodeLabel(parts.filter);
+    if (name) return name;
+  }
+  return token;
 }
 
 // For every crumb in `stack` that lacks a cached label, fetch its
@@ -1740,6 +1828,23 @@ async function hydrateCrumbLabels(stack, trailEl) {
 // the trail. Picks the appropriate endpoint per prefix; falls through
 // silently when no label can be discovered.
 async function resolveLabelAndApply(token, trailEl) {
+  // Filter-bearing tokens (`<anchor>:l<NNN>`) resolve from the in-
+  // memory lcode catalogue without any network round-trip (#89, #90).
+  // We bypass the Describe / Browse fallbacks entirely — the
+  // catalogue is authoritative for language names.
+  const parts = partsFromCrumb(token);
+  if (parts && typeof parts.filter === 'string' && /^l\d+$/.test(parts.filter)) {
+    const name = lcodeLabel(parts.filter);
+    if (name) {
+      cache.set(`tunein.label.${token}`, name, TTL_LABEL);
+      if (trailEl && typeof trailEl.querySelector === 'function') {
+        const a = trailEl.querySelector(`[data-crumb-token="${cssEscape(token)}"]`);
+        if (a) a.textContent = name;
+      }
+    }
+    return;
+  }
+
   let title = '';
   try {
     if (/^[spt]\d+$/.test(token)) {
@@ -1751,16 +1856,13 @@ async function resolveLabelAndApply(token, trailEl) {
         if (typeof e.title === 'string' && e.title !== '') title = e.title;
         else if (typeof e.name === 'string' && e.name !== '') title = e.name;
       }
-    } else {
+    } else if (parts) {
       // Category prefixes + plain words — Browse returns head.title.
       // partsFromCrumb routes lowercase-letter+digit tokens through
       // `id=` and letters-only tokens through `c=`.
-      const parts = partsFromCrumb(token);
-      if (parts) {
-        const json = await tuneinBrowse(parts);
-        const t = json && json.head && json.head.title;
-        if (typeof t === 'string' && t !== '') title = t;
-      }
+      const json = await tuneinBrowse(parts);
+      const t = json && json.head && json.head.title;
+      if (typeof t === 'string' && t !== '') title = t;
     }
   } catch (_err) {
     // Network error / non-200 — give up silently. The trail keeps

@@ -26,6 +26,7 @@ const {
   extractDrillKey,
   composeDrillUrl,
   isValidLcode,
+  lcodeLabel,
   cacheLcodes,
   cacheLcodesFromDescribe,
   LCODE_CACHE_KEY,
@@ -278,6 +279,40 @@ test('isValidLcode returns false when no catalogue has been cached yet', () => {
   assert.equal(isValidLcode('l109'), false);
 });
 
+// --- lcodeLabel ----------------------------------------------------
+
+test('lcodeLabel resolves a known code to its cached human label', () => {
+  cacheLcodes([
+    { id: 'l109', name: 'German' },
+    { id: 'l216', name: 'English' },
+  ]);
+  assert.equal(lcodeLabel('l109'), 'German');
+  assert.equal(lcodeLabel('l216'), 'English');
+});
+
+test('lcodeLabel returns undefined for unknown codes', () => {
+  cacheLcodes([{ id: 'l109', name: 'German' }]);
+  assert.equal(lcodeLabel('l999'), undefined);
+});
+
+test('lcodeLabel returns undefined when the cache holds the code but no label', () => {
+  // Legacy / bare-string input path: code present, label empty.
+  cacheLcodes(['l109']);
+  assert.equal(isValidLcode('l109'), true, 'code is still in the allow-list');
+  assert.equal(lcodeLabel('l109'), undefined, 'no label resolved');
+});
+
+test('lcodeLabel returns undefined when the cache is empty / never primed', () => {
+  assert.equal(lcodeLabel('l109'), undefined);
+});
+
+test('lcodeLabel returns undefined for malformed input (no l prefix, etc.)', () => {
+  cacheLcodes([{ id: 'l109', name: 'German' }]);
+  assert.equal(lcodeLabel(''), undefined);
+  assert.equal(lcodeLabel('109'), undefined);
+  assert.equal(lcodeLabel(null), undefined);
+});
+
 test('cacheLcodesFromDescribe handles the Describe.ashx?c=languages body shape', () => {
   // The OPML response is {head, body: [outline, outline, ...]} where
   // each outline carries guide_id="lNNN".
@@ -296,12 +331,17 @@ test('cacheLcodesFromDescribe handles the Describe.ashx?c=languages body shape',
   assert.equal(isValidLcode('g22'), false);
 });
 
-test('cacheLcodesFromDescribe writes to sessionStorage under LCODE_CACHE_KEY', () => {
-  cacheLcodesFromDescribe({ body: [{ guide_id: 'l1' }, { guide_id: 'l109' }] });
+test('cacheLcodesFromDescribe writes a {code: label} map to sessionStorage under LCODE_CACHE_KEY', () => {
+  cacheLcodesFromDescribe({
+    body: [
+      { guide_id: 'l1',   text: 'English' },
+      { guide_id: 'l109', text: 'German' },
+    ],
+  });
   const raw = sessionStorage.getItem(LCODE_CACHE_KEY);
   assert.ok(raw, 'sessionStorage entry exists under LCODE_CACHE_KEY');
   const parsed = JSON.parse(raw);
-  assert.deepEqual(parsed, ['l1', 'l109']);
+  assert.deepEqual(parsed, { l1: 'English', l109: 'German' });
 });
 
 // --- empty / malformed input ----------------------------------------
