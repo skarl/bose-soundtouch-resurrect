@@ -16,6 +16,7 @@
 
 import { stationRow } from '../../components.js';
 import { icon } from '../../icons.js';
+import { store as appStore } from '../../state.js';
 import {
   canonicaliseBrowseUrl,
   extractDrillKey,
@@ -37,6 +38,7 @@ import {
   renderTopicsCard,
 } from './show-landing.js';
 import { stringifyCrumbs } from './crumb-parts.js';
+import { trailingAffordance } from '../../components.js';
 
 // The crumb-token prefix that child links should embed in `from=...`.
 // Set by renderDrill / selectTab before the row constructor runs, and
@@ -698,8 +700,9 @@ export function renderEntry(entry) {
 
   let node;
   if (kind === 'station' || kind === 'topic') {
+    const sid = norm.id || entry.guide_id || '';
     node = stationRow({
-      sid:      norm.id || entry.guide_id || '',
+      sid,
       name:     norm.primary,
       art:      norm.image,
       location: norm.secondary,
@@ -708,6 +711,18 @@ export function renderEntry(entry) {
       tertiary: norm.tertiary,
       badges:   norm.badges,
       chips:    norm.chips,
+      // Heart visibility is gated by favoriteHeart on `^[sp]\d+$`, so
+      // topic (t) rows fall through to the chevron unchanged. Browse
+      // capture rule per #126: {id, name, art, note: ''} from row data.
+      favorite: {
+        store: appStore,
+        getEntry: () => ({
+          id:   sid,
+          name: norm.primary || '',
+          art:  norm.image || '',
+          note: '',
+        }),
+      },
     });
   } else if (kind === 'show') {
     // Shows are drill-into-detail, not direct play. Reuse stationRow
@@ -780,10 +795,23 @@ function showRow(entry, norm) {
   }
   row.appendChild(body);
 
-  const chev = document.createElement('span');
-  chev.className = 'station-row__chev';
-  chev.appendChild(icon('arrow', 14));
-  row.appendChild(chev);
+  // Show rows take a heart in place of the chevron (#126). p-prefix
+  // ids satisfy isFavoriteId; the body link still drills into the
+  // show landing.
+  row.appendChild(trailingAffordance({
+    sid:  id,
+    name: norm.primary || id || '',
+    art:  norm.image || '',
+    favorite: {
+      store: appStore,
+      getEntry: () => ({
+        id,
+        name: norm.primary || id || '',
+        art:  norm.image || '',
+        note: '',
+      }),
+    },
+  }));
   return row;
 }
 

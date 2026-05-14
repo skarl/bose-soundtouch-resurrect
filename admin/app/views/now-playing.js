@@ -30,6 +30,12 @@ import { cache } from '../tunein-cache.js';
 import { showToast } from '../toast.js';
 import { pickTrackLine, pickMetaLine, humaniseSourceKey } from '../np-derive.js';
 import { labelForTopic, lazyFetchTopicsList } from './now-playing-data.js';
+import { favoriteHeart } from '../favorites.js';
+
+// Sources where a heart on the Now-Playing card makes no sense — the
+// playing content has no TuneIn id to favourite. Mirrors the AUX /
+// BLUETOOTH / STANDBY rule in the #126 spec.
+const HEART_HIDDEN_SOURCES = new Set(['AUX', 'BLUETOOTH', 'STANDBY']);
 
 const POLL_MS = 2000;
 const PRESET_SLOTS = 6;
@@ -70,7 +76,10 @@ export default defineView({
                   <span class="np-eq-slot" aria-hidden="true"></span>
                   <span class="np-meta" hidden></span>
                 </div>
-                <h1 class="np-name"></h1>
+                <div class="np-name-row">
+                  <h1 class="np-name"></h1>
+                  <span class="np-heart-slot" aria-hidden="true"></span>
+                </div>
                 <p class="np-track" aria-live="polite" hidden></p>
               </div>
               <div class="np-transport">
@@ -110,6 +119,7 @@ export default defineView({
     const cardEl     = root.querySelector('.np-card');
     const artEl      = root.querySelector('.np-art');
     const nameEl     = root.querySelector('.np-name');
+    const heartSlot  = root.querySelector('.np-heart-slot');
     const trackEl    = root.querySelector('.np-track');
     const metaEl     = root.querySelector('.np-meta');
     const sourcesEl  = root.querySelector('.np-sources');
@@ -133,6 +143,35 @@ export default defineView({
     btnPlay.appendChild(playIconRef.node);
     const muteIconRef = { node: icon('vol', 14) };
     muteEl.appendChild(muteIconRef.node);
+
+    // Heart on the Now-Playing card (#126). Visibility is two-layered:
+    // favoriteHeart's own gate keeps it hidden unless the resolved
+    // guide_id matches `^[sp]\d+$`; the source-class gate below hides
+    // it on AUX / BLUETOOTH / STANDBY where no TuneIn id ever applies.
+    // The entry is resolved at click time from the live nowPlaying so
+    // the captured name/art track WS updates.
+    const heartEl = favoriteHeart({
+      store,
+      getEntry: () => {
+        const np = store.state.speaker.nowPlaying;
+        if (!np) return null;
+        // Explicit suppression for sources where no TuneIn id ever
+        // applies. AUX / BLUETOOTH / STANDBY can briefly carry a
+        // stale TuneIn-style location during a transition; gating on
+        // source.first is the safe answer.
+        if (HEART_HIDDEN_SOURCES.has(np.source)) return null;
+        const item = np.item;
+        const id = extractGuideIdFromLocation(item && item.location);
+        if (!id) return null;
+        const name = (item && (item.itemName || item.name)) || '';
+        const art  = (np && typeof np.art === 'string' && np.art.startsWith('http'))
+          ? np.art : '';
+        return { id, name, art, note: '' };
+      },
+      onCleanup: env.onCleanup,
+    });
+    heartEl.classList.add('np-heart');
+    if (heartSlot) heartSlot.appendChild(heartEl);
 
     // Long-press state — closure-local.
     let longPressTimer    = null;
@@ -227,6 +266,11 @@ export default defineView({
       // keyboard tabs through a hidden card don't reach a live button.
       syncPlayBtn(np);
       syncPrevNext(np);
+      // Heart repaint defensively — favoriteHeart's own 'speaker'
+      // subscription handles store-driven updates, but a polling tick
+      // that flips the source class (e.g. STANDBY → TUNEIN) needs the
+      // visibility gate to re-evaluate before the user sees the card.
+      if (heartEl && typeof heartEl.repaint === 'function') heartEl.repaint();
 
       if (standby) return;
 

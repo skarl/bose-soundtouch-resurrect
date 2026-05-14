@@ -11,6 +11,7 @@ import * as theme from './theme.js';
 import { canonicaliseBrowseUrl } from './tunein-url.js';
 import { parseSid, isPlayableSid } from './tunein-sid.js';
 import { createPlayButton } from './play-button.js';
+import { favoriteHeart, isFavoriteId } from './favorites.js';
 
 export { isPlayableSid };
 
@@ -465,6 +466,13 @@ export function stationCard({ sid, name, art, location, format }) {
 // drills to the detail view; only the icon plays. Other prefixes
 // (`g`, `c`, `r`, `m`, `a`, `l`, `n` — drill-only types) get no Play
 // button.
+//
+// `favorite: { store, getEntry }` — when supplied and the sid matches
+// `^[sp]\d+$`, the row swaps its trailing chevron for an inline
+// favourite-heart toggle (issue #126). Other rows keep the chevron.
+// Topic (`t`), artist (`m`), and any non-Bose prefix render with the
+// chevron unchanged. `getEntry` returns `{ id, name, art, note }` at
+// click time; the row's static metadata is the natural source.
 export function stationRow({
   sid,
   name,
@@ -475,6 +483,7 @@ export function stationRow({
   tertiary = '',
   badges,
   chips,
+  favorite,
 } = {}) {
   const row = document.createElement('a');
   row.className = 'station-row';
@@ -561,12 +570,39 @@ export function stationRow({
     row.appendChild(createPlayButton({ sid, label: name || sid }));
   }
 
+  // Trailing affordance: heart on favouritable rows (sid matches
+  // `^[sp]\d+$`) when a favourite handle is wired in, chevron
+  // otherwise. The body remains the link to detail; the heart's own
+  // click handler stops propagation so toggling doesn't navigate.
+  row.appendChild(trailingAffordance({ sid, name, art, favorite }));
+
+  return row;
+}
+
+// trailingAffordance — return the heart toggle or the row chevron,
+// depending on favourite-eligibility. Shared with showRow in the
+// browse outline renderer so the "heart replaces chevron" rule sits
+// at one seam.
+//
+// `favorite: { store, getEntry? }`. When `getEntry` is omitted, the
+// entry shape is built from the static row fields. The `getEntry`
+// override exists for callers that want to resolve a live name/art
+// at click time (e.g. now-playing).
+export function trailingAffordance({ sid, name, art = '', favorite } = {}) {
+  if (favorite && favorite.store && isFavoriteId(sid)) {
+    const getEntry = typeof favorite.getEntry === 'function'
+      ? favorite.getEntry
+      : () => ({ id: sid, name: name || sid, art: art || '', note: '' });
+    return favoriteHeart({
+      store: favorite.store,
+      getEntry,
+      onCleanup: favorite.onCleanup,
+    });
+  }
   const chev = document.createElement('span');
   chev.className = 'station-row__chev';
   chev.appendChild(icon('arrow', 14));
-  row.appendChild(chev);
-
-  return row;
+  return chev;
 }
 
 // Append a "·" dot to a meta line. Used between each segment of the

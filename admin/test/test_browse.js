@@ -57,7 +57,7 @@ function hasClass(el, cls) {
 
 // --- audio-leaf rendering -------------------------------------------
 
-test('renderEntry: audio leaf renders a station-row with art + name + meta + chevron', () => {
+test('renderEntry: audio leaf renders a station-row with art + name + meta + heart (#126)', () => {
   const node = renderEntry({
     type:       'audio',
     guide_id:   's12345',
@@ -85,8 +85,12 @@ test('renderEntry: audio leaf renders a station-row with art + name + meta + che
   const fmt = findFirstByClass(node, 'station-row__fmt');
   assert.equal(fmt.textContent, '192k MP3');
 
+  // Per #126 the heart replaces the chevron on favouritable
+  // (`^[sp]\d+$`) rows.
+  const heart = findFirstByClass(node, 'fav-heart');
+  assert.ok(heart, 'heart slot present on s-prefix row');
   const chev = findFirstByClass(node, 'station-row__chev');
-  assert.ok(chev, 'chevron slot present');
+  assert.equal(chev, null, 'chevron is gone on favouritable rows');
 });
 
 test('renderEntry: long station name keeps the truncating .station-row__name class', () => {
