@@ -11,7 +11,7 @@
 
 import { html, mount, defineView } from '../dom.js';
 import { store } from '../state.js';
-import { speakerNowPlaying, presetsList, playGuideId, tuneinBrowse } from '../api.js';
+import { speakerNowPlaying, presetsList, playGuideId } from '../api.js';
 import { setArt } from '../art.js';
 import { hashHue } from '../tint.js';
 import * as actions from '../actions/index.js';
@@ -25,61 +25,15 @@ import {
   extractGuideIdFromLocation,
   parentKey,
   topicsKey,
-  topicNameKey,
 } from '../transport-state.js';
-import { cache, TTL_DRILL_HEAD } from '../tunein-cache.js';
-import { classifyOutline } from '../tunein-outline.js';
+import { cache } from '../tunein-cache.js';
 import { showToast } from '../toast.js';
 import { pickTrackLine, pickMetaLine, humaniseSourceKey } from '../np-derive.js';
+import { labelForTopic, lazyFetchTopicsList } from './now-playing-data.js';
 
 const POLL_MS = 2000;
 const PRESET_SLOTS = 6;
 const LONG_PRESS_MS = 600;
-
-// Pull the ordered list of topic guide_ids out of a Browse(c=topics)
-// JSON body. The body shape is either a flat list of topic outlines
-// or a single section container with `children` — handle both so the
-// caller doesn't have to inspect the response. Filters to t-prefix
-// rows (the only ones the firmware can resolve as a topic stream).
-function extractTopicIds(json) {
-  const out = [];
-  const visit = (entry) => {
-    if (!entry || typeof entry !== 'object') return;
-    if (Array.isArray(entry.children)) {
-      for (const c of entry.children) visit(c);
-      return;
-    }
-    // Filter on classification (drops cursors, pivots, tombstones)
-    // AND on the t-prefix so a sibling station row in the same body
-    // doesn't poison the topics list.
-    const kind = classifyOutline(entry);
-    const gid = typeof entry.guide_id === 'string' ? entry.guide_id : '';
-    if (kind === 'topic' && /^t\d+$/.test(gid)) out.push(gid);
-  };
-  const body = json && Array.isArray(json.body) ? json.body : [];
-  for (const e of body) visit(e);
-  return out;
-}
-
-// #102: stash episode titles under tunein.topicname.<t<N>>. Same
-// traversal shape as extractTopicIds, isolated here so the search-
-// arrival path (lazyFetchTopicsList) gets the same priming the
-// browse-view drill already does.
-function cacheTopicNames(json) {
-  const visit = (entry) => {
-    if (!entry || typeof entry !== 'object') return;
-    if (Array.isArray(entry.children)) {
-      for (const c of entry.children) visit(c);
-      return;
-    }
-    const gid = typeof entry.guide_id === 'string' ? entry.guide_id : '';
-    if (!/^t\d+$/.test(gid)) return;
-    const text = typeof entry.text === 'string' ? entry.text.trim() : '';
-    if (text) cache.set(topicNameKey(gid), text, TTL_DRILL_HEAD);
-  };
-  const body = json && Array.isArray(json.body) ? json.body : [];
-  for (const e of body) visit(e);
-}
 
 // Thin shim so the existing renderName callsites stay one-arg. The
 // canonical helper lives in np-title.js and is shared with the shell
@@ -512,67 +466,6 @@ export default defineView({
       }
     }
 
-    // resolve a topic id to a human label out of the cached topics
-    // list. The list itself stores ids only by default, but we also
-    // #102: Resolve the episode title for a /play call's `name` field.
-    // Source priority:
-    //   1. `tunein.topicname.<t<N>>` — primed by the browse view + the
-    //      lazy fetcher below; this is the canonical resolved title.
-    //   2. The firmware's own <itemName> if it's already on this topic
-    //      AND that name isn't itself the raw guide_id (defending
-    //      against a stale state written by an earlier sid-fallback).
-    // Falls back to the topic id as a last resort: #99 makes `name`
-    // structurally required on playGuideId, so we always return a
-    // string. The fallback is the known c9d8396 degrade (itemName
-    // surfaces the sid); the topic-name primer in the browse drill +
-    // the lazy fetcher below populate the cache so the fallback fires
-    // only on a never-drilled, never-fetched topic — vanishingly rare
-    // in practice.
-    function labelForTopic(topicId) {
-      const cached = cache.get(topicNameKey(topicId));
-      if (typeof cached === 'string' && cached) return cached;
-      const np = store.state.speaker.nowPlaying;
-      const location = np?.item?.location ?? null;
-      const itemName = np?.item?.name ?? null;
-      if (location
-          && extractGuideIdFromLocation(location) === topicId
-          && itemName
-          && itemName !== topicId) {
-        return itemName;
-      }
-      return topicId;
-    }
-
-    // Fan-out: lazy-fetch the topics list for `parentId` when it isn't
-    // already cached. Used by the Prev/Next path when the user arrived
-    // at a topic via search (no drill context). Idempotent — the cache
-    // entry survives until TTL_DRILL_HEAD expires.
-    async function lazyFetchTopicsList(parentId) {
-      const key = topicsKey(parentId);
-      const cached = cache.get(key);
-      if (Array.isArray(cached)) return cached;
-      try {
-        const body = await tuneinBrowse({ c: 'topics', id: parentId });
-        const ids = extractTopicIds(body);
-        // #102: lift episode titles from the same body into the
-        // tunein.topicname.<t<N>> cache so the next Prev/Next can ship
-        // `name` to /play. The browse view's primer already does this
-        // on drill; this branch covers the search-arrival path.
-        cacheTopicNames(body);
-        if (ids.length >= 2) {
-          cache.set(key, ids, TTL_DRILL_HEAD);
-          return ids;
-        }
-        // Cache the empty / 1-entry result too so we don't refetch on
-        // every click, but flag the buttons as disabled by writing a
-        // sentinel (the classifier rejects length < 2 anyway).
-        cache.set(key, ids, TTL_DRILL_HEAD);
-        return ids;
-      } catch (_err) {
-        return [];
-      }
-    }
-
     function onPrev() { onSkip('prev'); }
     function onNext() { onSkip('next'); }
 
@@ -615,7 +508,7 @@ export default defineView({
 
       skipInFlight = true;
       try {
-        const result = await playGuideId(targetId, labelForTopic(targetId));
+        const result = await playGuideId(targetId, labelForTopic(targetId, np));
         if (!result || !result.ok) {
           showToast('Could not skip episode');
         }
