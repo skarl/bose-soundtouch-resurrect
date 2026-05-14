@@ -36,6 +36,7 @@ import { showHero } from '../../show-hero.js';
 import { cache, TTL_LABEL } from '../../tunein-cache.js';
 import { normaliseRow } from '../../tunein-outline.js';
 import { resolveBrowseDrill } from '../../tunein-drill.js';
+import { store as appStore } from '../../state.js';
 import {
   renderSection,
   emptyNode,
@@ -210,6 +211,17 @@ function renderShowLandingCard(show) {
     art:  logo,
     location: secondary,
     chips,
+    // Show-landing capture rule per #126: {id: pid, name: show.name,
+    // art: show.art, note: ''} from the Describe-resolved show entry.
+    favorite: {
+      store: appStore,
+      getEntry: () => ({
+        id:   sid,
+        name: title,
+        art:  logo,
+        note: '',
+      }),
+    },
   });
   // Mark the hero so tests / CSS can target it specifically.
   row.setAttribute('data-show-landing', '1');
@@ -284,6 +296,15 @@ function renderLiveShowRow(entry) {
     name:     norm.primary || id,
     art:      norm.image,
     location: norm.secondary,
+    favorite: {
+      store: appStore,
+      getEntry: () => ({
+        id,
+        name: norm.primary || id || '',
+        art:  norm.image || '',
+        note: '',
+      }),
+    },
   });
 }
 

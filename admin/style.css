@@ -466,6 +466,24 @@ main {
   white-space: nowrap;
 }
 
+/* Now-Playing name + heart row (#126). The heart sits next to the
+   station name; the name span keeps its ellipsis behaviour while the
+   heart anchors to the right of the row. */
+.np-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.np-name-row .np-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.np-heart-slot {
+  flex: 0 0 auto;
+  display: inline-flex;
+}
+
 .np-track {
   margin: 0;
   font-size: 14px;
@@ -2913,6 +2931,19 @@ select.settings-input {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+
+/* showHero name + inline heart (#126). The heart toggle sits next to
+   the show title inside the body column. The name keeps ellipsis;
+   the heart anchors at the end of the row. */
+.station-row__name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.station-row__name-row .station-row__name {
+  flex: 1 1 auto;
 }
 
 .station-row__meta {
