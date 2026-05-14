@@ -5,7 +5,9 @@
 // "Load more" pagination, the eager-serial crawl coordinator, and
 // the c=pbrowse show-landing body all live in the per-concern
 // submodules under `./browse/`. The crumb-stack value type +
-// renderers + hydrators live in `./browse/crumbs.js`.
+// renderers + hydrators are split between `./browse/crumb-parts.js`
+// (pure value type + label-resolution reads) and
+// `./browse/crumb-renderer.js` (DOM pillbar + async label hydration).
 //
 // Two modes:
 //   1. Root view (#/browse): three-tab segmented control (Genre /
@@ -64,13 +66,15 @@ import {
   crumbLabelFor,
   backHrefFor,
   initialHeaderTitle,
+} from './browse/crumb-parts.js';
+import {
   renderPillBar,
   renderCrumbTrail,
   renderFilterBadge,
   renderFilterBadges,
   hydrateCrumbLabels,
   patchTrailCrumb,
-} from './browse/crumbs.js';
+} from './browse/crumb-renderer.js';
 
 // Re-export the entry/render primitives + crumb helpers + test hooks
 // so existing callers (test_browse, test_browse_crumbs,

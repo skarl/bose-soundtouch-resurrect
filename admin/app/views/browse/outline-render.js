@@ -36,6 +36,7 @@ import {
   renderLiveShowCard,
   renderTopicsCard,
 } from './show-landing.js';
+import { stringifyCrumbs } from './crumb-parts.js';
 
 // The crumb-token prefix that child links should embed in `from=...`.
 // Set by renderDrill / selectTab before the row constructor runs, and
@@ -122,14 +123,6 @@ function filtersOfParts(parts) {
     return parts.filter.split(',').map((s) => s.trim()).filter(Boolean);
   }
   return [];
-}
-
-// Local copy of stringifyCrumbs so drillHashFor doesn't pull in the
-// full crumb module. Kept in sync with browse.js's exported version
-// (single token: comma-joined, empty array → '').
-function stringifyCrumbs(crumbs) {
-  if (!Array.isArray(crumbs) || crumbs.length === 0) return '';
-  return crumbs.join(',');
 }
 
 export function pluralize(n) {
