@@ -56,6 +56,10 @@ export const store = observable({
     recents:        null,   // [{utcTime, source, sourceAccount, type, location, itemName, containerArt}, ...]
     capabilities:   null,   // {deviceID, dspMonoStereo, lrStereoCapable, ..., capabilities:[{name,url}]}
     systemTimeout:    null, // {enabled, minutes}
+    // favourites — admin-owned, disjoint from the firmware-owned six
+    // hardware presets. null = unfetched; [] = fetched-and-empty.
+    // Entries: {id, name, art, note}. Position = array index.
+    favorites:      null,
   },
   caches: {
     probe:          new Map(),               // sid → Probe = {sid, verdict, tuneinJson, expires} — TTL 10 min

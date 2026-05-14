@@ -1,0 +1,335 @@
+#!/bin/sh
+#
+# favorites — admin-owned favourites list, persisted on the speaker.
+#
+# GET  /cgi-bin/api/v1/favorites   → { ok:true, data:[ {id,name,art,note}, ... ] }
+# PUT  /cgi-bin/api/v1/favorites   body = full JSON array → atomic replace
+#
+# The favourites list is the admin's persistent record of stations and
+# shows the user has hearted. It is DISJOINT from the firmware-owned
+# six hardware presets (those live in <preset> XML and reach the speaker
+# through /presets + /storePreset). The same TuneIn id may appear as a
+# favourite, a preset, both, or neither.
+#
+# Storage: /mnt/nv/resolver/admin-data/favorites.json
+# Shape:   JSON array; array index = position. No explicit `position` field.
+# Entry:   { "id": "sNNN" | "pNNN",
+#            "name": "<non-empty>",
+#            "art":  "" | "http(s)://...",
+#            "note": "<any string>" }
+#
+# PUT validation (envelope codes):
+#   INVALID_ID    — id missing or does not match ^[sp][0-9]+$
+#   INVALID_NAME  — name missing or empty
+#   INVALID_ART   — art is non-empty and not http(s)://...
+#   DUPLICATE_ID  — same id appears twice in the array
+#   INVALID_JSON  — body is not parseable as a JSON array
+#
+# Envelope + CSRF guard + CORS preflight come from the shared
+# admin/cgi-bin/lib/playback.sh / cgi-common.sh helpers, mirroring the
+# /presets and /preview CGIs.
+#
+# busybox-shell only — no bash-isms, no jq. Must pass shellcheck under
+# --severity=warning.
+
+set -u
+
+# shellcheck source=../../lib/playback.sh
+. "$(dirname "$0")/../../lib/playback.sh"
+
+# Where favourites live on the speaker. Distinct from
+# PLAYBACK_RESOLVER_DIR (which holds per-station Bose JSON for the
+# firmware to fetch) — favourites are admin-only metadata that the
+# firmware never sees.
+# Storage path. The literal lives in production; tests override via
+# FAV_DIR_OVERRIDE so the shell harness can exercise GET / PUT without
+# touching /mnt/nv. The override is intentionally NOT a CGI knob — busybox
+# httpd doesn't forward arbitrary env into CGI processes, so a request
+# from the network never reaches this branch.
+FAV_DIR="${FAV_DIR_OVERRIDE:-/mnt/nv/resolver/admin-data}"
+FAV_FILE="$FAV_DIR/favorites.json"
+
+# --- JSON array parser ---------------------------------------------
+#
+# parse_fav_entries — read a JSON array from stdin, emit one entry per
+# line to stdout in the format `<id>\t<name>\t<art>\t<note>`. Echoes
+# `INVALID_JSON` to stderr and returns non-zero if the top-level value
+# is not an array. Fields with embedded tabs are unlikely in practice
+# (the resolver-side validation prevents the entries we accept), but
+# we still defensively reject any control char inside a value.
+#
+# This is a minimal hand-rolled parser scoped to the favourites shape:
+# it handles the four expected string fields, the standard JSON string
+# escapes (\" \\ \/ \b \f \n \r \t) and \uXXXX, and the
+# array-of-objects-of-strings structure. Anything more exotic falls
+# through to INVALID_JSON, which is the right answer — the SPA never
+# generates anything more exotic.
+parse_fav_entries() {
+    awk '
+        BEGIN {
+            # Hex digit lookup for \uXXXX.
+            for (i = 0; i <= 9; i++) hex[i] = i
+            hex["a"] = 10; hex["b"] = 11; hex["c"] = 12
+            hex["d"] = 13; hex["e"] = 14; hex["f"] = 15
+            hex["A"] = 10; hex["B"] = 11; hex["C"] = 12
+            hex["D"] = 13; hex["E"] = 14; hex["F"] = 15
+        }
+        # Append the whole stdin to buf so we can walk it as one stream.
+        { buf = buf $0 "\n" }
+        END {
+            n = length(buf)
+            i = 1
+            # Skip leading whitespace.
+            while (i <= n && index(" \t\r\n", substr(buf, i, 1)) > 0) i++
+            if (substr(buf, i, 1) != "[") {
+                print "INVALID_JSON" > "/dev/stderr"
+                exit 2
+            }
+            i++
+            # Loop over array elements.
+            first = 1
+            while (1) {
+                while (i <= n && index(" \t\r\n,", substr(buf, i, 1)) > 0) i++
+                if (i > n) { print "INVALID_JSON" > "/dev/stderr"; exit 2 }
+                c = substr(buf, i, 1)
+                if (c == "]") { i++; break }
+                if (c != "{") { print "INVALID_JSON" > "/dev/stderr"; exit 2 }
+                i++
+                id = ""; name = ""; art = ""; note = ""
+                seen_id = 0; seen_name = 0; seen_art = 0; seen_note = 0
+                # Loop over object members.
+                while (1) {
+                    while (i <= n && index(" \t\r\n,", substr(buf, i, 1)) > 0) i++
+                    if (i > n) { print "INVALID_JSON" > "/dev/stderr"; exit 2 }
+                    cc = substr(buf, i, 1)
+                    if (cc == "}") { i++; break }
+                    if (cc != "\"") { print "INVALID_JSON" > "/dev/stderr"; exit 2 }
+                    key = parse_str()
+                    if (key == "__ERR__") { print "INVALID_JSON" > "/dev/stderr"; exit 2 }
+                    while (i <= n && index(" \t\r\n", substr(buf, i, 1)) > 0) i++
+                    if (substr(buf, i, 1) != ":") { print "INVALID_JSON" > "/dev/stderr"; exit 2 }
+                    i++
+                    while (i <= n && index(" \t\r\n", substr(buf, i, 1)) > 0) i++
+                    if (substr(buf, i, 1) != "\"") { print "INVALID_JSON" > "/dev/stderr"; exit 2 }
+                    val = parse_str()
+                    if (val == "__ERR__") { print "INVALID_JSON" > "/dev/stderr"; exit 2 }
+                    if      (key == "id")   { id = val;   seen_id = 1 }
+                    else if (key == "name") { name = val; seen_name = 1 }
+                    else if (key == "art")  { art = val;  seen_art = 1 }
+                    else if (key == "note") { note = val; seen_note = 1 }
+                    # Unknown keys are silently dropped — we control
+                    # both ends, but staying tolerant means a future
+                    # client that adds a field can still talk to an
+                    # older speaker without erroring out.
+                }
+                # Defaults for missing fields: empty strings. The id is
+                # validated separately below; missing-id falls through
+                # to INVALID_ID rather than INVALID_JSON.
+                if (!first) printf "\n"
+                first = 0
+                printf "%s\t%s\t%s\t%s", id, name, art, note
+            }
+            if (!first) printf "\n"
+        }
+        function parse_str(    out, c, esc, u, j, hi, lo, cp) {
+            # Caller has positioned i at the opening ".
+            i++
+            out = ""
+            while (i <= n) {
+                c = substr(buf, i, 1)
+                if (c == "\"") { i++; return out }
+                if (c == "\\") {
+                    if (i + 1 > n) return "__ERR__"
+                    esc = substr(buf, i + 1, 1)
+                    if      (esc == "\"") { out = out "\""; i += 2 }
+                    else if (esc == "\\") { out = out "\\"; i += 2 }
+                    else if (esc == "/")  { out = out "/";  i += 2 }
+                    else if (esc == "b")  { out = out " ";  i += 2 }
+                    else if (esc == "f")  { out = out " ";  i += 2 }
+                    else if (esc == "n")  { out = out " ";  i += 2 }
+                    else if (esc == "r")  { out = out " ";  i += 2 }
+                    else if (esc == "t")  { out = out " ";  i += 2 }
+                    else if (esc == "u") {
+                        if (i + 5 > n) return "__ERR__"
+                        u = substr(buf, i + 2, 4)
+                        cp = 0
+                        for (j = 1; j <= 4; j++) {
+                            ch = substr(u, j, 1)
+                            if (!(ch in hex)) return "__ERR__"
+                            cp = cp * 16 + hex[ch]
+                        }
+                        # Only encode ASCII payloads here; non-ASCII
+                        # round-trips as a placeholder. The SPA only
+                        # emits ASCII for ids; names/notes that need
+                        # non-ASCII reach the speaker via the user
+                        # typing them, not via \u escapes.
+                        if (cp < 128) out = out sprintf("%c", cp)
+                        else          out = out "?"
+                        i += 6
+                    }
+                    else return "__ERR__"
+                }
+                else if (c == "\t" || c == "\n" || c == "\r") {
+                    # JSON forbids literal control chars in strings.
+                    return "__ERR__"
+                }
+                else {
+                    out = out c
+                    i++
+                }
+            }
+            return "__ERR__"
+        }
+    '
+}
+
+# --- Field validators ----------------------------------------------
+
+# is_valid_fav_id — accept ^s[0-9]+$ or ^p[0-9]+$.
+is_valid_fav_id() {
+    case "$1" in
+        s|p) return 1 ;;
+        s*|p*)
+            tail=${1#?}
+            case "$tail" in
+                ''|*[!0-9]*) return 1 ;;
+                *) return 0 ;;
+            esac
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+# is_valid_fav_art — accept the empty string or an http(s):// URL.
+is_valid_fav_art() {
+    case "$1" in
+        '')         return 0 ;;
+        http://*)   return 0 ;;
+        https://*)  return 0 ;;
+        *)          return 1 ;;
+    esac
+}
+
+# --- GET / PUT handlers --------------------------------------------
+
+handle_get() {
+    emit_ok_headers 'GET, PUT, OPTIONS'
+    if [ -s "$FAV_FILE" ]; then
+        cat "$FAV_FILE"
+        # Make sure the response ends in a newline even when the on-disk
+        # file doesn't.
+        last=$(tail -c 1 "$FAV_FILE" 2>/dev/null || true)
+        if [ "$last" != '' ] && [ "$last" != '
+' ]; then
+            printf '\n'
+        fi
+    else
+        # Absent file → empty list. No envelope wrapping needed since the
+        # GET body is the same shape the PUT consumes.
+        printf '{"ok":true,"data":[]}\n'
+    fi
+}
+
+handle_put() {
+    csrf_guard || return 0
+
+    body_file="$PLAYBACK_TMPDIR/favorites.$$.body"
+    parsed_file="$PLAYBACK_TMPDIR/favorites.$$.parsed"
+    # shellcheck disable=SC2064
+    trap "rm -f '$body_file' '$parsed_file' '$FAV_FILE.tmp'" EXIT INT TERM
+    slurp_body "$body_file"
+
+    if ! parse_fav_entries <"$body_file" >"$parsed_file" 2>/dev/null; then
+        emit_error '400 Bad Request' INVALID_JSON \
+            'body must be a JSON array of {id,name,art,note} objects'
+        return 0
+    fi
+
+    # Walk the parsed entries line by line, validating each. We collect
+    # seen ids in a small file so we can detect duplicates without
+    # relying on bash arrays (busybox shell is POSIX).
+    seen_file="$PLAYBACK_TMPDIR/favorites.$$.seen"
+    : >"$seen_file"
+    # shellcheck disable=SC2064
+    trap "rm -f '$body_file' '$parsed_file' '$seen_file' '$FAV_FILE.tmp'" \
+        EXIT INT TERM
+
+    has_entries=0
+    while IFS="$(printf '\t')" read -r fid fname fart _fnote; do
+        # Skip the trailing blank line from parse_fav_entries.
+        if [ -z "$fid" ] && [ -z "$fname" ] && [ -z "$fart" ]; then
+            continue
+        fi
+        has_entries=1
+        if ! is_valid_fav_id "$fid"; then
+            emit_error '400 Bad Request' INVALID_ID \
+                "id must match ^[sp][0-9]+\$"
+            return 0
+        fi
+        if [ -z "$fname" ]; then
+            emit_error '400 Bad Request' INVALID_NAME \
+                'name must be a non-empty string'
+            return 0
+        fi
+        if ! is_valid_fav_art "$fart"; then
+            emit_error '400 Bad Request' INVALID_ART \
+                'art must be empty or an http(s):// URL'
+            return 0
+        fi
+        if grep -Fxq "$fid" "$seen_file" 2>/dev/null; then
+            emit_error '400 Bad Request' DUPLICATE_ID \
+                "duplicate id in favourites list: $fid"
+            return 0
+        fi
+        printf '%s\n' "$fid" >>"$seen_file"
+    done <"$parsed_file"
+
+    # Empty array is legitimate (user cleared the list). has_entries
+    # disambiguates "no rows" from "every row was the blank trailer".
+    if [ "$has_entries" = 0 ] && [ -s "$parsed_file" ]; then
+        # Defensive: parse succeeded but no usable lines came through.
+        emit_error '400 Bad Request' INVALID_JSON \
+            'body parsed but produced no entries'
+        return 0
+    fi
+
+    # Atomic write: tmp + mv on the same filesystem. We persist the
+    # exact request body (not the parsed reshape) so any future fields
+    # the SPA adds round-trip until the parser learns to read them.
+    mkdir -p "$FAV_DIR" 2>/dev/null || true
+    # We store the envelope-shaped payload so GET can `cat` the file
+    # verbatim. The body the client PUT was just the bare array, so
+    # we re-emit it inside `{"ok":true,"data":...}`.
+    {
+        printf '{"ok":true,"data":'
+        cat "$body_file"
+        printf '}\n'
+    } >"$FAV_FILE.tmp" 2>/dev/null
+
+    if [ ! -s "$FAV_FILE.tmp" ]; then
+        emit_error '500 Internal Server Error' WRITE_FAILED \
+            "couldn't write favourites tmp file"
+        return 0
+    fi
+    if ! mv "$FAV_FILE.tmp" "$FAV_FILE" 2>/dev/null; then
+        rm -f "$FAV_FILE.tmp"
+        emit_error '500 Internal Server Error' RENAME_FAILED \
+            "couldn't move favourites file into place"
+        return 0
+    fi
+
+    emit_ok_headers 'GET, PUT, OPTIONS'
+    cat "$FAV_FILE"
+}
+
+# CORS preflight: respond and exit before doing any work.
+if handle_cors_preflight 'GET, PUT, OPTIONS'; then exit 0; fi
+
+case "${REQUEST_METHOD:-GET}" in
+    GET) handle_get ;;
+    PUT) handle_put ;;
+    *)
+        emit_error '405 Method Not Allowed' METHOD_NOT_ALLOWED \
+            'favorites accepts GET and PUT only'
+        ;;
+esac

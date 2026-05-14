@@ -141,6 +141,13 @@ const SHAPES = {
   'chevron-left': [
     ['polyline', { points: '15 18 9 12 15 6' }],
   ],
+  // Heart — used by the favourites toggle on station-detail and as the
+  // favourites tab glyph. Rendered as an outline by default; the
+  // station-detail toggle paints the same shape with `fill="currentColor"`
+  // (via the `is-filled` CSS class) to indicate "in favourites".
+  heart: [
+    ['path', { d: 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z' }],
+  ],
   // Buffering — three horizontal dots. Used on the play/pause control
   // while the speaker is in BUFFERING_STATE (or any non-PLAY non-
   // STANDBY state with a selected item) so the visual is distinct

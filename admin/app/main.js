@@ -10,6 +10,7 @@ import browse     from './views/browse.js';
 import search     from './views/search.js';
 import station    from './views/station.js';
 import preset     from './views/preset.js';
+import favorites  from './views/favorites.js';
 import settings   from './views/settings.js';
 
 import { installVersionDriftCheck } from './version.js';
@@ -93,6 +94,7 @@ const routes = [
   // when the strict matcher misses.
   { pattern: /^\/station\/(?<id>[^/]+)$/,        view: stationRedirect },
   { pattern: /^\/preset\/(?<slot>[1-6])$/,       view: preset },
+  { pattern: /^\/favorites$/,                    view: favorites },
   { pattern: /^\/settings$/,                     view: settings },
 ];
 

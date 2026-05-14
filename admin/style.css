@@ -1100,6 +1100,83 @@ main {
   margin: 0 0 0.25rem;
 }
 
+/* Station name + favourites heart sit on one row so the heart hugs the
+ * name on the left and never bumps the rest of the metadata below. */
+.station-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.station-name-row .station-name {
+  margin-bottom: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* Favourites heart — toggle button. Outline (.is-empty) and filled
+ * (.is-filled) variants share the same path; the filled state paints
+ * the heart in --accent. The button is borderless on purpose so it
+ * reads as a glyph rather than an action chip; the focus ring keeps
+ * it keyboard-reachable. Hidden via [hidden] when the row's id isn't
+ * `^[sp]\d+$` (favoriteHeart() sets the attribute). */
+.fav-heart {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 100ms ease;
+}
+.fav-heart:hover { color: var(--text); }
+.fav-heart:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.fav-heart.is-filled {
+  color: var(--accent, #e0245e);
+}
+.fav-heart.is-filled svg {
+  fill: currentColor;
+  stroke: currentColor;
+}
+.fav-heart.is-busy {
+  opacity: 0.6;
+  cursor: progress;
+}
+.fav-heart[hidden] { display: none; }
+
+/* Favourites tab body — plain list. The empty state mirrors the
+ * search-empty hint style: a faint header + one-line tip. */
+.favorites {
+  padding: 1rem;
+}
+.favorites-header h1 {
+  font-size: 1.5rem;
+  margin: 0 0 1rem;
+}
+.favorites-empty {
+  color: var(--muted);
+  padding: 2rem 0;
+  text-align: center;
+}
+.favorites-empty h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+.favorites-empty p {
+  margin: 0;
+}
+.favorites-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 .station-slogan {
   margin: 0 0 0.25rem;
   font-style: italic;
