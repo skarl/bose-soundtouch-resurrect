@@ -14,6 +14,7 @@ void ev;
 
 const {
   _renderShowLandingForTest,
+  loadShowLanding,
   renderLiveShowCard,
   renderTopicsCard,
   renderTopicRow,
@@ -308,4 +309,73 @@ test('renderLiveShowCard primes tunein.label.<p-sid> from the airing show entry 
   ]);
   assert.equal(tc.cache.get('tunein.label.p105'), 'Fresh Air');
   tc.cache.invalidate('tunein.label.p105');
+});
+
+// --- loadShowLanding: Browse-half routed through resolveBrowseDrill (#123) ---
+//
+// The migration moves `tuneinBrowse(showId).catch(() => null)` onto the
+// structured drill seam. Behavioural parity for valid drills and for
+// rejected ones is unchanged; the gain is that empty / error / tombstone
+// classification is explicit. This unit drives loadShowLanding end-to-end
+// with a stubbed globalThis.fetch: Describe resolves with a show body so
+// the card mounts, and Browse rejects (network down) so resolveBrowseDrill
+// classifies it as kind:'error'. The expected outcome is parity with the
+// pre-migration swallowed-rejection behaviour: show card present, no
+// related-sections cards.
+
+test('#123 loadShowLanding: kind:error from resolveBrowseDrill still mounts the show card with no related-sections card', async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const u = typeof url === 'string' ? url : String(url);
+    if (u.includes('/tunein/describe')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          head: { status: '200' },
+          body: [{
+            element: 'show',
+            guide_id: 'p17',
+            title: 'Fresh Air',
+            hosts: 'Terry Gross',
+            description: 'A Peabody Award winner.',
+            genre_id: 'g168',
+          }],
+        }),
+      };
+    }
+    if (u.includes('/tunein/browse')) {
+      // Network-down-style throw — the resolver classifies this as
+      // kind:'error' with code 'ERROR'.
+      throw new Error('failed to fetch');
+    }
+    throw new Error(`unexpected fetch: ${u}`);
+  };
+
+  try {
+    const body = doc.createElement('div');
+    const headerCount = doc.createElement('span');
+    loadShowLanding(body, 'p17', headerCount, null);
+
+    // Let the Describe + drill-seam promises settle. The chain is:
+    //   fetch → res.json() → tuneinDescribe/Browse → resolveBrowseDrill
+    //     → Promise.all → renderShowLandingBody
+    // each `await` advances one microtask turn; a macrotask boundary
+    // (setTimeout 0) flushes the whole chain reliably.
+    await new Promise((r) => setTimeout(r, 0));
+
+    // Show card mounted from the Describe response.
+    const landings = findAllBy(body, (el) => el.getAttribute('data-section') === 'showLanding');
+    assert.equal(landings.length, 1, 'show-landing card renders despite Browse-half error');
+
+    // No other sections — kind:'error' collapses to "no related sections",
+    // matching the pre-migration swallowed-rejection behaviour.
+    const sections = findAllBy(body, (el) => el.getAttribute('data-section') != null);
+    assert.equal(sections.length, 1, 'no related-sections card mounts when Browse errored');
+
+    // Header count is blank — relatedCount stays 0 when no related sections render.
+    assert.equal(headerCount.textContent, '');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
