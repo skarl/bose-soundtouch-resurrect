@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`tunein` CGI 404 envelope shape** — as an intended side-effect of
+  the shared CGI library extraction (#111), the `tunein` CGI's 404
+  response now uses the structured error envelope shared by every
+  other CGI under `admin/cgi-bin/api/v1`.
+  - Old shape: `{"error": "..."}`
+  - New shape: `{"ok": false, "error": {"code": "...", "message": "..."}}`
+  - The SPA is unaffected — no in-tree caller hits a 404-producing
+    `tunein` route. External scripted callers that parse the flat
+    `error` field will need to read `error.message` (or branch on
+    `error.code`) instead.
+
 ## [v0.4.0] - 2026-05-10
 
 ### Added
