@@ -74,6 +74,36 @@ export function withFavoriteRemoved(list, id) {
   return list.slice(0, idx).concat(list.slice(idx + 1));
 }
 
+// spliceReorder — move the entry at `fromIdx` to the gap `toGap`. Gaps
+// are numbered 0..length, where gap g sits before the row currently at
+// index g (so gap 0 is "above the first row" and gap length is "below
+// the last row"). The drag UI in #128 thinks in gaps because the drop
+// indicator renders between rows; this helper translates a gap drop
+// into the final array shape.
+//
+// Drops at the source's own gap (`fromIdx` or `fromIdx + 1`) are no-ops
+// — both describe "release where you picked it up". The helper returns
+// the original list reference in that case so callers can `if (next !==
+// list)` to skip the POST.
+//
+// Pure: no DOM, no mutation. Tested directly in `test_favorites_drag.js`.
+export function spliceReorder(list, fromIdx, toGap) {
+  if (!Array.isArray(list)) return [];
+  const n = list.length;
+  if (!Number.isInteger(fromIdx) || fromIdx < 0 || fromIdx >= n) return list;
+  if (!Number.isInteger(toGap)   || toGap   < 0 || toGap   >  n) return list;
+  // No-op: dropping at the gap immediately before or after the source
+  // leaves the entry in place.
+  if (toGap === fromIdx || toGap === fromIdx + 1) return list;
+  const next = list.slice();
+  const [picked] = next.splice(fromIdx, 1);
+  // Removing from `fromIdx` shifts every later index down by one, so
+  // gaps strictly after the source need a -1 correction before insert.
+  const insertAt = toGap > fromIdx ? toGap - 1 : toGap;
+  next.splice(insertAt, 0, picked);
+  return next;
+}
+
 // replaceFavorites — write a hand-built next-list to the speaker, with
 // optimistic state + rollback to the supplied snapshot on failure.
 //

@@ -1310,9 +1310,46 @@ main {
   justify-content: center;
   width: 24px;
   color: var(--muted);
-  /* Visual stub only in #127; cursor hints the future affordance. */
   cursor: grab;
   opacity: 0.6;
+  /* The handle owns the pointer; suppress scroll/zoom gestures that
+   * would otherwise hijack the drag on touch. */
+  touch-action: none;
+  user-select: none;
+}
+.favorites-row__drag:active { cursor: grabbing; }
+
+/* Source row while a drag is in flight — fade it so the ghost reads
+ * as "this is where the row currently lives". */
+.favorites-row.is-dragging {
+  opacity: 0.4;
+}
+
+/* Drop indicator: a 2 px accent line that slides between rows as the
+ * pointer moves. Rendered inside the .favorites-list grid; takes up
+ * its own list slot so neighbouring rows nudge apart visually. */
+.favorites-drag-indicator {
+  height: 2px;
+  background: var(--accent, #4a90e2);
+  border-radius: 1px;
+  margin: 2px 4px;
+  pointer-events: none;
+}
+
+/* Floating ghost — semi-transparent clone that follows the pointer. */
+.favorites-drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  opacity: 0.75;
+  z-index: 9999;
+  transform: translate(-12px, -50%);
+  background: var(--surface-hi, #2a2a2a);
+  border: 1px solid var(--border, #444);
+  border-radius: 6px;
+  padding: 4px 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  max-width: 320px;
+  overflow: hidden;
 }
 
 .favorites-row__body {
