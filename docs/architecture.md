@@ -208,9 +208,13 @@ Architecture in three layers:
    strings rewritten at deploy time.
 2. **Shell CGIs under `/cgi-bin/api/v1/`** — `tunein` (forwarder for
    browse / search / probe), `presets` (atomic file-write +
-   `/storePreset`), `speaker` (wildcard proxy to `localhost:8090` with
-   a same-origin CSRF guard), `refresh-all` (bulk re-probe + atomic
-   resolver rewrite). All busybox-shell, all linted by shellcheck.
+   `/storePreset`), `favorites` (atomic JSON write for the admin-owned
+   favourites list, disjoint from the firmware presets),
+   `speaker` (wildcard proxy to `localhost:8090` with a same-origin
+   CSRF guard), `refresh-all` (bulk re-probe + atomic resolver
+   rewrite). All busybox-shell, all linted by shellcheck. Mutating
+   endpoints use POST — busybox httpd v1.19.4 (2017) returns 501 for
+   PUT before the CGI runs.
 3. **WebSocket client** — connects to the speaker's port 8080 with the
    `gabbo` subprotocol. Reconnect with exponential backoff + full
    jitter; REST polling fallback when WS is down. The admin reflects
@@ -222,14 +226,22 @@ Mono) live under `/mnt/nv/resolver/fonts/` and are referenced by
 relative URL — the LAN can be cut off from the public internet and
 the admin still loads. No CDN, no Google Fonts, no `unpkg`.
 
-User-facing surface as of 0.4:
+User-facing surface as of 0.7:
 
 - Now-playing — transport, volume, source picker, preset row,
-  long-press to assign.
+  long-press to assign, 3×3 favourites preview grid below the preset
+  grid (long-press on a favourite card jumps to the Favourites tab
+  focused on that entry).
 - Browse — Genre / Location / Language drill via TuneIn's outline.
+  Every playable row carries an inline heart toggle.
 - Search — debounced TuneIn search; landing page shows recently
-  viewed and popular.
-- Station detail — metadata, probe state, 3×2 preset grid, test-play.
+  viewed and popular. Every playable result carries the heart.
+- Station detail — metadata, probe state, 3×2 preset grid, test-play,
+  inline heart next to the station name.
+- Favourites — dedicated tab with full CRUD (drag reorder,
+  expand-in-place edit, toast-undo delete). Persists in a JSON file
+  at `/mnt/nv/resolver/admin-data/favorites.json`. Disjoint from the
+  six firmware-owned hardware presets — a station can be both.
 - Settings — Appearance (theme), Speaker (name / power / sleep),
   Audio (bass / balance / mono-stereo), Bluetooth (own MAC + active
   device), Multi-room (placeholder), Network (signal bars),

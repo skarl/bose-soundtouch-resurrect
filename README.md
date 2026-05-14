@@ -30,7 +30,12 @@ admin SPA is the everyday interface — the SoundTouch mobile app is
 no longer viable post-cloud-shutdown.
 
 - **Now playing** — compact card with album art, transport, dynamic
-  source switcher, and a 3×2 grid of art-style preset cards
+  source switcher, a 3×2 grid of art-style preset cards, and a 3×3
+  preview of your first nine favourites below it
+- **Favourites** — heart any station or show from any row; manage in
+  the dedicated tab with inline edit, toast-undo delete, and drag
+  reorder. Disjoint from the six hardware presets — same station can
+  be both
 - **Search + Browse** — search TuneIn directly; browse by genre /
   location / language; recently-viewed cache
 - **Station detail** — preview-play, assign to a preset slot, see
@@ -44,7 +49,7 @@ no longer viable post-cloud-shutdown.
 - Self-hosted Geist fonts; zero CDN dependencies — works whether or
   not your home internet is up
 
-See [CHANGELOG.md](CHANGELOG.md) for the full v0.4 surface.
+See [CHANGELOG.md](CHANGELOG.md) for the full release history.
 
 ## How it works
 
@@ -125,8 +130,8 @@ settings). Roughly two minutes of work per drift.
 
 ## What this doesn't do
 
-The 0.4 release surfaced several Bose-firmware constraints that
-shape what's feasible. Calling them out so you know what to expect:
+Several Bose-firmware constraints shape what's feasible. Calling them
+out so you know what to expect:
 
 - **No firmware patches.** Bose stopped shipping updates. If a
   security issue surfaces in the speaker's firmware, this project

@@ -7,18 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.7.0] - 2026-05-14
+
+### Added
+
+- **Favourites** — admin-owned record of hearted stations and shows,
+  persisted on the speaker. Disjoint from the firmware-owned six
+  hardware **Presets**: a TuneIn id can appear as a favourite, a preset,
+  both, or neither. Favourites do not own the **Stream URL**; playback
+  routes through the resolver's per-station entry under
+  `/v1/playback/station/<id>`, the same source of truth the presets,
+  preview, and inline-play paths already use.
+  - **Persistent store** at `/mnt/nv/resolver/admin-data/favorites.json`.
+    JSON array; array index = position. Atomic tmp+mv writes.
+  - **CGI** at `admin/cgi-bin/api/v1/favorites` — GET / POST,
+    structured-envelope errors (`INVALID_ID`, `INVALID_NAME`,
+    `INVALID_ART`, `DUPLICATE_ID`, `INVALID_JSON`), CSRF guard + CORS
+    preflight via the shared `playback.sh` lib (mirrors the `presets`
+    CGI shape).
+  - **Inline heart on every playable row + the Now-Playing card** —
+    search rows, browse rows, show-landing rows, recently-viewed and
+    popular rows in the search empty state, and the Now-Playing card
+    next to the station name. Heart replaces the row's trailing chevron
+    where present; the row body remains a link to station-detail. Heart
+    visibility everywhere: `^[sp]\d+$` only — topic (`t`), artist (`m`),
+    and non-Bose entries render no heart. The Now-Playing card heart
+    additionally hides on AUX / BLUETOOTH / STANDBY.
+  - **Favourites tab** (`#/favorites`) in the rail between Browse and
+    Settings. Each row carries always-on affordances:
+    `[drag-handle] [body — tap to play] [pencil] [trash]`. Pencil
+    expands the row vertically in place for name / art / note editing
+    (Save commits + POSTs; Cancel collapses without writing). Trash
+    optimistically removes + POSTs immediately and surfaces a 5-second
+    toast with Undo; tapping Undo restores at the previous index and
+    POSTs the restored list. Drag-handle uses the same pointer-events
+    idiom as the preset long-press detector — ghost row + drop
+    indicator during drag, splice + POST on pointerup, pointercancel /
+    Escape aborts with no POST.
+  - **Now-Playing 3×3 preview grid** below the preset grid, rendering
+    the first 9 entries. 0 favourites hides the section; 1–8 renders
+    only the present cards (no placeholder slots). Tap = play; long-press
+    / right-click = `#/favorites?focus=<id>` deep-link that scrolls the
+    matching entry into view with a brief highlight on mount. Visual
+    style mirrors preset cards (tinted background per `hashHue(name)`).
+- **`resolveBrowseDrill` seam** at `admin/app/tunein-drill.js` —
+  consolidates the **TuneIn drill** one-shot fetch policy behind a
+  single tagged-result interface
+  (`{kind:'ok'|'empty'|'error'}`). Browse's `renderDrill` and
+  show-landing's browse half both consume the seam; `renderOutline`'s
+  empty-body and single-tombstone branches move upstream of the
+  renderer. Adding a new wire-shape case is now a single-file change
+  in one classification table.
+- **`Crumb stack` split** — `admin/app/views/browse/crumbs.js` splits
+  into a pure `crumb-parts.js` (value type + label-resolution reads, no
+  DOM, no `api.js` import; only depends on `tunein-cache` +
+  `tunein-url`) and a DOM-bound `crumb-renderer.js` (pillbar render +
+  async hydration). `outline-render.js` imports `stringifyCrumbs` from
+  `crumb-parts` cleanly, deleting the local duplicate that worked
+  around the previous import cycle.
+
 ### Changed
 
-- **`tunein` CGI 404 envelope shape** — as an intended side-effect of
-  the shared CGI library extraction (#111), the `tunein` CGI's 404
-  response now uses the structured error envelope shared by every
-  other CGI under `admin/cgi-bin/api/v1`.
-  - Old shape: `{"error": "..."}`
-  - New shape: `{"ok": false, "error": {"code": "...", "message": "..."}}`
-  - The SPA is unaffected — no in-tree caller hits a 404-producing
-    `tunein` route. External scripted callers that parse the flat
-    `error` field will need to read `error.message` (or branch on
-    `error.code`) instead.
+- **Favourites CGI uses POST, not PUT.** Bo's firmware ships busybox
+  httpd v1.19.4 (2017) which returns `501 Not Implemented` for PUT
+  before the CGI runs. POST is the only mutating method that reaches
+  CGI scripts on the speaker; mirrors the `presets` convention.
+- **`renderOutline` no longer owns body-level emptiness.** Top-level
+  `rawItems.length === 0` and single-tombstone branches now live in
+  the `resolveBrowseDrill` classifier. Per-section emptiness inside a
+  non-empty body stays in `renderOutline` (sectioned bodies can still
+  contain individual empty sections).
 
 ## [v0.4.0] - 2026-05-10
 
@@ -211,4 +269,5 @@ Calling these out so future maintainers don't re-derive them:
 - CI: GitHub Actions workflow running shellcheck on `scripts/` and a
   Python compile + error-path check on `resolver/build.py`.
 
+[v0.7.0]: https://github.com/skarl/bose-soundtouch-resurrect/releases/tag/v0.7.0
 [v0.1.0]: https://github.com/skarl/bose-soundtouch-resurrect/releases/tag/v0.1.0

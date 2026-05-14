@@ -19,8 +19,12 @@ _Avoid_: server, mock, emulator (used elsewhere for off-speaker variants).
 _Avoid_: config, redirect.
 
 **Preset**:
-One of the six physical preset buttons on the speaker, each holding a station reference.
+One of the six physical preset buttons on the speaker, each holding a station reference. Firmware-owned; mutates via `/storePreset` (proxied by the presets CGI).
 _Avoid_: slot, favorite, channel.
+
+**Favourite**:
+An admin-owned record of a hearted **Station** or show, persisted on the speaker at `/mnt/nv/resolver/admin-data/favorites.json`. Disjoint from a **Preset** — the same **TuneIn ID** can be both. A favourite is `{id, name, art, note}`; it does not own the **Stream URL** (resolution stays with the resolver entry under `/v1/playback/station/<id>`, shared across preset / preview / play / favourite).
+_Avoid_: bookmark, star, like.
 
 **Station**:
 A TuneIn radio entry referenced by a `sNNNNN` TuneIn ID. The thing a preset points at.
@@ -47,8 +51,11 @@ The act of crawling TuneIn's outline tree — from a root (genre / location / la
 _Avoid_: browse, search (those are distinct concepts in TuneIn's API).
 
 **Crumb stack**:
-The breadcrumb trail in the browse view plus the `parts` value type that backs it. Owns parsing, rendering, hydration, and the trail's relationship to the URL hash.
+The breadcrumb trail in the browse view plus the `parts` value type that backs it. Owns parsing, rendering, hydration, and the trail's relationship to the URL hash. Split across two sibling modules: `crumb-parts.js` (pure value type + label-resolution reads, no DOM) and `crumb-renderer.js` (DOM pillbar + async hydration).
 _Avoid_: breadcrumb, trail (those refer to the visual element only; the stack is the value).
+
+**Drill seam**:
+`admin/app/tunein-drill.js` — single classifier owning the one-shot **TuneIn drill** fetch policy. Maps every wire shape (transport throws, structured envelopes, raw `{"error":"..."}` bodies, `head.status` non-200 + empty body, status-200 empty body, single-tombstone bodies, ok payloads) onto a tagged result: `{kind:'ok'|'empty'|'error'}`. Browse's drill renderer and show-landing's browse half both consume it.
 
 **Field**:
 The unit of speaker-state synchronisation. A row in the `FIELDS` registry in `admin/app/speaker-state.js`, encoding `path` (REST), `tag` (XML), `parseEl` (decoder), `apply` (writer), and optional `eventTag` (WS event). Both the polling reconcile and the WS dispatch path converge on a field.
@@ -60,11 +67,13 @@ The list of all known speaker fields — single source of truth for what gets sy
 ## Relationships
 
 - A **Preset** points to a **Station** by its **TuneIn ID**.
-- The **Resolver** maps a **TuneIn ID** to a **Stream URL**; the **Speaker** then streams audio from that URL directly.
+- A **Favourite** references a **Station** or show by its **TuneIn ID** and is disjoint from any **Preset** — the same id can be both.
+- The **Resolver** maps a **TuneIn ID** to a **Stream URL**; the **Speaker** then streams audio from that URL directly. **Preset**, **Favourite**, preview, and inline-play all route through this single mapping.
 - The **Admin SPA** mutates speaker state through **CGIs** that proxy or augment the speaker's port-8090 REST API.
-- A **TuneIn drill** terminates at a **Station**; a station can be assigned to a **Preset**.
+- A **TuneIn drill** terminates at a **Station**; a station can be assigned to a **Preset** or hearted into the **Favourite** list.
+- The **Drill seam** is the single classifier every drill consumer goes through.
 - The **Crumb stack** represents the user's path through a **TuneIn drill**.
-- Every **Field** is reconciled either by polling (REST) or by WS dispatch (inline payload or hint + refetch).
+- Every **Field** is reconciled either by polling (REST) or by WS dispatch (inline payload or hint + refetch). The **Favourite** list is itself a **Field** (fetch-only — the speaker firmware doesn't know about favourites).
 
 ## Example dialogue
 
