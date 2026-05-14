@@ -1,0 +1,91 @@
+{
+  "head": {
+    "title": "Folk",
+    "status": "200"
+  },
+  "body": [
+    {
+      "element": "outline",
+      "text": "Stations",
+      "key": "stations",
+      "children": [
+        {
+          "element": "outline",
+          "type": "audio",
+          "text": "Folk Alley",
+          "URL": "http://opml.radiotime.com/Tune.ashx?id=s10001",
+          "bitrate": "128",
+          "reliability": "98",
+          "guide_id": "s10001",
+          "subtext": "The best in folk music",
+          "genre_id": "g79",
+          "formats": "mp3",
+          "item": "station",
+          "image": "http://cdn-profiles.tunein.com/s10001/images/logoq.jpg?t=1",
+          "now_playing_id": "s10001",
+          "preset_id": "s10001"
+        },
+        {
+          "element": "outline",
+          "type": "audio",
+          "text": "Celtic Music Radio",
+          "URL": "http://opml.radiotime.com/Tune.ashx?id=s10002",
+          "bitrate": "128",
+          "reliability": "29",
+          "guide_id": "s10002",
+          "subtext": "Glasgow, UK",
+          "genre_id": "g79",
+          "formats": "mp3",
+          "item": "station",
+          "image": "http://cdn-profiles.tunein.com/s10002/images/logoq.jpg?t=1",
+          "now_playing_id": "s10002",
+          "preset_id": "s10002"
+        },
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "More Stations",
+          "URL": "http://opml.radiotime.com/Browse.ashx?offset=2&id=g79&filter=s",
+          "key": "nextStations"
+        }
+      ]
+    },
+    {
+      "element": "outline",
+      "text": "Shows",
+      "key": "shows",
+      "children": [
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "The Folk Show",
+          "URL": "http://opml.radiotime.com/Browse.ashx?id=p20001",
+          "guide_id": "p20001",
+          "item": "show",
+          "image": "http://cdn-profiles.tunein.com/p20001/images/logoq.jpg?t=1"
+        }
+      ]
+    },
+    {
+      "element": "outline",
+      "text": "Related",
+      "key": "related",
+      "children": [
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "Country",
+          "URL": "http://opml.radiotime.com/Browse.ashx?id=g80",
+          "key": "pivotGenre"
+        },
+        {
+          "element": "outline",
+          "type": "link",
+          "text": "Bluegrass",
+          "URL": "http://opml.radiotime.com/Browse.ashx?id=g81",
+          "key": "pivotGenre"
+        }
+      ]
+    }
+  ]
+}

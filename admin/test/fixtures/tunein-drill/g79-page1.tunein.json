@@ -1,0 +1,56 @@
+{
+  "head": {
+    "title": "More Stations - Folk",
+    "status": "200"
+  },
+  "body": [
+    {
+      "element": "outline",
+      "type": "audio",
+      "text": "Radio Folk Forever",
+      "URL": "http://opml.radiotime.com/Tune.ashx?id=s10003&filter=s",
+      "bitrate": "192",
+      "reliability": "85",
+      "guide_id": "s10003",
+      "subtext": "Folk anthems 24/7",
+      "genre_id": "g79",
+      "formats": "mp3",
+      "item": "station",
+      "image": "http://cdn-profiles.tunein.com/s10003/images/logoq.jpg?t=1",
+      "now_playing_id": "s10003",
+      "preset_id": "s10003"
+    },
+    {
+      "element": "outline",
+      "type": "audio",
+      "text": "Sligo Folk Radio",
+      "URL": "http://opml.radiotime.com/Tune.ashx?id=s10004&filter=s",
+      "bitrate": "128",
+      "reliability": "92",
+      "guide_id": "s10004",
+      "subtext": "From the West of Ireland",
+      "genre_id": "g79",
+      "formats": "mp3",
+      "item": "station",
+      "image": "http://cdn-profiles.tunein.com/s10004/images/logoq.jpg?t=1",
+      "now_playing_id": "s10004",
+      "preset_id": "s10004"
+    },
+    {
+      "element": "outline",
+      "type": "audio",
+      "text": "Folk Alley",
+      "URL": "http://opml.radiotime.com/Tune.ashx?id=s10001&filter=s",
+      "bitrate": "128",
+      "reliability": "98",
+      "guide_id": "s10001",
+      "subtext": "The best in folk music (re-rank)",
+      "genre_id": "g79",
+      "formats": "mp3",
+      "item": "station",
+      "image": "http://cdn-profiles.tunein.com/s10001/images/logoq.jpg?t=1",
+      "now_playing_id": "s10001",
+      "preset_id": "s10001"
+    }
+  ]
+}
