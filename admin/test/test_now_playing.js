@@ -44,6 +44,7 @@ function setSpeakerState(patch) {
       presets: null,
       volume: null,
       sources: null,
+      favorites: null,
     }, patch);
   });
 }
@@ -812,6 +813,214 @@ test('volume slider: WS-driven re-render mutates in place (focus survives)', () 
     assert.equal(sliderAfter.value, '55', 'value updated in place');
     assert.equal(globalThis.__focus_target__, sliderBefore,
       'focus reference still points at the original slider node');
+  } finally {
+    destroy();
+  }
+});
+
+// --- favourites grid (#129) -----------------------------------------
+
+test('favourites grid: zero favourites → section hidden, no cards rendered', () => {
+  setSpeakerState({ favorites: [] });
+
+  const { root, destroy } = mountView();
+  try {
+    const section = root.querySelector('.np-favorites');
+    assert.ok(section, 'favourites section mounted');
+    assert.equal(section.hidden, true,
+      'zero favourites → section is hidden entirely (no placeholder)');
+    const cards = root.querySelectorAll('.np-fav');
+    assert.equal(cards.length, 0, 'no cards rendered when the list is empty');
+  } finally {
+    destroy();
+  }
+});
+
+test('favourites grid: null favourites (unfetched) → section hidden', () => {
+  setSpeakerState({ favorites: null });
+
+  const { root, destroy } = mountView();
+  try {
+    const section = root.querySelector('.np-favorites');
+    assert.equal(section.hidden, true, 'unfetched list reads as hidden');
+  } finally {
+    destroy();
+  }
+});
+
+test('favourites grid: partial (1–8) → only the cards that exist, no placeholders', () => {
+  setSpeakerState({
+    favorites: [
+      { id: 's1', name: 'One' },
+      { id: 's2', name: 'Two' },
+      { id: 'p3', name: 'Three' },
+      { id: 's4', name: 'Four' },
+    ],
+  });
+
+  const { root, destroy } = mountView();
+  try {
+    const section = root.querySelector('.np-favorites');
+    assert.equal(section.hidden, false, 'section visible at length 4');
+    const cards = root.querySelectorAll('.np-fav');
+    assert.equal(cards.length, 4,
+      `expected exactly four cards, got ${cards.length} (no placeholder slots)`);
+    // Each card carries a deterministic hue token.
+    for (const c of cards) {
+      const hue = c.style.getPropertyValue('--np-fav-hue');
+      assert.ok(/^\d+$/.test(hue), `--np-fav-hue must be numeric, got ${hue}`);
+    }
+    // Names appear in order.
+    const names = cards.map((c) => c.querySelector('.np-fav-name').textContent);
+    assert.deepEqual(names, ['One', 'Two', 'Three', 'Four']);
+  } finally {
+    destroy();
+  }
+});
+
+test('favourites grid: 9+ favourites → first nine render, remainder dropped', () => {
+  const many = Array.from({ length: 14 }, (_, i) => ({
+    id: `s${100 + i}`,
+    name: `Station ${i + 1}`,
+  }));
+  setSpeakerState({ favorites: many });
+
+  const { root, destroy } = mountView();
+  try {
+    const cards = root.querySelectorAll('.np-fav');
+    assert.equal(cards.length, 9, '3×3 grid caps at nine cards');
+    const lastName = cards[8].querySelector('.np-fav-name').textContent;
+    assert.equal(lastName, 'Station 9', 'the ninth favourite is the last visible');
+  } finally {
+    destroy();
+  }
+});
+
+test('favourites grid: tap card → /play POST with the favourite\'s id + name', async () => {
+  setSpeakerState({
+    favorites: [
+      { id: 's12345', name: 'KEXP' },
+      { id: 's2',     name: 'Two' },
+    ],
+  });
+
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url: String(url), body: opts && opts.body });
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true, url: 'http://example/stream.mp3' }),
+    };
+  };
+
+  const { root, destroy } = mountView();
+  try {
+    const first = root.querySelector('.np-fav');
+    first.dispatchEvent(ev('click'));
+    await new Promise((r) => setTimeout(r, 30));
+
+    const playCalls = calls.filter((c) => /\/play\b/.test(c.url));
+    assert.ok(playCalls.length >= 1,
+      `expected a /play POST, got ${JSON.stringify(calls.map((c) => c.url))}`);
+    const payload = JSON.parse(String(playCalls[0].body || '{}'));
+    assert.equal(payload.id, 's12345', 'POST body carries the favourite id');
+    assert.equal(payload.name, 'KEXP',  'POST body carries the favourite name (label)');
+  } finally {
+    globalThis.fetch = realFetch;
+    destroy();
+  }
+});
+
+test('favourites grid: long-press → location.hash = "#/favorites?focus=<id>"', async () => {
+  setSpeakerState({
+    favorites: [{ id: 's12345', name: 'KEXP' }],
+  });
+
+  globalThis.location.hash = '#/';
+
+  const { root, destroy } = mountView();
+  try {
+    const card = root.querySelector('.np-fav');
+    card.dispatchEvent(ev('pointerdown', { button: 0 }));
+    // LONG_PRESS_MS is 600 in the view; wait a bit longer.
+    await new Promise((r) => setTimeout(r, 700));
+    assert.equal(globalThis.location.hash, '#/favorites?focus=s12345',
+      'long-press routes to the favourites tab with ?focus=<id>');
+  } finally {
+    globalThis.location.hash = '#/';
+    destroy();
+  }
+});
+
+test('favourites grid: right-click (contextmenu) → same #/favorites?focus=<id> path', () => {
+  setSpeakerState({
+    favorites: [{ id: 'p99', name: 'Fresh Air' }],
+  });
+
+  globalThis.location.hash = '#/';
+
+  const { root, destroy } = mountView();
+  try {
+    const card = root.querySelector('.np-fav');
+    card.dispatchEvent(ev('contextmenu', { button: 2 }));
+    assert.equal(globalThis.location.hash, '#/favorites?focus=p99',
+      'right-click navigates immediately (no long-press delay)');
+  } finally {
+    globalThis.location.hash = '#/';
+    destroy();
+  }
+});
+
+test('favourites grid: tap right after a long-press is swallowed (no /play)', async () => {
+  setSpeakerState({
+    favorites: [{ id: 's12345', name: 'KEXP' }],
+  });
+
+  globalThis.location.hash = '#/';
+
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url: String(url), body: opts && opts.body });
+    return { ok: true, status: 200, json: async () => ({ ok: true, url: '' }) };
+  };
+
+  const { root, destroy } = mountView();
+  try {
+    const card = root.querySelector('.np-fav');
+    card.dispatchEvent(ev('pointerdown', { button: 0 }));
+    await new Promise((r) => setTimeout(r, 700));
+    // The long-press timer fired — now simulate the trailing click that
+    // a real pointer release would emit.
+    card.dispatchEvent(ev('click'));
+    await new Promise((r) => setTimeout(r, 10));
+    const playCalls = calls.filter((c) => /\/play\b/.test(c.url));
+    assert.equal(playCalls.length, 0,
+      'the click after a long-press must not trigger /play');
+  } finally {
+    globalThis.fetch = realFetch;
+    globalThis.location.hash = '#/';
+    destroy();
+  }
+});
+
+test('favourites grid: WS update mutates the grid (subscription wired)', () => {
+  setSpeakerState({ favorites: [] });
+
+  const { root, destroy } = mountView();
+  try {
+    assert.equal(root.querySelectorAll('.np-fav').length, 0, 'empty to start');
+
+    store.update('speaker', (s) => {
+      s.speaker.favorites = [{ id: 's1', name: 'One' }, { id: 's2', name: 'Two' }];
+    });
+
+    const cards = root.querySelectorAll('.np-fav');
+    assert.equal(cards.length, 2, 'subscription repaints the grid on store change');
+    assert.equal(root.querySelector('.np-favorites').hidden, false,
+      'section becomes visible once a favourite lands');
   } finally {
     destroy();
   }

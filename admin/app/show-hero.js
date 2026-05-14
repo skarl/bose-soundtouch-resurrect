@@ -23,6 +23,7 @@ import { stationArt } from './components.js';
 import { isPlayableSid } from './tunein-sid.js';
 import { canonicaliseBrowseUrl } from './tunein-url.js';
 import { createPlayButton } from './play-button.js';
+import { favoriteHeart, isFavoriteId } from './favorites.js';
 
 // Drill-only prefixes / unknown specs render nothing useful as a hero,
 // but the caller is in charge of whether to mount one. We mirror the
@@ -34,6 +35,7 @@ export function showHero({
   art = '',
   location = '',
   chips,
+  favorite,
 } = {}) {
   const hero = document.createElement('div');
   hero.className = 'station-row station-row--hero';
@@ -44,10 +46,30 @@ export function showHero({
   const body = document.createElement('span');
   body.className = 'station-row__body';
 
+  // Wrap the name + heart in a flex row so the heart sits next to the
+  // title, mirroring the station-detail's `station-name-row` (#126).
+  // When the sid isn't favouritable or no favourite handle was wired
+  // in, the row collapses to just the name span.
+  const nameRow = document.createElement('span');
+  nameRow.className = 'station-row__name-row';
+
   const nameEl = document.createElement('span');
   nameEl.className = 'station-row__name';
   nameEl.textContent = name || sid;
-  body.appendChild(nameEl);
+  nameRow.appendChild(nameEl);
+
+  if (favorite && favorite.store && isFavoriteId(sid)) {
+    const getEntry = typeof favorite.getEntry === 'function'
+      ? favorite.getEntry
+      : () => ({ id: sid, name: name || sid, art: art || '', note: '' });
+    nameRow.appendChild(favoriteHeart({
+      store: favorite.store,
+      getEntry,
+      onCleanup: favorite.onCleanup,
+    }));
+  }
+
+  body.appendChild(nameRow);
 
   // --- secondary meta line (location · chips) -----------------------
   const meta = document.createElement('span');

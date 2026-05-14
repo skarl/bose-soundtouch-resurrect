@@ -5,7 +5,9 @@
 // "Load more" pagination, the eager-serial crawl coordinator, and
 // the c=pbrowse show-landing body all live in the per-concern
 // submodules under `./browse/`. The crumb-stack value type +
-// renderers + hydrators live in `./browse/crumbs.js`.
+// renderers + hydrators are split between `./browse/crumb-parts.js`
+// (pure value type + label-resolution reads) and
+// `./browse/crumb-renderer.js` (DOM pillbar + async label hydration).
 //
 // Two modes:
 //   1. Root view (#/browse): three-tab segmented control (Genre /
@@ -22,6 +24,7 @@ import { html, mount, defineView } from '../dom.js';
 import { tuneinBrowse } from '../api.js';
 import { lcodeLabel, LCODES_LOADED_EVENT } from '../tunein-url.js';
 import { cache, TTL_LABEL } from '../tunein-cache.js';
+import { resolveBrowseDrill } from '../tunein-drill.js';
 
 import {
   renderOutline,
@@ -31,6 +34,7 @@ import {
   pluralize,
   skeleton,
   errorNode,
+  emptyNode,
   _setChildCrumbsForTest,
 } from './browse/outline-render.js';
 import {
@@ -64,13 +68,15 @@ import {
   crumbLabelFor,
   backHrefFor,
   initialHeaderTitle,
+} from './browse/crumb-parts.js';
+import {
   renderPillBar,
   renderCrumbTrail,
   renderFilterBadge,
   renderFilterBadges,
   hydrateCrumbLabels,
   patchTrailCrumb,
-} from './browse/crumbs.js';
+} from './browse/crumb-renderer.js';
 
 // Re-export the entry/render primitives + crumb helpers + test hooks
 // so existing callers (test_browse, test_browse_crumbs,
@@ -329,15 +335,79 @@ function renderDrill(root, parts, crumbs) {
   // next navigation. (#89, #90)
   registerLcodeRepatch(parts, frame.crumbId, frame.trailEl, frame.stack, frame.backEl, frame.bar && frame.bar._filter);
 
-  // tuneinBrowse accepts a parts object as the c-style top-level form
-  // (`{c: 'music', filter: 'l216'}`) or a bare id string. The c+filter
-  // shape is the language-tree rewrite output (§ 7.3); pass parts
-  // through verbatim.
-  loadInto(body, tuneinBrowse(parts), frame.headerCount, {
+  // One-shot drill — the seam owns the fetch policy: transport throws,
+  // structured-error envelopes, the head.status non-200 + body:[] case
+  // (c=pbrowse on Bo's egress, etc.), and the canonical empty / single-
+  // tombstone shapes all collapse to a tagged DrillResult. The renderer
+  // here is the thin shell that paints each kind. parts pass through
+  // verbatim — the seam consumes the c-style top-level form
+  // (`{c:'music', filter:'l216'}`) or a bare-id form the same way
+  // tuneinBrowse does.
+  loadDrillBody(body, parts, frame.headerCount, {
     titleEl: frame.titleEl,
     crumbToken: frame.currentToken,
     trailEl: frame.trailEl,
   });
+}
+
+// loadDrillBody — drill-specific body loader. Reads the seam's
+// classified DrillResult and paints exactly one of three outcomes;
+// the renderOutline branch keeps the success-path side-effects the
+// original loadInto carried (header count, title upgrade, crumb-label
+// cache write, Load-more wiring, sticky-filter rehydration).
+function loadDrillBody(body, parts, headerCount, head) {
+  body.replaceChildren();
+  body.appendChild(skeleton());
+  if (headerCount) headerCount.textContent = '';
+  resolveBrowseDrill(parts)
+    .then((r) => {
+      body.replaceChildren();
+      if (r.kind === 'error') {
+        body.appendChild(errorNode(r.error));
+        return;
+      }
+      if (r.kind === 'empty') {
+        body.appendChild(emptyNode(r.message));
+        return;
+      }
+      const json = r.json;
+      const total = renderOutline(body, json);
+      if (headerCount && total > 0) {
+        headerCount.textContent = `${total.toLocaleString()} ${pluralize(total)}`;
+      }
+      const title = json && json.head && typeof json.head.title === 'string'
+        ? json.head.title
+        : '';
+      if (head && head.titleEl && title) {
+        head.titleEl.textContent = title;
+      }
+      if (head && head.crumbToken && title) {
+        cache.set(`tunein.label.${head.crumbToken}`, title, TTL_LABEL);
+        // Also refresh the trail's current-crumb segment so the bolded
+        // tail matches the h1 (was rendering as the raw sid until
+        // Describe resolved). The patcher is a no-op when the trail
+        // isn't mounted.
+        if (head.trailEl) patchTrailCrumb(head.trailEl, head.crumbToken, title);
+      }
+      // Mount one pager + Load-more button per section that came back
+      // with a cursor URL parked on it by renderSection / renderFlatSection.
+      mountLoadMoreButtons(body);
+      // If the filter input already has text (e.g. user navigates with
+      // a sticky filter), apply it to the freshly-rendered rows and
+      // kick the coordinator.
+      if (currentFilterQuery() !== '') {
+        applyDomFilter();
+        ensureCoordinator();
+      }
+    })
+    .catch((err) => {
+      // Defence: resolveBrowseDrill is structured to never reject — every
+      // transport throw collapses into kind:'error'. A reject here would
+      // be a programmer error in the seam itself; render an error node
+      // rather than leaving the skeleton mounted.
+      body.replaceChildren();
+      body.appendChild(errorNode(err));
+    });
 }
 
 // One-shot listener: when the lcode catalogue is broadcast as loaded,

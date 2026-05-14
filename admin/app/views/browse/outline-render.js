@@ -16,6 +16,7 @@
 
 import { stationRow } from '../../components.js';
 import { icon } from '../../icons.js';
+import { store as appStore } from '../../state.js';
 import {
   canonicaliseBrowseUrl,
   extractDrillKey,
@@ -36,6 +37,8 @@ import {
   renderLiveShowCard,
   renderTopicsCard,
 } from './show-landing.js';
+import { stringifyCrumbs } from './crumb-parts.js';
+import { trailingAffordance } from '../../components.js';
 
 // The crumb-token prefix that child links should embed in `from=...`.
 // Set by renderDrill / selectTab before the row constructor runs, and
@@ -124,14 +127,6 @@ function filtersOfParts(parts) {
   return [];
 }
 
-// Local copy of stringifyCrumbs so drillHashFor doesn't pull in the
-// full crumb module. Kept in sync with browse.js's exported version
-// (single token: comma-joined, empty array → '').
-function stringifyCrumbs(crumbs) {
-  if (!Array.isArray(crumbs) || crumbs.length === 0) return '';
-  return crumbs.join(',');
-}
-
 export function pluralize(n) {
   return n === 1 ? 'entry' : 'entries';
 }
@@ -166,30 +161,18 @@ export function emptyNode(message) {
 // card (header taken verbatim from the API's `text`, e.g.
 // "Local Stations (2)", "Stations", "Shows", "Explore Folk").
 // Flat payload → one card with no section header.
-// Tombstone payload → empty-state message.
+//
+// Body-level emptiness (body:[] or a lone tombstone) is resolved
+// upstream by tunein-drill.resolveBrowseDrill — those payloads never
+// reach this function; the drill renderer paints emptyNode directly.
+// Per-section emptiness inside a non-empty body is still handled here
+// (a sectioned body can have one empty section alongside populated
+// ones).
 //
 // Returns the total visible row count (cursors + pivots are excluded
 // — they're meta, not rows the user reads through).
 export function renderOutline(body, json) {
   const rawItems = Array.isArray(json && json.body) ? json.body : [];
-
-  if (rawItems.length === 0) {
-    body.appendChild(emptyNode('Nothing here.'));
-    return 0;
-  }
-
-  // Tombstone check (single text-only entry): § 6.2. A section
-  // container (anything with children) is not a tombstone even if
-  // classifyOutline tags it that way — the fallback in tunein-outline
-  // returns 'tombstone' for any type-less typeless URL-less guide-less
-  // outline, which also matches a bare section header.
-  const onlyEntryIsTombstone = rawItems.length === 1
-    && classifyOutline(rawItems[0]) === 'tombstone'
-    && !(Array.isArray(rawItems[0].children) && rawItems[0].children.length > 0);
-  if (onlyEntryIsTombstone) {
-    body.appendChild(emptyNode(rawItems[0].text || 'Nothing here.'));
-    return 0;
-  }
 
   // Local Radio surface (issue #82): c=local responses include a
   // `key="localCountry"` link pointing at the corresponding r-prefix
@@ -717,8 +700,9 @@ export function renderEntry(entry) {
 
   let node;
   if (kind === 'station' || kind === 'topic') {
+    const sid = norm.id || entry.guide_id || '';
     node = stationRow({
-      sid:      norm.id || entry.guide_id || '',
+      sid,
       name:     norm.primary,
       art:      norm.image,
       location: norm.secondary,
@@ -727,6 +711,18 @@ export function renderEntry(entry) {
       tertiary: norm.tertiary,
       badges:   norm.badges,
       chips:    norm.chips,
+      // Heart visibility is gated by favoriteHeart on `^[sp]\d+$`, so
+      // topic (t) rows fall through to the chevron unchanged. Browse
+      // capture rule per #126: {id, name, art, note: ''} from row data.
+      favorite: {
+        store: appStore,
+        getEntry: () => ({
+          id:   sid,
+          name: norm.primary || '',
+          art:  norm.image || '',
+          note: '',
+        }),
+      },
     });
   } else if (kind === 'show') {
     // Shows are drill-into-detail, not direct play. Reuse stationRow
@@ -799,10 +795,23 @@ function showRow(entry, norm) {
   }
   row.appendChild(body);
 
-  const chev = document.createElement('span');
-  chev.className = 'station-row__chev';
-  chev.appendChild(icon('arrow', 14));
-  row.appendChild(chev);
+  // Show rows take a heart in place of the chevron (#126). p-prefix
+  // ids satisfy isFavoriteId; the body link still drills into the
+  // show landing.
+  row.appendChild(trailingAffordance({
+    sid:  id,
+    name: norm.primary || id || '',
+    art:  norm.image || '',
+    favorite: {
+      store: appStore,
+      getEntry: () => ({
+        id,
+        name: norm.primary || id || '',
+        art:  norm.image || '',
+        note: '',
+      }),
+    },
+  }));
   return row;
 }
 

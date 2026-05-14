@@ -41,10 +41,11 @@ export function computePillState(state) {
 // --- activeTab routing rule ----------------------------------------
 
 const TOP_LEVEL_TABS = {
-  '/':         'now',
-  '/search':   'search',
-  '/browse':   'browse',
-  '/settings': 'settings',
+  '/':          'now',
+  '/search':    'search',
+  '/browse':    'browse',
+  '/favorites': 'favorites',
+  '/settings':  'settings',
 };
 
 export function tabForPath(path) {
@@ -92,10 +93,13 @@ function tabButton(tab, label, iconName) {
 }
 
 const TAB_DEFS = [
-  { tab: 'now',      label: 'Now',      icon: 'play' },
-  { tab: 'search',   label: 'Search',   icon: 'search' },
-  { tab: 'browse',   label: 'Browse',   icon: 'list' },
-  { tab: 'settings', label: 'Settings', icon: 'settings' },
+  { tab: 'now',       label: 'Now',        icon: 'play' },
+  { tab: 'search',    label: 'Search',     icon: 'search' },
+  { tab: 'browse',    label: 'Browse',     icon: 'list' },
+  // Favourites sits between Browse and Settings so the navigation rail
+  // reads "discover → save → configure" left-to-right (#125).
+  { tab: 'favorites', label: 'Favourites', icon: 'heart' },
+  { tab: 'settings',  label: 'Settings',   icon: 'settings' },
 ];
 
 function renderRail(railEl, store) {

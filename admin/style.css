@@ -466,6 +466,24 @@ main {
   white-space: nowrap;
 }
 
+/* Now-Playing name + heart row (#126). The heart sits next to the
+   station name; the name span keeps its ellipsis behaviour while the
+   heart anchors to the right of the row. */
+.np-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.np-name-row .np-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.np-heart-slot {
+  flex: 0 0 auto;
+  display: inline-flex;
+}
+
 .np-track {
   margin: 0;
   font-size: 14px;
@@ -747,6 +765,90 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Favourites grid (#129) — 3×3 preview of the user's favourites,
+   mirroring the preset card visuals. Hidden entirely at zero favourites
+   (the section element carries `hidden`). Cards take a deterministic
+   per-station tint via `--np-fav-hue` set inline. */
+.np-favorites {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.np-favorites-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.np-fav {
+  font: inherit;
+  text-align: left;
+  display: block;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #ffffff;
+  cursor: pointer;
+  position: relative;
+  min-height: 92px;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg,
+      hsl(var(--np-fav-hue, 220), 60%, 55%),
+      color-mix(in srgb, hsl(var(--np-fav-hue, 220), 60%, 30%) 60%, #000));
+  transition: border-color 120ms, transform 120ms;
+}
+
+.np-fav:not(:disabled):hover {
+  border-color: var(--accent);
+}
+
+.np-fav:not(:disabled):active {
+  transform: scale(0.985);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .np-fav { transition: none; }
+  .np-fav:not(:disabled):active { transform: none; }
+}
+
+.np-fav.is-loading {
+  opacity: 0.75;
+}
+
+.np-fav-name {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  right: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Brief flash on the Favourites tab when arriving via
+   `#/favorites?focus=<id>` (long-press from the Now-Playing grid). */
+.favorites-row.is-focused {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  animation: favorites-focus-flash 1400ms ease-out;
+}
+
+@keyframes favorites-focus-flash {
+  0%   { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+  100% { background: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .favorites-row.is-focused { animation: none; }
 }
 
 /* STANDBY / asleep state */
@@ -1100,6 +1202,287 @@ main {
   margin: 0 0 0.25rem;
 }
 
+/* Station name + favourites heart sit on one row so the heart hugs the
+ * name on the left and never bumps the rest of the metadata below. */
+.station-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.station-name-row .station-name {
+  margin-bottom: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* Favourites heart — toggle button. Outline (.is-empty) and filled
+ * (.is-filled) variants share the same path; the filled state paints
+ * the heart in --accent. The button is borderless on purpose so it
+ * reads as a glyph rather than an action chip; the focus ring keeps
+ * it keyboard-reachable. Hidden via [hidden] when the row's id isn't
+ * `^[sp]\d+$` (favoriteHeart() sets the attribute). */
+.fav-heart {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 100ms ease;
+}
+.fav-heart:hover { color: var(--text); }
+.fav-heart:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.fav-heart.is-filled {
+  color: var(--accent, #e0245e);
+}
+.fav-heart.is-filled svg {
+  fill: currentColor;
+  stroke: currentColor;
+}
+.fav-heart.is-busy {
+  opacity: 0.6;
+  cursor: progress;
+}
+.fav-heart[hidden] { display: none; }
+
+/* Favourites tab body — plain list. The empty state mirrors the
+ * search-empty hint style: a faint header + one-line tip. */
+.favorites {
+  padding: 1rem;
+}
+.favorites-header h1 {
+  font-size: 1.5rem;
+  margin: 0 0 1rem;
+}
+.favorites-empty {
+  color: var(--muted);
+  padding: 2rem 0;
+  text-align: center;
+}
+.favorites-empty h2 {
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+.favorites-empty p {
+  margin: 0;
+}
+.favorites-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/* Favourites row — [drag-handle stub] [body] [pencil] [trash]. The
+ * body is a flex-1 button so the row can be tapped to play without
+ * stealing pencil/trash click targets. Pencil expands the row in
+ * place: the form is appended as a sibling under the row controls and
+ * `.is-expanded` lifts the row's background so the form reads as
+ * "part of this entry". */
+.favorites-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.favorites-row.is-expanded {
+  background: var(--surface-hi);
+  /* Make the form span the full row when expanded. */
+  grid-template-columns: auto 1fr auto auto;
+}
+.favorites-row.is-expanded .favorites-row__edit {
+  grid-column: 1 / -1;
+}
+
+.favorites-row__drag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  color: var(--muted);
+  cursor: grab;
+  opacity: 0.6;
+  /* The handle owns the pointer; suppress scroll/zoom gestures that
+   * would otherwise hijack the drag on touch. */
+  touch-action: none;
+  user-select: none;
+}
+.favorites-row__drag:active { cursor: grabbing; }
+
+/* Source row while a drag is in flight — fade it so the ghost reads
+ * as "this is where the row currently lives". */
+.favorites-row.is-dragging {
+  opacity: 0.4;
+}
+
+/* Drop indicator: a 2 px accent line that slides between rows as the
+ * pointer moves. Rendered inside the .favorites-list grid; takes up
+ * its own list slot so neighbouring rows nudge apart visually. */
+.favorites-drag-indicator {
+  height: 2px;
+  background: var(--accent, #4a90e2);
+  border-radius: 1px;
+  margin: 2px 4px;
+  pointer-events: none;
+}
+
+/* Floating ghost — semi-transparent clone that follows the pointer. */
+.favorites-drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  opacity: 0.75;
+  z-index: 9999;
+  transform: translate(-12px, -50%);
+  background: var(--surface-hi, #2a2a2a);
+  border: 1px solid var(--border, #444);
+  border-radius: 6px;
+  padding: 4px 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  max-width: 320px;
+  overflow: hidden;
+}
+
+.favorites-row__body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  min-width: 0;
+  border-radius: 4px;
+  transition: background 120ms ease;
+}
+.favorites-row__body:hover,
+.favorites-row__body:focus-visible {
+  background: var(--surface-hi);
+}
+.favorites-row__body:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.favorites-row__body.is-disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.favorites-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.favorites-row__name {
+  font-weight: 500;
+  font-size: 13.5px;
+  line-height: 1.2;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.favorites-row__note {
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.favorites-row__edit-btn,
+.favorites-row__delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 120ms ease, background 120ms ease;
+}
+.favorites-row__edit-btn:hover,
+.favorites-row__edit-btn:focus-visible,
+.favorites-row__delete-btn:hover,
+.favorites-row__delete-btn:focus-visible {
+  color: var(--fg);
+  background: var(--surface-hi);
+}
+.favorites-row__delete-btn:hover,
+.favorites-row__delete-btn:focus-visible {
+  color: var(--danger, #c0392b);
+}
+
+/* Inline edit form. Three single-line inputs + Save / Cancel. */
+.favorites-row__edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.favorites-edit__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.favorites-edit__label {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.favorites-edit__input {
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--fg);
+}
+.favorites-edit__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.favorites-edit__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.favorites-edit__btn {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+.favorites-edit__btn--save {
+  background: var(--accent);
+  color: var(--accent-fg, white);
+  border-color: var(--accent);
+}
+
 .station-slogan {
   margin: 0 0 0.25rem;
   font-style: italic;
@@ -1254,6 +1637,33 @@ main {
 .toast.is-shown {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Action toast — text + inline button (e.g. "Undo" after a favourite
+ * is deleted). pointer-events restored on the toast itself so the
+ * button is tappable; the container above keeps pointer-events:none. */
+.toast--action {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  pointer-events: auto;
+}
+.toast--action .toast__text {
+  flex: 1 1 auto;
+}
+.toast--action .toast__action {
+  font: inherit;
+  font-weight: 600;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--accent, #e0245e);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.toast--action .toast__action:hover,
+.toast--action .toast__action:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* --- preset modal (#/preset/N) ------------------------------------ */
@@ -2558,6 +2968,19 @@ select.settings-input {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+
+/* showHero name + inline heart (#126). The heart toggle sits next to
+   the show title inside the body column. The name keeps ellipsis;
+   the heart anchors at the end of the row. */
+.station-row__name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.station-row__name-row .station-row__name {
+  flex: 1 1 auto;
 }
 
 .station-row__meta {

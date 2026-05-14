@@ -30,11 +30,13 @@
 // render) because the topic-row layout and liveShow hero pattern are
 // part of the show-drill flow.
 
-import { tuneinDescribe, tuneinBrowse } from '../../api.js';
+import { tuneinDescribe } from '../../api.js';
 import { stationRow } from '../../components.js';
 import { showHero } from '../../show-hero.js';
 import { cache, TTL_LABEL } from '../../tunein-cache.js';
 import { normaliseRow } from '../../tunein-outline.js';
+import { resolveBrowseDrill } from '../../tunein-drill.js';
+import { store as appStore } from '../../state.js';
 import {
   renderSection,
   emptyNode,
@@ -48,17 +50,25 @@ import {
 // Drive the two-fetch composite. Describe is the load-bearing call (it
 // drives the show card); Browse-by-bare-id is best-effort — its
 // failure does not block the show card from rendering. Both fetches
-// fire in parallel; we wait on Describe synchronously and treat
-// Browse's failure as "no related sections".
+// fire in parallel; we wait on Describe synchronously and route the
+// Browse half through resolveBrowseDrill so empty / error / tombstone
+// classification is structured rather than swallowed.
 export function loadShowLanding(body, showId, headerCount, head) {
   body.replaceChildren();
   body.appendChild(skeleton());
   if (headerCount) headerCount.textContent = '';
 
   const describePromise = tuneinDescribe({ id: showId });
-  // Browse(bare id) is best-effort — we swallow its rejection so the
-  // describe-driven card still renders even if Browse 4xxs.
-  const browsePromise = tuneinBrowse(showId).catch(() => null);
+  // Browse(bare id) flows through the one-shot drill seam. The seam
+  // never rejects: transport throws, structured CGI errors, and TuneIn-
+  // rejected drills (c=pbrowse on Bo's egress — head.status="400" with
+  // body:[]) all surface as `kind:'error'` or `kind:'empty'`. Both
+  // collapse to "no related sections" here — parity with the swallowed-
+  // rejection / empty-body behaviour the previous .catch(() => null)
+  // implemented — so we hand `null` down to renderShowLandingBody for
+  // anything that isn't an ok-with-payload result.
+  const browsePromise = resolveBrowseDrill(showId)
+    .then((r) => (r.kind === 'ok' ? r.json : null));
 
   Promise.all([describePromise, browsePromise])
     .then(([describeJson, browseJson]) => {
@@ -201,6 +211,17 @@ function renderShowLandingCard(show) {
     art:  logo,
     location: secondary,
     chips,
+    // Show-landing capture rule per #126: {id: pid, name: show.name,
+    // art: show.art, note: ''} from the Describe-resolved show entry.
+    favorite: {
+      store: appStore,
+      getEntry: () => ({
+        id:   sid,
+        name: title,
+        art:  logo,
+        note: '',
+      }),
+    },
   });
   // Mark the hero so tests / CSS can target it specifically.
   row.setAttribute('data-show-landing', '1');
@@ -275,6 +296,15 @@ function renderLiveShowRow(entry) {
     name:     norm.primary || id,
     art:      norm.image,
     location: norm.secondary,
+    favorite: {
+      store: appStore,
+      getEntry: () => ({
+        id,
+        name: norm.primary || id || '',
+        art:  norm.image || '',
+        note: '',
+      }),
+    },
   });
 }
 

@@ -24,6 +24,7 @@
 //   getListMediaServers() — discovery surface; SoundTouch peers appear as
 //     media_servers whose manufacturer contains "Bose"
 //   presetsList(), presetsAssign() — presets CGI envelope client
+//   favoritesList(), favoritesReplace() — favorites CGI envelope client
 
 import {
   parseNowPlayingEl,
@@ -727,6 +728,79 @@ export async function presetsAssign(slot, payload) {
     body = await res.json();
   } catch (err) {
     throw new Error(`presetsAssign: malformed response (HTTP ${res.status})`);
+  }
+  const reason = upstreamFailureReason(body);
+  if (reason) notifyUpstreamFailure(reason);
+  else if (body && body.ok) notifyUpstreamSuccess();
+  return body;
+}
+
+// --- favorites ------------------------------------------------------
+//
+// The favourites list is the admin's persistent record of stations and
+// shows the user has hearted. It is DISJOINT from the firmware-owned
+// six hardware presets — same id may appear in both, neither, or one.
+// See admin/cgi-bin/api/v1/favorites for the CGI surface.
+
+// GET /favorites → { ok:true, data:[{id,name,art,note}, ...] } | error envelope.
+// Absent file resolves as `{ ok:true, data:[] }`. Transport errors throw;
+// structured envelopes resolve normally so callers can route them to a toast.
+export async function favoritesList() {
+  let res;
+  try {
+    res = await fetchWithTimeout(`${apiBase}/favorites`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    }, DEFAULT_READ_TIMEOUT_MS);
+  } catch (err) {
+    if (err && err.name === 'TimeoutError') notifyUpstreamFailure('TIMEOUT');
+    throw err;
+  }
+  let body;
+  try {
+    body = await res.json();
+  } catch (err) {
+    throw new Error(`favoritesList: malformed response (HTTP ${res.status})`);
+  }
+  const reason = upstreamFailureReason(body);
+  if (reason) notifyUpstreamFailure(reason);
+  else if (body && body.ok) notifyUpstreamSuccess();
+  return body;
+}
+
+// POST /favorites with the full array body. Returns the CGI envelope.
+// Transport errors throw; structured `{ok:false, error}` envelopes
+// resolve normally so the caller can roll back optimistic state and
+// surface a toast. The POST body is the raw array — the CGI wraps it
+// in the success envelope when serving the next GET.
+//
+// POST (not PUT) because busybox httpd on the speaker firmware refuses
+// PUT before the CGI ever runs; see admin/cgi-bin/api/v1/favorites.
+export async function favoritesReplace(entries) {
+  let res;
+  try {
+    res = await fetchWithTimeout(`${apiBase}/favorites`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(entries),
+      cache: 'no-store',
+    }, DEFAULT_WRITE_TIMEOUT_MS);
+  } catch (err) {
+    if (err && err.name === 'TimeoutError') {
+      notifyUpstreamFailure('TIMEOUT');
+      return timeoutEnvelope();
+    }
+    throw err;
+  }
+  let body;
+  try {
+    body = await res.json();
+  } catch (err) {
+    throw new Error(`favoritesReplace: malformed response (HTTP ${res.status})`);
   }
   const reason = upstreamFailureReason(body);
   if (reason) notifyUpstreamFailure(reason);

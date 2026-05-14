@@ -16,6 +16,45 @@ import { cgiErrorMessage } from './error-messages.js';
 import { showToast } from './toast.js';
 import { icon } from './icons.js';
 
+// playSid({ sid, label, parentOutline? }) — shared play action for the
+// inline play button and any other caller (e.g. the favourites tab's
+// row body, which acts as a play target on tap). Centralises the
+// cache-priming + cache-stash + toast routing so callers don't drift.
+//
+// Returns a Promise<void>. Failures are surfaced via toast; no envelope
+// is bubbled up because callers don't need to branch on it. `busy`
+// guarding is the caller's responsibility — this function does not
+// debounce on its own.
+export async function playSid({ sid, label, parentOutline } = {}) {
+  if (typeof sid !== 'string' || !sid) return;
+  if (typeof label !== 'string' || !label) return;
+
+  // Issue #88: prime the parent-show cache the moment a topic plays.
+  if (sid.charAt(0) === 't' && parentOutline) {
+    const parent = extractParentShowId(parentOutline);
+    if (parent) cache.set(tuneinParentKey(sid), parent, TTL_LABEL);
+  }
+
+  const cacheKey = `tunein.stream.${sid}`;
+  const cached = cache.get(cacheKey);
+
+  try {
+    const result = await playGuideId(sid, label, cached);
+    if (result && result.ok) {
+      if (typeof result.url === 'string' && result.url) {
+        cache.set(cacheKey, result.url, TTL_STREAM);
+      }
+      showToast(`Playing on Bo: ${label}`);
+    } else {
+      cache.invalidate(cacheKey);
+      showToast(cgiErrorMessage(result));
+    }
+  } catch (_err) {
+    cache.invalidate(cacheKey);
+    showToast('Could not reach Bo');
+  }
+}
+
 export function createPlayButton({ sid, label } = {}) {
   if (typeof sid !== 'string' || !sid) {
     throw new Error('createPlayButton: sid is required');
@@ -42,34 +81,15 @@ export function createPlayButton({ sid, label } = {}) {
     busy = true;
     btn.classList.add('is-loading');
 
-    // Issue #88: prime the parent-show cache the moment a topic plays
-    // so the now-playing Prev/Next classifier can answer "what show is
-    // this from?" without re-fetching. The outline is stashed on the
-    // parent node by the render path; when absent (hand-crafted
-    // callers, tests) the write silently skips.
-    if (sid.charAt(0) === 't') {
-      const outline = btn.parentNode && btn.parentNode._outline;
-      const parent = outline ? extractParentShowId(outline) : null;
-      if (parent) cache.set(tuneinParentKey(sid), parent, TTL_LABEL);
-    }
-
-    const cacheKey = `tunein.stream.${sid}`;
-    const cached = cache.get(cacheKey);
+    // The outline is stashed on the parent node by the render path; when
+    // absent (hand-crafted callers, tests) playSid skips the topic-parent
+    // cache write silently.
+    const parentOutline = sid.charAt(0) === 't'
+      ? (btn.parentNode && btn.parentNode._outline) || null
+      : null;
 
     try {
-      const result = await playGuideId(sid, label, cached);
-      if (result && result.ok) {
-        if (typeof result.url === 'string' && result.url) {
-          cache.set(cacheKey, result.url, TTL_STREAM);
-        }
-        showToast(`Playing on Bo: ${label}`);
-      } else {
-        cache.invalidate(cacheKey);
-        showToast(cgiErrorMessage(result));
-      }
-    } catch (_err) {
-      cache.invalidate(cacheKey);
-      showToast('Could not reach Bo');
+      await playSid({ sid, label, parentOutline });
     } finally {
       btn.classList.remove('is-loading');
       busy = false;

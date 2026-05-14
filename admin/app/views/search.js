@@ -36,6 +36,7 @@ import { icon } from '../icons.js';
 import { classifyOutline, normaliseRow } from '../tunein-outline.js';
 import { canonicaliseBrowseUrl, extractDrillKey } from '../tunein-url.js';
 import { cache, TTL_LABEL } from '../tunein-cache.js';
+import { store as appStore } from '../state.js';
 import {
   DEBOUNCE_MS,
   SEARCH_PLACEHOLDER,
@@ -179,6 +180,18 @@ export function searchRow(entry) {
       tertiary: norm.tertiary,
       badges:   norm.badges,
       chips:    norm.chips,
+      // Heart on s / p sids; topics keep the chevron (favoriteHeart's
+      // visibility gate rejects t-prefix). Capture rule per #126:
+      // {id, name, art, note: ''} from search-row data.
+      favorite: {
+        store: appStore,
+        getEntry: () => ({
+          id:   sid,
+          name: norm.primary || '',
+          art:  norm.image || '',
+          note: '',
+        }),
+      },
     });
     if (kind === 'show') {
       const drillHash = drillHashForUrl(entry && entry.URL)
@@ -584,6 +597,17 @@ export default defineView({
         sid:  entry.sid,
         name: entry.name || entry.sid,
         art:  entry.art,
+        // Recently-viewed rows capture {id, name, art, note: ''} from
+        // the row's own data — same shape as the search-result rows.
+        favorite: {
+          store: appStore,
+          getEntry: () => ({
+            id:   entry.sid,
+            name: entry.name || entry.sid,
+            art:  entry.art || '',
+            note: '',
+          }),
+        },
       })));
     }
 
@@ -604,6 +628,16 @@ export default defineView({
         location: e.subtext,
         bitrate:  e.bitrate,
         codec:    e.formats,
+        // Popular rows capture from the Browse.ashx?c=local row data.
+        favorite: {
+          store: appStore,
+          getEntry: () => ({
+            id:   e.guide_id || '',
+            name: e.text || '',
+            art:  e.image || '',
+            note: '',
+          }),
+        },
       })));
     }
 

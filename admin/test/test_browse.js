@@ -57,7 +57,7 @@ function hasClass(el, cls) {
 
 // --- audio-leaf rendering -------------------------------------------
 
-test('renderEntry: audio leaf renders a station-row with art + name + meta + chevron', () => {
+test('renderEntry: audio leaf renders a station-row with art + name + meta + heart (#126)', () => {
   const node = renderEntry({
     type:       'audio',
     guide_id:   's12345',
@@ -85,8 +85,12 @@ test('renderEntry: audio leaf renders a station-row with art + name + meta + che
   const fmt = findFirstByClass(node, 'station-row__fmt');
   assert.equal(fmt.textContent, '192k MP3');
 
+  // Per #126 the heart replaces the chevron on favouritable
+  // (`^[sp]\d+$`) rows.
+  const heart = findFirstByClass(node, 'fav-heart');
+  assert.ok(heart, 'heart slot present on s-prefix row');
   const chev = findFirstByClass(node, 'station-row__chev');
-  assert.ok(chev, 'chevron slot present');
+  assert.equal(chev, null, 'chevron is gone on favouritable rows');
 });
 
 test('renderEntry: long station name keeps the truncating .station-row__name class', () => {
@@ -264,24 +268,10 @@ test('renderOutline: paginated page (flat list) renders one section card with cu
   assert.equal(sections[0].getAttribute('data-section'), 'flat');
 });
 
-test('renderOutline: tombstone response renders an empty-state message', async () => {
-  const fs = await import('node:fs');
-  const path = await import('node:path');
-  const tomb = JSON.parse(
-    fs.readFileSync(path.resolve('admin/test/fixtures/api/c424724-l117-tombstone.tunein.json'), 'utf8'),
-  );
-
-  const body = doc.createElement('div');
-  const total = renderOutline(body, tomb);
-
-  assert.equal(total, 0);
-  const empty = findFirstByClass(body, 'browse-empty');
-  assert.ok(empty, 'tombstone produces a .browse-empty message node');
-  assert.equal(empty.textContent, 'No stations or shows available');
-  // No section cards.
-  const sections = findAllBy(body, (el) => el.getAttribute('data-section') != null);
-  assert.equal(sections.length, 0);
-});
+// renderOutline's top-level tombstone / body:[] branches have moved
+// upstream into tunein-drill.resolveBrowseDrill (#122). The fixture-
+// driven equivalent of this test lives in test_tunein_drill.js — see
+// "resolveBrowseDrill on the captured Welsh tombstone fixture".
 
 // --- segmented control: CSS contract -------------------------------
 

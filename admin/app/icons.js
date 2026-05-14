@@ -111,6 +111,23 @@ const SHAPES = {
     ['path', { d: 'M14 11v6' }],
     ['path', { d: 'M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2' }],
   ],
+  // Pencil — used by the favourites tab's "edit row" affordance. Two
+  // strokes: the body of the pencil (top-right to bottom-left diagonal)
+  // and the tip notch. Lucide's `pencil` glyph, simplified.
+  pencil: [
+    ['path', { d: 'M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z' }],
+  ],
+  // Drag-handle — six-dot grip column. Used as a visual stub on the
+  // favourites tab in #127 so the row layout is correct; #128 wires the
+  // actual drag behaviour.
+  'drag-handle': [
+    ['circle', { cx: '9',  cy: '5',  r: '1' }],
+    ['circle', { cx: '9',  cy: '12', r: '1' }],
+    ['circle', { cx: '9',  cy: '19', r: '1' }],
+    ['circle', { cx: '15', cy: '5',  r: '1' }],
+    ['circle', { cx: '15', cy: '12', r: '1' }],
+    ['circle', { cx: '15', cy: '19', r: '1' }],
+  ],
   arrow: [
     ['line', { x1: '5', y1: '12', x2: '19', y2: '12' }],
     ['polyline', { points: '12 5 19 12 12 19' }],
@@ -140,6 +157,13 @@ const SHAPES = {
   // 24x24 frame.
   'chevron-left': [
     ['polyline', { points: '15 18 9 12 15 6' }],
+  ],
+  // Heart — used by the favourites toggle on station-detail and as the
+  // favourites tab glyph. Rendered as an outline by default; the
+  // station-detail toggle paints the same shape with `fill="currentColor"`
+  // (via the `is-filled` CSS class) to indicate "in favourites".
+  heart: [
+    ['path', { d: 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z' }],
   ],
   // Buffering — three horizontal dots. Used on the play/pause control
   // while the speaker is in BUFFERING_STATE (or any non-PLAY non-
