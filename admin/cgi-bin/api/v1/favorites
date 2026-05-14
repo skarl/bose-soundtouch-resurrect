@@ -3,7 +3,11 @@
 # favorites — admin-owned favourites list, persisted on the speaker.
 #
 # GET  /cgi-bin/api/v1/favorites   → { ok:true, data:[ {id,name,art,note}, ... ] }
-# PUT  /cgi-bin/api/v1/favorites   body = full JSON array → atomic replace
+# POST /cgi-bin/api/v1/favorites   body = full JSON array → atomic replace
+#
+# busybox httpd on the speaker firmware (v1.19.4, 2017) returns 501 for
+# PUT before the CGI sees the request. POST is the only mutating method
+# that reaches the script. The presets CGI uses the same convention.
 #
 # The favourites list is the admin's persistent record of stations and
 # shows the user has hearted. It is DISJOINT from the firmware-owned
@@ -18,7 +22,7 @@
 #            "art":  "" | "http(s)://...",
 #            "note": "<any string>" }
 #
-# PUT validation (envelope codes):
+# POST validation (envelope codes):
 #   INVALID_ID    — id missing or does not match ^[sp][0-9]+$
 #   INVALID_NAME  — name missing or empty
 #   INVALID_ART   — art is non-empty and not http(s)://...
@@ -42,7 +46,7 @@ set -u
 # firmware to fetch) — favourites are admin-only metadata that the
 # firmware never sees.
 # Storage path. The literal lives in production; tests override via
-# FAV_DIR_OVERRIDE so the shell harness can exercise GET / PUT without
+# FAV_DIR_OVERRIDE so the shell harness can exercise GET / POST without
 # touching /mnt/nv. The override is intentionally NOT a CGI knob — busybox
 # httpd doesn't forward arbitrary env into CGI processes, so a request
 # from the network never reaches this branch.
@@ -210,10 +214,10 @@ is_valid_fav_art() {
     esac
 }
 
-# --- GET / PUT handlers --------------------------------------------
+# --- GET / POST handlers -------------------------------------------
 
 handle_get() {
-    emit_ok_headers 'GET, PUT, OPTIONS'
+    emit_ok_headers 'GET, POST, OPTIONS'
     if [ -s "$FAV_FILE" ]; then
         cat "$FAV_FILE"
         # Make sure the response ends in a newline even when the on-disk
@@ -225,12 +229,12 @@ handle_get() {
         fi
     else
         # Absent file → empty list. No envelope wrapping needed since the
-        # GET body is the same shape the PUT consumes.
+        # GET body is the same shape the POST consumes.
         printf '{"ok":true,"data":[]}\n'
     fi
 }
 
-handle_put() {
+handle_post() {
     csrf_guard || return 0
 
     body_file="$PLAYBACK_TMPDIR/favorites.$$.body"
@@ -298,7 +302,7 @@ handle_put() {
     # the SPA adds round-trip until the parser learns to read them.
     mkdir -p "$FAV_DIR" 2>/dev/null || true
     # We store the envelope-shaped payload so GET can `cat` the file
-    # verbatim. The body the client PUT was just the bare array, so
+    # verbatim. The body the client POST'd was just the bare array, so
     # we re-emit it inside `{"ok":true,"data":...}`.
     {
         printf '{"ok":true,"data":'
@@ -318,18 +322,18 @@ handle_put() {
         return 0
     fi
 
-    emit_ok_headers 'GET, PUT, OPTIONS'
+    emit_ok_headers 'GET, POST, OPTIONS'
     cat "$FAV_FILE"
 }
 
 # CORS preflight: respond and exit before doing any work.
-if handle_cors_preflight 'GET, PUT, OPTIONS'; then exit 0; fi
+if handle_cors_preflight 'GET, POST, OPTIONS'; then exit 0; fi
 
 case "${REQUEST_METHOD:-GET}" in
     GET) handle_get ;;
-    PUT) handle_put ;;
+    POST) handle_post ;;
     *)
         emit_error '405 Method Not Allowed' METHOD_NOT_ALLOWED \
-            'favorites accepts GET and PUT only'
+            'favorites accepts GET and POST only'
         ;;
 esac

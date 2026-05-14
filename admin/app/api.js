@@ -769,16 +769,19 @@ export async function favoritesList() {
   return body;
 }
 
-// PUT /favorites with the full array body. Returns the CGI envelope.
+// POST /favorites with the full array body. Returns the CGI envelope.
 // Transport errors throw; structured `{ok:false, error}` envelopes
 // resolve normally so the caller can roll back optimistic state and
-// surface a toast. The PUT body is the raw array — the CGI wraps it
+// surface a toast. The POST body is the raw array — the CGI wraps it
 // in the success envelope when serving the next GET.
+//
+// POST (not PUT) because busybox httpd on the speaker firmware refuses
+// PUT before the CGI ever runs; see admin/cgi-bin/api/v1/favorites.
 export async function favoritesReplace(entries) {
   let res;
   try {
     res = await fetchWithTimeout(`${apiBase}/favorites`, {
-      method: 'PUT',
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',

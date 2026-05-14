@@ -97,7 +97,7 @@ export const FIELDS = [
     // favourites — admin-owned, disjoint from firmware presets. No WS
     // event (the speaker firmware doesn't know about favourites), so
     // reconciliation is fetch-only: on app boot and on visibility-change
-    // to visible. The PUT round-trip updates state optimistically from
+    // to visible. The POST round-trip updates state optimistically from
     // the caller; the GET path is the floor in case another tab
     // mutated the list.
     name: 'favorites',

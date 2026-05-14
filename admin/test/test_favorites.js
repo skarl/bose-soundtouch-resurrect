@@ -96,7 +96,7 @@ function installFetchStub(handler) {
   return () => { globalThis.fetch = original; };
 }
 
-test('toggleFavorite: PUT success → state stays at optimistic value', async () => {
+test('toggleFavorite: POST success → state stays at optimistic value', async () => {
   store.state.speaker.favorites = [];
   let captured = null;
   const restore = installFetchStub(async (url, opts) => {
@@ -109,8 +109,8 @@ test('toggleFavorite: PUT success → state stays at optimistic value', async ()
   try {
     const env = await toggleFavorite(store, { id: 's12345', name: 'R1' });
     assert.equal(env.ok, true);
-    assert.ok(captured, 'PUT issued');
-    assert.equal(captured.opts.method, 'PUT');
+    assert.ok(captured, 'POST issued');
+    assert.equal(captured.opts.method, 'POST');
     assert.match(captured.url, /\/favorites$/);
     const sent = JSON.parse(captured.opts.body);
     assert.equal(sent.length, 1);
@@ -121,7 +121,7 @@ test('toggleFavorite: PUT success → state stays at optimistic value', async ()
   }
 });
 
-test('toggleFavorite: PUT structured-error → state rolls back, no leak', async () => {
+test('toggleFavorite: POST structured-error → state rolls back, no leak', async () => {
   store.state.speaker.favorites = [];
   const restore = installFetchStub(async () => ({
     ok: true, status: 400,
@@ -137,7 +137,7 @@ test('toggleFavorite: PUT structured-error → state rolls back, no leak', async
   }
 });
 
-test('toggleFavorite: PUT transport throw → state rolls back, synthetic envelope returned', async () => {
+test('toggleFavorite: POST transport throw → state rolls back, synthetic envelope returned', async () => {
   store.state.speaker.favorites = [{ id: 's1', name: 'A', art: '', note: '' }];
   const restore = installFetchStub(async () => { throw new Error('boom'); });
   try {
@@ -161,14 +161,14 @@ test('toggleFavorite: remove path — present id flips to absent on success', as
   try {
     const env = await toggleFavorite(store, { id: 's7', name: 'Seven' });
     assert.equal(env.ok, true);
-    assert.deepEqual(body, [], 'PUT body is the post-remove array');
+    assert.deepEqual(body, [], 'POST body is the post-remove array');
     assert.deepEqual(store.state.speaker.favorites, [], 'state is empty after the remove');
   } finally {
     restore();
   }
 });
 
-test('toggleFavorite: id that doesn\'t match ^[sp]\\d+$ short-circuits without a PUT', async () => {
+test('toggleFavorite: id that doesn\'t match ^[sp]\\d+$ short-circuits without a POST', async () => {
   store.state.speaker.favorites = [];
   let calls = 0;
   const restore = installFetchStub(async () => { calls++; return { ok: true, json: async () => ({}) }; });
@@ -176,7 +176,7 @@ test('toggleFavorite: id that doesn\'t match ^[sp]\\d+$ short-circuits without a
     const env = await toggleFavorite(store, { id: 'g22', name: 'genre' });
     assert.equal(env.ok, false);
     assert.equal(env.error.code, 'INVALID_ID');
-    assert.equal(calls, 0, 'no PUT is fired for an invalid id');
+    assert.equal(calls, 0, 'no POST is fired for an invalid id');
     assert.equal(store.state.speaker.favorites.length, 0);
   } finally {
     restore();
@@ -222,7 +222,7 @@ test('favoriteHeart: outlines on miss, fills on hit, re-paints on store change',
   btn.unsubscribe();
 });
 
-test('favoriteHeart: click fires the PUT, optimistic add lands immediately', async () => {
+test('favoriteHeart: click fires the POST, optimistic add lands immediately', async () => {
   store.state.speaker.favorites = [];
   const calls = [];
   const restore = installFetchStub(async (url, opts) => {
@@ -241,8 +241,8 @@ test('favoriteHeart: click fires the PUT, optimistic add lands immediately', asy
     // Allow the toggle's microtask + the await to settle.
     await new Promise((r) => setTimeout(r, 5));
     const putCall = calls.find((c) => /\/favorites$/.test(c.url));
-    assert.ok(putCall, 'PUT /favorites issued');
-    assert.equal(putCall.opts.method, 'PUT');
+    assert.ok(putCall, 'POST /favorites issued');
+    assert.equal(putCall.opts.method, 'POST');
     assert.equal(store.state.speaker.favorites.length, 1);
     assert.equal(store.state.speaker.favorites[0].id, 's12345');
     assert.equal(btn.classList.contains('is-filled'), true, 'heart paints filled after toggle');
@@ -311,11 +311,11 @@ test('station-detail: heart click toggles the favourite optimistically', async (
     assert.ok(heart, 'heart mounted');
     // Click — fires the optimistic toggle.
     heart.dispatchEvent({ type: 'click', defaultPrevented: false, preventDefault() {}, stopPropagation() {} });
-    // Optimistic mutation lands before the PUT resolves.
+    // Optimistic mutation lands before the POST resolves.
     assert.equal(store.state.speaker.favorites.length, 1, 'optimistic add');
     await new Promise((r) => setTimeout(r, 5));
-    const putCall = calls.find((c) => /\/favorites$/.test(c.url) && c.opts.method === 'PUT');
-    assert.ok(putCall, 'PUT /favorites issued');
+    const putCall = calls.find((c) => /\/favorites$/.test(c.url) && c.opts.method === 'POST');
+    assert.ok(putCall, 'POST /favorites issued');
     destroy();
   } finally {
     restore();

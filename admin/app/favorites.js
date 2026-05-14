@@ -9,7 +9,7 @@
 //
 //   2. `toggleFavorite(store, entry)` — the optimistic-toggle action.
 //      Mirrors the optimistic pattern in `optimistic.js`: mutate state,
-//      fire PUT, roll back on rejection + toast. Used by the heart on
+//      fire POST, roll back on rejection + toast. Used by the heart on
 //      station-detail today; reusable by row-level hearts (#126) and the
 //      favourites-tab pencil/trash (#128/#129) without modification.
 //
@@ -74,7 +74,7 @@ export function withFavoriteRemoved(list, id) {
   return list.slice(0, idx).concat(list.slice(idx + 1));
 }
 
-// toggleFavorite — optimistic add-or-remove with PUT-side reconcile.
+// toggleFavorite — optimistic add-or-remove with POST-side reconcile.
 //
 // store: the live observable store (state.js).
 // entry: { id, name, art?, note? }. `id` is required; `name` falls back
@@ -83,7 +83,7 @@ export function withFavoriteRemoved(list, id) {
 // Behaviour:
 //   1. Snapshot current state.speaker.favorites.
 //   2. Apply the toggle locally and touch('speaker').
-//   3. PUT the new list. On structured-error or transport failure,
+//   3. POST the new list. On structured-error or transport failure,
 //      restore the snapshot, touch('speaker') again, surface a toast.
 //
 // Returns the response envelope on success, or a synthetic

@@ -98,108 +98,108 @@ assert_contains 'GET emits 200 OK status line' 'Status: 200 OK' "$out"
 assert_contains 'GET body has ok:true' '"ok":true' "$body"
 assert_contains 'GET body has empty data array' '"data":[]' "$body"
 
-# --- PUT: empty array writes and round-trips ----------------------
+# --- POST: empty array writes and round-trips ----------------------
 
-printf '\n=== PUT: empty array → writes envelope, GET returns it ===\n'
+printf '\n=== POST: empty array → writes envelope, GET returns it ===\n'
 empty_body="$WORK/empty.json"
 printf '[]' >"$empty_body"
-out=$(call_cgi PUT "$empty_body" 2>/dev/null)
+out=$(call_cgi POST "$empty_body" 2>/dev/null)
 body=$(printf '%s\n' "$out" | strip_headers)
-assert_contains 'empty PUT returns 200 OK' 'Status: 200 OK' "$out"
-assert_contains 'empty PUT body has ok:true' '"ok":true' "$body"
+assert_contains 'empty POST returns 200 OK' 'Status: 200 OK' "$out"
+assert_contains 'empty POST body has ok:true' '"ok":true' "$body"
 if [ ! -f "$FAV_DIR/favorites.json" ]; then
     printf '  [FAIL] favorites.json was not written\n'
     fail=$((fail + 1))
 else
-    printf '  [ OK ] favorites.json present on disk after empty PUT\n'
+    printf '  [ OK ] favorites.json present on disk after empty POST\n'
     ok=$((ok + 1))
 fi
 
-# --- PUT: valid one-entry list ------------------------------------
+# --- POST: valid one-entry list ------------------------------------
 
-printf '\n=== PUT: valid one-entry list ===\n'
+printf '\n=== POST: valid one-entry list ===\n'
 one_body="$WORK/one.json"
 printf '%s' '[{"id":"s12345","name":"R1","art":"http://x.png","note":"hi"}]' >"$one_body"
-out=$(call_cgi PUT "$one_body" 2>/dev/null)
+out=$(call_cgi POST "$one_body" 2>/dev/null)
 body=$(printf '%s\n' "$out" | strip_headers)
-assert_contains 'one-entry PUT returns 200 OK' 'Status: 200 OK' "$out"
+assert_contains 'one-entry POST returns 200 OK' 'Status: 200 OK' "$out"
 assert_contains 'response carries the entry id' '"id":"s12345"' "$body"
 assert_contains 'response carries the entry name' '"name":"R1"' "$body"
-# GET after PUT echoes back the same envelope.
+# GET after POST echoes back the same envelope.
 get_out=$(call_cgi GET '' 2>/dev/null)
 get_body=$(printf '%s\n' "$get_out" | strip_headers)
 assert_contains 'subsequent GET returns the persisted entry' '"id":"s12345"' "$get_body"
 
-# --- PUT: INVALID_ID -----------------------------------------------
+# --- POST: INVALID_ID -----------------------------------------------
 
-printf '\n=== PUT: invalid id (g-prefix) → INVALID_ID ===\n'
+printf '\n=== POST: invalid id (g-prefix) → INVALID_ID ===\n'
 bad_id="$WORK/bad_id.json"
 printf '%s' '[{"id":"g22","name":"genre","art":"","note":""}]' >"$bad_id"
-out=$(call_cgi PUT "$bad_id" 2>/dev/null)
+out=$(call_cgi POST "$bad_id" 2>/dev/null)
 body=$(printf '%s\n' "$out" | strip_headers)
 assert_contains 'INVALID_ID returns 400' 'Status: 400 Bad Request' "$out"
 assert_contains 'INVALID_ID envelope code' '"code":"INVALID_ID"' "$body"
 assert_contains 'error envelope is an object, not a bare string' '"error":{' "$body"
 
-printf '\n=== PUT: invalid id (bare s) → INVALID_ID ===\n'
+printf '\n=== POST: invalid id (bare s) → INVALID_ID ===\n'
 bare="$WORK/bare.json"
 printf '%s' '[{"id":"s","name":"x","art":"","note":""}]' >"$bare"
-out=$(call_cgi PUT "$bare" 2>/dev/null)
+out=$(call_cgi POST "$bare" 2>/dev/null)
 body=$(printf '%s\n' "$out" | strip_headers)
 assert_contains 'bare-prefix is rejected' '"code":"INVALID_ID"' "$body"
 
-# --- PUT: INVALID_NAME ---------------------------------------------
+# --- POST: INVALID_NAME ---------------------------------------------
 
-printf '\n=== PUT: empty name → INVALID_NAME ===\n'
+printf '\n=== POST: empty name → INVALID_NAME ===\n'
 no_name="$WORK/no_name.json"
 printf '%s' '[{"id":"s12345","name":"","art":"","note":""}]' >"$no_name"
-out=$(call_cgi PUT "$no_name" 2>/dev/null)
+out=$(call_cgi POST "$no_name" 2>/dev/null)
 body=$(printf '%s\n' "$out" | strip_headers)
 assert_contains 'empty name returns 400' 'Status: 400 Bad Request' "$out"
 assert_contains 'INVALID_NAME envelope code' '"code":"INVALID_NAME"' "$body"
 
-# --- PUT: INVALID_ART ----------------------------------------------
+# --- POST: INVALID_ART ----------------------------------------------
 
-printf '\n=== PUT: bad art (not http/https) → INVALID_ART ===\n'
+printf '\n=== POST: bad art (not http/https) → INVALID_ART ===\n'
 bad_art="$WORK/bad_art.json"
 printf '%s' '[{"id":"s12345","name":"R1","art":"data:image/png;base64,XX","note":""}]' >"$bad_art"
-out=$(call_cgi PUT "$bad_art" 2>/dev/null)
+out=$(call_cgi POST "$bad_art" 2>/dev/null)
 body=$(printf '%s\n' "$out" | strip_headers)
 assert_contains 'bad-art returns 400' 'Status: 400 Bad Request' "$out"
 assert_contains 'INVALID_ART envelope code' '"code":"INVALID_ART"' "$body"
 
-# --- PUT: DUPLICATE_ID ---------------------------------------------
+# --- POST: DUPLICATE_ID ---------------------------------------------
 
-printf '\n=== PUT: duplicate id → DUPLICATE_ID ===\n'
+printf '\n=== POST: duplicate id → DUPLICATE_ID ===\n'
 dup="$WORK/dup.json"
 printf '%s' '[{"id":"s1","name":"A","art":"","note":""},{"id":"s1","name":"B","art":"","note":""}]' >"$dup"
-out=$(call_cgi PUT "$dup" 2>/dev/null)
+out=$(call_cgi POST "$dup" 2>/dev/null)
 body=$(printf '%s\n' "$out" | strip_headers)
 assert_contains 'duplicate-id returns 400' 'Status: 400 Bad Request' "$out"
 assert_contains 'DUPLICATE_ID envelope code' '"code":"DUPLICATE_ID"' "$body"
 
-# --- PUT: INVALID_JSON ---------------------------------------------
+# --- POST: INVALID_JSON ---------------------------------------------
 
-printf '\n=== PUT: non-array body → INVALID_JSON ===\n'
+printf '\n=== POST: non-array body → INVALID_JSON ===\n'
 bad_json="$WORK/bad_json.json"
 printf '%s' '{"id":"s1"}' >"$bad_json"
-out=$(call_cgi PUT "$bad_json" 2>/dev/null)
+out=$(call_cgi POST "$bad_json" 2>/dev/null)
 body=$(printf '%s\n' "$out" | strip_headers)
 assert_contains 'object-shaped body returns 400' 'Status: 400 Bad Request' "$out"
 assert_contains 'INVALID_JSON envelope code' '"code":"INVALID_JSON"' "$body"
 
-# --- failed-PUT preserves the prior file ---------------------------
+# --- failed-POST preserves the prior file ---------------------------
 
-printf '\n=== PUT failure leaves the previous file in place ===\n'
+printf '\n=== POST failure leaves the previous file in place ===\n'
 # Re-prime with a known-good entry.
 ok_body="$WORK/ok.json"
 printf '%s' '[{"id":"s2","name":"Keeper","art":"","note":""}]' >"$ok_body"
-call_cgi PUT "$ok_body" >/dev/null 2>&1
-# Now PUT a broken payload.
-call_cgi PUT "$bad_id" >/dev/null 2>&1
+call_cgi POST "$ok_body" >/dev/null 2>&1
+# Now POST a broken payload.
+call_cgi POST "$bad_id" >/dev/null 2>&1
 disk=$(cat "$FAV_DIR/favorites.json")
-assert_contains 'prior good entry still on disk after a failed PUT' '"id":"s2"' "$disk"
-assert_not_contains 'failed-PUT id never reached disk' '"id":"g22"' "$disk"
+assert_contains 'prior good entry still on disk after a failed POST' '"id":"s2"' "$disk"
+assert_not_contains 'failed-POST id never reached disk' '"id":"g22"' "$disk"
 
 # --- atomic-replace tmp file cleaned up ----------------------------
 
@@ -213,10 +213,10 @@ fi
 
 # --- METHOD_NOT_ALLOWED --------------------------------------------
 
-printf '\n=== POST: method rejected ===\n'
-out=$(call_cgi POST '' 2>/dev/null)
+printf '\n=== DELETE: method rejected ===\n'
+out=$(call_cgi DELETE '' 2>/dev/null)
 body=$(printf '%s\n' "$out" | strip_headers)
-assert_contains 'POST returns 405' 'Status: 405 Method Not Allowed' "$out"
+assert_contains 'DELETE returns 405' 'Status: 405 Method Not Allowed' "$out"
 assert_contains 'METHOD_NOT_ALLOWED envelope code' '"code":"METHOD_NOT_ALLOWED"' "$body"
 
 # --- OPTIONS preflight ---------------------------------------------
@@ -224,7 +224,7 @@ assert_contains 'METHOD_NOT_ALLOWED envelope code' '"code":"METHOD_NOT_ALLOWED"'
 printf '\n=== OPTIONS: CORS preflight ===\n'
 out=$(call_cgi OPTIONS '' 2>/dev/null)
 assert_contains 'OPTIONS returns 204' 'Status: 204 No Content' "$out"
-assert_contains 'preflight advertises PUT in Allow-Methods' 'PUT' "$out"
+assert_contains 'preflight advertises POST in Allow-Methods' 'POST' "$out"
 assert_contains 'preflight advertises GET in Allow-Methods' 'GET' "$out"
 
 printf '\n=== Summary: %d ok, %d failed ===\n' "$ok" "$fail"
