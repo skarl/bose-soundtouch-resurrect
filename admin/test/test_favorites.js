@@ -321,3 +321,122 @@ test('station-detail: heart click toggles the favourite optimistically', async (
     restore();
   }
 });
+
+// --- favourites tab `?focus=<id>` mount handler (#129) --------------
+
+const { default: favoritesView } = await import('../app/views/favorites.js');
+
+test('favourites view: ?focus=<id> flashes the matching row on mount', async () => {
+  store.state.speaker.favorites = [
+    { id: 's1', name: 'One',   art: '', note: '' },
+    { id: 's2', name: 'Two',   art: '', note: '' },
+    { id: 'p3', name: 'Three', art: '', note: '' },
+  ];
+  const root = makeRoot();
+  const destroy = favoritesView.init(root, store, { query: { focus: 's2' } });
+  try {
+    const rows = root.querySelectorAll('.favorites-row');
+    assert.equal(rows.length, 3, 'three rows rendered');
+    const target = rows.find((r) => r.dataset.sid === 's2');
+    assert.ok(target, 'row for s2 present');
+    assert.equal(target.classList.contains('is-focused'), true,
+      'matching row gets the is-focused flash class on mount');
+    // The two siblings stay un-flashed.
+    for (const r of rows) {
+      if (r === target) continue;
+      assert.equal(r.classList.contains('is-focused'), false,
+        `non-target row ${r.dataset.sid} must not flash`);
+    }
+  } finally {
+    destroy();
+  }
+});
+
+test('favourites view: ?focus with no match → nothing flashes, no throw', () => {
+  store.state.speaker.favorites = [
+    { id: 's1', name: 'One', art: '', note: '' },
+  ];
+  const root = makeRoot();
+  const destroy = favoritesView.init(root, store, { query: { focus: 'sNope' } });
+  try {
+    const rows = root.querySelectorAll('.favorites-row');
+    for (const r of rows) {
+      assert.equal(r.classList.contains('is-focused'), false,
+        'no row should flash when ?focus does not match');
+    }
+  } finally {
+    destroy();
+  }
+});
+
+test('favourites view: mount without ?focus → no row flashes', () => {
+  store.state.speaker.favorites = [
+    { id: 's1', name: 'One', art: '', note: '' },
+  ];
+  const root = makeRoot();
+  const destroy = favoritesView.init(root, store, {});
+  try {
+    const rows = root.querySelectorAll('.favorites-row');
+    for (const r of rows) {
+      assert.equal(r.classList.contains('is-focused'), false,
+        'mount without focus must leave rows untouched');
+    }
+  } finally {
+    destroy();
+  }
+});
+
+test('favourites view: ?focus on unfetched list applies after the list lands', () => {
+  // Empty state first — the favourite to focus hasn't loaded yet.
+  store.state.speaker.favorites = [];
+  const root = makeRoot();
+  const destroy = favoritesView.init(root, store, { query: { focus: 's42' } });
+  try {
+    assert.equal(root.querySelectorAll('.favorites-row').length, 0,
+      'empty state — no rows to flash yet');
+    // Now the reconcile lands.
+    store.update('speaker', (s) => {
+      s.speaker.favorites = [
+        { id: 's7',  name: 'Seven',   art: '', note: '' },
+        { id: 's42', name: 'Magic',   art: '', note: '' },
+      ];
+    });
+    const rows = root.querySelectorAll('.favorites-row');
+    assert.equal(rows.length, 2, 'rows rendered after the update');
+    const target = rows.find((r) => r.dataset.sid === 's42');
+    assert.ok(target, 'row for s42 present');
+    assert.equal(target.classList.contains('is-focused'), true,
+      'pending focus applies once the matching row lands');
+  } finally {
+    destroy();
+  }
+});
+
+test('favourites view: ?focus applies once — re-render after flash does not re-flash', () => {
+  store.state.speaker.favorites = [
+    { id: 's1', name: 'One', art: '', note: '' },
+  ];
+  const root = makeRoot();
+  const destroy = favoritesView.init(root, store, { query: { focus: 's1' } });
+  try {
+    const initialRow = root.querySelector('.favorites-row');
+    assert.equal(initialRow.classList.contains('is-focused'), true,
+      'first paint flashes the target row');
+    // Manually drop the flash class to simulate the post-timeout state,
+    // then trigger another render via a benign store change.
+    initialRow.classList.remove('is-focused');
+    store.update('speaker', (s) => {
+      s.speaker.favorites = [
+        { id: 's1', name: 'One',   art: '', note: '' },
+        { id: 's2', name: 'Two',   art: '', note: '' },
+      ];
+    });
+    const rows = root.querySelectorAll('.favorites-row');
+    for (const r of rows) {
+      assert.equal(r.classList.contains('is-focused'), false,
+        `subsequent renders must not re-apply the flash (${r.dataset.sid})`);
+    }
+  } finally {
+    destroy();
+  }
+});

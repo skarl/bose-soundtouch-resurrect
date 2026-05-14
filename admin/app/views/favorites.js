@@ -55,8 +55,35 @@ function buildList(entries) {
   return list;
 }
 
+// Deep-link focus (#129). The Now-Playing favourites grid sets
+// `#/favorites?focus=<id>` on long-press; the router decodes the query
+// string and passes it through `ctx.query`. We honour it once at mount
+// (and once after the initial render lands data) by scrolling the
+// matching row into view and applying `.is-focused` for a brief flash.
+// Deliberately scoped to mount-time so #127's CRUD edits to the row
+// renderer below stay disjoint. Edit-mode is never auto-entered — a
+// long-press from Now Playing must not accidentally open the editor.
+const FOCUS_FLASH_MS = 1600;
+
+function applyFocus(body, focusId) {
+  if (!body || typeof focusId !== 'string' || !focusId) return false;
+  const rows = body.querySelectorAll('.favorites-row');
+  for (const row of rows) {
+    const sid = row.dataset && row.dataset.sid;
+    if (sid !== focusId) continue;
+    row.classList.add('is-focused');
+    if (typeof row.scrollIntoView === 'function') {
+      try { row.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+      catch (_err) { /* JSDOM / xmldom — no-op */ }
+    }
+    setTimeout(() => row.classList.remove('is-focused'), FOCUS_FLASH_MS);
+    return true;
+  }
+  return false;
+}
+
 export default defineView({
-  mount(root, store, _ctx, env) {
+  mount(root, store, ctx, env) {
     mount(root, html`
       <section class="favorites" data-view="favorites">
         <header class="favorites-header">
@@ -66,6 +93,13 @@ export default defineView({
       </section>
     `);
     const body = root.querySelector('.favorites-body');
+
+    // Deep-link target id, taken from `?focus=<id>` and honoured once
+    // after the first render that contains a matching row. Cleared after
+    // a successful match so subsequent re-renders don't keep re-flashing.
+    let pendingFocusId = ctx && ctx.query && typeof ctx.query.focus === 'string'
+      ? ctx.query.focus
+      : '';
 
     function render() {
       const list = (store.state.speaker && store.state.speaker.favorites) || null;
@@ -78,6 +112,9 @@ export default defineView({
         body.replaceChildren(buildEmptyState());
       } else {
         body.replaceChildren(buildList(entries));
+        if (pendingFocusId && applyFocus(body, pendingFocusId)) {
+          pendingFocusId = '';
+        }
       }
     }
 

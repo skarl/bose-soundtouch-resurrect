@@ -26,13 +26,15 @@ import {
   parentKey,
   topicsKey,
 } from '../transport-state.js';
-import { cache } from '../tunein-cache.js';
+import { cache, TTL_STREAM } from '../tunein-cache.js';
 import { showToast } from '../toast.js';
+import { cgiErrorMessage } from '../error-messages.js';
 import { pickTrackLine, pickMetaLine, humaniseSourceKey } from '../np-derive.js';
 import { labelForTopic, lazyFetchTopicsList } from './now-playing-data.js';
 
 const POLL_MS = 2000;
 const PRESET_SLOTS = 6;
+const FAVORITE_SLOTS = 9;
 const LONG_PRESS_MS = 600;
 
 // Thin shim so the existing renderName callsites stay one-arg. The
@@ -100,6 +102,13 @@ export default defineView({
           </div>
           <div class="np-presets-grid" role="toolbar" aria-label="Presets"></div>
         </div>
+        <div class="np-favorites" hidden>
+          <div class="np-section-h">
+            <span>Favourites</span>
+            <span class="np-section-h__hint">tap to play · long-press to focus</span>
+          </div>
+          <div class="np-favorites-grid" role="toolbar" aria-label="Favourites"></div>
+        </div>
         <div class="np-asleep" hidden>
           <p>Speaker is asleep</p>
           <p class="np-asleep-hint">Press Play to wake it up.</p>
@@ -115,6 +124,8 @@ export default defineView({
     const sourcesEl  = root.querySelector('.np-sources');
     const sourceCurEl = root.querySelector('.np-source-current');
     const presetsEl  = root.querySelector('.np-presets-grid');
+    const favoritesSectionEl = root.querySelector('.np-favorites');
+    const favoritesEl = root.querySelector('.np-favorites-grid');
     const asleepEl   = root.querySelector('.np-asleep');
     const volumeRowEl = root.querySelector('.np-volume');
     const muteEl     = root.querySelector('.np-mute');
@@ -389,6 +400,148 @@ export default defineView({
       presetBtns.push(btn);
     }
 
+    // --- favourites grid (#129) ------------------------------------
+    //
+    // 3×3 preview of the user's favourites list. Mirrors the preset
+    // card visuals (hashHue tint, name overlay) but with three distinct
+    // rules:
+    //   - the whole section hides at zero favourites (no empty
+    //     placeholder, no heading);
+    //   - partial fills render only the cards that exist — favourites
+    //     have no concept of empty slots;
+    //   - 9+ favourites render the first nine; the tab is the overflow
+    //     surface.
+    //
+    // Gestures match the preset row: tap → /play via playGuideId, long-
+    // press / contextmenu → `#/favorites?focus=<id>` so the favourites
+    // tab can scroll the matching row into view and flash it.
+
+    let favoriteLongPressTimer = null;
+    let favoriteLongPressCancelled = false;
+
+    function clearFavoriteLongPress() {
+      if (favoriteLongPressTimer != null) {
+        clearTimeout(favoriteLongPressTimer);
+        favoriteLongPressTimer = null;
+      }
+    }
+    env.onCleanup(clearFavoriteLongPress);
+
+    async function onFavoriteClick(evt) {
+      const btn = evt.currentTarget;
+      if (favoriteLongPressCancelled) {
+        favoriteLongPressCancelled = false;
+        return;
+      }
+      const id = btn.dataset.favId;
+      const name = btn.dataset.favName || id;
+      if (!id) return;
+      if (btn.disabled) return;
+      btn.disabled = true;
+      btn.classList.add('is-loading');
+      const cacheKey = `tunein.stream.${id}`;
+      const cached = cache.get(cacheKey);
+      try {
+        const result = await playGuideId(id, name, cached || undefined);
+        if (result && result.ok) {
+          if (typeof result.url === 'string' && result.url) {
+            cache.set(cacheKey, result.url, TTL_STREAM);
+          }
+          showToast(`Playing on Bo: ${name}`);
+        } else {
+          cache.invalidate(cacheKey);
+          showToast(cgiErrorMessage(result));
+        }
+      } catch (_err) {
+        cache.invalidate(cacheKey);
+        showToast('Could not reach Bo');
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('is-loading');
+      }
+    }
+
+    function focusFavorite(id) {
+      if (!id) return;
+      location.hash = `#/favorites?focus=${encodeURIComponent(id)}`;
+    }
+
+    function onFavoritePointerDown(evt) {
+      if (evt.button !== undefined && evt.button !== 0) return;
+      const btn = evt.currentTarget;
+      const id = btn.dataset.favId;
+      if (!id || btn.disabled) return;
+      clearFavoriteLongPress();
+      favoriteLongPressCancelled = false;
+      favoriteLongPressTimer = setTimeout(() => {
+        favoriteLongPressTimer = null;
+        favoriteLongPressCancelled = true;
+        focusFavorite(id);
+      }, LONG_PRESS_MS);
+    }
+
+    function onFavoritePointerUp()     { clearFavoriteLongPress(); }
+    function onFavoritePointerCancel() { clearFavoriteLongPress(); }
+
+    function onFavoriteContextMenu(evt) {
+      evt.preventDefault();
+      const btn = evt.currentTarget;
+      const id = btn.dataset.favId;
+      if (!id || btn.disabled) return;
+      clearFavoriteLongPress();
+      favoriteLongPressCancelled = false;
+      focusFavorite(id);
+    }
+
+    function applyFavorites(favorites) {
+      const list = Array.isArray(favorites) ? favorites : [];
+      const visible = list.slice(0, FAVORITE_SLOTS);
+
+      // Hide the entire section at zero — no heading, no placeholder.
+      if (visible.length === 0) {
+        favoritesSectionEl.hidden = true;
+        favoritesEl.replaceChildren();
+        return;
+      }
+      favoritesSectionEl.hidden = false;
+
+      // Cheap signature so re-renders skip the rebuild when the visible
+      // slice hasn't changed. Mirrors the preset path's per-slot dataset
+      // diff but applies it to the whole grid because favourites are
+      // ordered and have no slot ids.
+      const sig = visible.map((e) => `${e.id}|${e.name || ''}|${e.art || ''}`).join('\n');
+      if (favoritesEl.dataset.renderedSig === sig) return;
+      favoritesEl.dataset.renderedSig = sig;
+
+      favoritesEl.replaceChildren();
+      for (const entry of visible) {
+        if (!entry || typeof entry.id !== 'string') continue;
+        const name = entry.name && entry.name.trim() ? entry.name : entry.id;
+
+        const btn = document.createElement('button');
+        btn.className = 'np-fav';
+        btn.type = 'button';
+        btn.dataset.favId = entry.id;
+        btn.dataset.favName = name;
+        btn.style.setProperty('--np-fav-hue', String(hashHue(name)));
+        btn.setAttribute('aria-label', `Play ${name}`);
+        btn.setAttribute('title', name);
+
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'np-fav-name';
+        labelSpan.textContent = name;
+        btn.appendChild(labelSpan);
+
+        btn.addEventListener('click',         onFavoriteClick);
+        btn.addEventListener('pointerdown',   onFavoritePointerDown);
+        btn.addEventListener('pointerup',     onFavoritePointerUp);
+        btn.addEventListener('pointercancel', onFavoritePointerCancel);
+        btn.addEventListener('contextmenu',   onFavoriteContextMenu);
+
+        favoritesEl.appendChild(btn);
+      }
+    }
+
     function applySourcePills(sources, activeSource) {
       const ready = (Array.isArray(sources) ? sources : [])
         .filter((s) => s && s.status === 'READY');
@@ -601,6 +754,7 @@ export default defineView({
     applyVolume(sp.volume);
     applySourcePills(sp.sources, sp.nowPlaying && sp.nowPlaying.source);
     applyPresets(sp.presets, sp.nowPlaying && sp.nowPlaying.item);
+    applyFavorites(sp.favorites);
 
     if (typeof document === 'undefined' || !document.hidden) startPolling();
     if (!store.state.speaker.presets) fetchPresetsOnce();
@@ -612,6 +766,7 @@ export default defineView({
         const activeSource = state.speaker.nowPlaying && state.speaker.nowPlaying.source;
         applySourcePills(state.speaker.sources, activeSource);
         applyPresets(state.speaker.presets, state.speaker.nowPlaying && state.speaker.nowPlaying.item);
+        applyFavorites(state.speaker.favorites);
       },
     };
   },
