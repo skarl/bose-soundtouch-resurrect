@@ -74,6 +74,56 @@ export function withFavoriteRemoved(list, id) {
   return list.slice(0, idx).concat(list.slice(idx + 1));
 }
 
+// replaceFavorites — write a hand-built next-list to the speaker, with
+// optimistic state + rollback to the supplied snapshot on failure.
+//
+// Used by the favourites tab (#127) for edit-in-place save, optimistic
+// delete, and undo-restore — each of which mutates the list in a shape
+// that withFavoriteAdded / withFavoriteRemoved can't express alone (e.g.
+// editing an entry's fields, restoring at a specific index).
+//
+// Behaviour:
+//   1. Sets state.speaker.favorites = next + touch('speaker') so the UI
+//      paints the optimistic state.
+//   2. POSTs the next array.
+//   3. On structured-error or transport throw, restores `prev`, touches
+//      again, and surfaces a toast. The caller picks the toast prefix
+//      via `errorLabel` ("Couldn't save favourite", "Couldn't delete
+//      favourite", etc.) so toasts stay specific to the action.
+//
+// Returns the envelope on success, the envelope or a synthetic
+// TRANSPORT envelope on failure (mirror of toggleFavorite).
+export async function replaceFavorites(store, next, prev, errorLabel) {
+  const safeNext = Array.isArray(next) ? next : [];
+  const safePrev = Array.isArray(prev) ? prev : [];
+  const label = typeof errorLabel === 'string' && errorLabel
+    ? errorLabel
+    : "Couldn't update favourites";
+
+  store.state.speaker.favorites = safeNext;
+  store.touch('speaker');
+
+  let envelope;
+  try {
+    envelope = await favoritesReplace(safeNext);
+  } catch (err) {
+    store.state.speaker.favorites = safePrev;
+    store.touch('speaker');
+    const msg = (err && err.message) || 'transport error';
+    showToast(`${label}: ${msg}`);
+    return { ok: false, error: { code: 'TRANSPORT', message: msg } };
+  }
+
+  if (!envelope || envelope.ok !== true) {
+    store.state.speaker.favorites = safePrev;
+    store.touch('speaker');
+    const code = (envelope && envelope.error && envelope.error.code) || 'UNKNOWN';
+    showToast(`${label} (${code})`);
+    return envelope || { ok: false, error: { code, message: '' } };
+  }
+  return envelope;
+}
+
 // toggleFavorite — optimistic add-or-remove with POST-side reconcile.
 //
 // store: the live observable store (state.js).

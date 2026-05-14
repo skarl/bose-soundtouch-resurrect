@@ -1177,6 +1177,173 @@ main {
   gap: 0.25rem;
 }
 
+/* Favourites row — [drag-handle stub] [body] [pencil] [trash]. The
+ * body is a flex-1 button so the row can be tapped to play without
+ * stealing pencil/trash click targets. Pencil expands the row in
+ * place: the form is appended as a sibling under the row controls and
+ * `.is-expanded` lifts the row's background so the form reads as
+ * "part of this entry". */
+.favorites-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.favorites-row.is-expanded {
+  background: var(--surface-hi);
+  /* Make the form span the full row when expanded. */
+  grid-template-columns: auto 1fr auto auto;
+}
+.favorites-row.is-expanded .favorites-row__edit {
+  grid-column: 1 / -1;
+}
+
+.favorites-row__drag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  color: var(--muted);
+  /* Visual stub only in #127; cursor hints the future affordance. */
+  cursor: grab;
+  opacity: 0.6;
+}
+
+.favorites-row__body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  min-width: 0;
+  border-radius: 4px;
+  transition: background 120ms ease;
+}
+.favorites-row__body:hover,
+.favorites-row__body:focus-visible {
+  background: var(--surface-hi);
+}
+.favorites-row__body:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.favorites-row__body.is-disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.favorites-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.favorites-row__name {
+  font-weight: 500;
+  font-size: 13.5px;
+  line-height: 1.2;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.favorites-row__note {
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.favorites-row__edit-btn,
+.favorites-row__delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 120ms ease, background 120ms ease;
+}
+.favorites-row__edit-btn:hover,
+.favorites-row__edit-btn:focus-visible,
+.favorites-row__delete-btn:hover,
+.favorites-row__delete-btn:focus-visible {
+  color: var(--fg);
+  background: var(--surface-hi);
+}
+.favorites-row__delete-btn:hover,
+.favorites-row__delete-btn:focus-visible {
+  color: var(--danger, #c0392b);
+}
+
+/* Inline edit form. Three single-line inputs + Save / Cancel. */
+.favorites-row__edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.favorites-edit__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.favorites-edit__label {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.favorites-edit__input {
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--fg);
+}
+.favorites-edit__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.favorites-edit__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.favorites-edit__btn {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--fg);
+  cursor: pointer;
+}
+.favorites-edit__btn--save {
+  background: var(--accent);
+  color: var(--accent-fg, white);
+  border-color: var(--accent);
+}
+
 .station-slogan {
   margin: 0 0 0.25rem;
   font-style: italic;
@@ -1331,6 +1498,33 @@ main {
 .toast.is-shown {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* Action toast — text + inline button (e.g. "Undo" after a favourite
+ * is deleted). pointer-events restored on the toast itself so the
+ * button is tappable; the container above keeps pointer-events:none. */
+.toast--action {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  pointer-events: auto;
+}
+.toast--action .toast__text {
+  flex: 1 1 auto;
+}
+.toast--action .toast__action {
+  font: inherit;
+  font-weight: 600;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--accent, #e0245e);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.toast--action .toast__action:hover,
+.toast--action .toast__action:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* --- preset modal (#/preset/N) ------------------------------------ */
