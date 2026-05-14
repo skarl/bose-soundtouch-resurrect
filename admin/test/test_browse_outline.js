@@ -259,13 +259,11 @@ test('renderOutline returns the total visible row count, skipping cursors / pivo
   assert.equal(total, 3);
 });
 
-test('renderOutline emits an empty-state for an entirely empty body', () => {
-  const body = doc.createElement('div');
-  const total = renderOutline(body, { head: { status: '200' }, body: [] });
-  assert.equal(total, 0);
-  const empty = findFirstByClass(body, 'browse-empty');
-  assert.ok(empty);
-});
+// renderOutline's top-level body:[] branch has moved upstream into
+// tunein-drill.resolveBrowseDrill (#122). The seam now returns
+// kind:'empty' for an empty body; the renderer paints emptyNode
+// directly without renderOutline being involved. The equivalent
+// fixture-driven test lives in test_tunein_drill.js.
 
 // --- primeTuneinSkipCaches preserves the #102 episode-name write ----
 

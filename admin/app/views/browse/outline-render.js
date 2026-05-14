@@ -166,30 +166,18 @@ export function emptyNode(message) {
 // card (header taken verbatim from the API's `text`, e.g.
 // "Local Stations (2)", "Stations", "Shows", "Explore Folk").
 // Flat payload → one card with no section header.
-// Tombstone payload → empty-state message.
+//
+// Body-level emptiness (body:[] or a lone tombstone) is resolved
+// upstream by tunein-drill.resolveBrowseDrill — those payloads never
+// reach this function; the drill renderer paints emptyNode directly.
+// Per-section emptiness inside a non-empty body is still handled here
+// (a sectioned body can have one empty section alongside populated
+// ones).
 //
 // Returns the total visible row count (cursors + pivots are excluded
 // — they're meta, not rows the user reads through).
 export function renderOutline(body, json) {
   const rawItems = Array.isArray(json && json.body) ? json.body : [];
-
-  if (rawItems.length === 0) {
-    body.appendChild(emptyNode('Nothing here.'));
-    return 0;
-  }
-
-  // Tombstone check (single text-only entry): § 6.2. A section
-  // container (anything with children) is not a tombstone even if
-  // classifyOutline tags it that way — the fallback in tunein-outline
-  // returns 'tombstone' for any type-less typeless URL-less guide-less
-  // outline, which also matches a bare section header.
-  const onlyEntryIsTombstone = rawItems.length === 1
-    && classifyOutline(rawItems[0]) === 'tombstone'
-    && !(Array.isArray(rawItems[0].children) && rawItems[0].children.length > 0);
-  if (onlyEntryIsTombstone) {
-    body.appendChild(emptyNode(rawItems[0].text || 'Nothing here.'));
-    return 0;
-  }
 
   // Local Radio surface (issue #82): c=local responses include a
   // `key="localCountry"` link pointing at the corresponding r-prefix
