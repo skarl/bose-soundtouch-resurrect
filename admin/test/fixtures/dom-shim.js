@@ -640,6 +640,13 @@ export function ev(type, init = {}) {
 
 // sessionStorage stub — install once. Files that want to inspect or
 // reset between tests can grab the underlying store via the export.
+//
+// The shim is installed at module-evaluation time below so that any
+// production module imported transitively through this file (e.g.
+// tunein-cache.js, which captures `sessionStorage` once at load) sees
+// a working backing store. Node < 22 has no built-in sessionStorage,
+// so without this top-level install the cache silently no-ops on the
+// CI runner (Node 20) while passing locally on Node ≥ 22.
 let _sessionStore = null;
 export function installSessionStorage() {
   if (_sessionStore) return _sessionStore;
@@ -652,6 +659,7 @@ export function installSessionStorage() {
   };
   return _sessionStore;
 }
+installSessionStorage();
 
 // fetch stub — never-resolving promise. Override per-test by reassigning
 // globalThis.fetch after the dom-shim import.
