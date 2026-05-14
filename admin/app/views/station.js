@@ -30,6 +30,7 @@ import { probe, assignToPreset, buildBosePayload } from '../probe.js';
 import { previewStream } from '../actions/index.js';
 import { cgiErrorMessage } from '../error-messages.js';
 import { pickArt, bestStream, buildMetaText, fmtCodec, fmtReliability } from '../station-verdict.js';
+import { favoriteHeart } from '../favorites.js';
 
 const ASSIGN_SLOTS = 6;
 
@@ -147,7 +148,9 @@ function renderSkeleton(root, sid) {
       <header class="station-header">
         <div class="station-art" hidden></div>
         <div class="station-header__body">
-          <h1 class="station-name">${sid}</h1>
+          <div class="station-name-row">
+            <h1 class="station-name">${sid}</h1>
+          </div>
           <p class="station-slogan"></p>
           <p class="station-meta">Loading metadata...</p>
         </div>
@@ -256,6 +259,19 @@ export default defineView({
     let stationArt = '';
     const getName = () => stationName;
     const getArt  = () => stationArt;
+
+    // Heart toggle next to the station name. `getEntry` reads the live
+    // name + art at click time so we don't lock in the placeholder
+    // before Describe.ashx lands. The component owns its own
+    // subscription to state.speaker.favorites; we hand it env.onCleanup
+    // so the unsub fires on route transition.
+    const heart = favoriteHeart({
+      getEntry: () => ({ id: sid, name: stationName, art: stationArt }),
+      store,
+      onCleanup: env.onCleanup,
+    });
+    const nameRow = root.querySelector('.station-name-row');
+    if (nameRow) nameRow.appendChild(heart);
 
     async function auditionStream(url, actx) {
       if (!actx || !actx.getProbe || !actx.getName) return;

@@ -25,12 +25,13 @@ const STATIC_NAMES = [
   'clock', 'zap', 'x', 'back',
   'chevron-left',
   'power',
+  'heart',
   'buffer',
 ];
 
-test('ICON_NAMES exposes 27 static glyphs + equalizer', () => {
-  assert.equal(STATIC_NAMES.length, 27);
-  assert.equal(ICON_NAMES.length, 28);
+test('ICON_NAMES exposes 28 static glyphs + equalizer', () => {
+  assert.equal(STATIC_NAMES.length, 28);
+  assert.equal(ICON_NAMES.length, 29);
   for (const n of STATIC_NAMES) assert.ok(ICON_NAMES.includes(n), `missing: ${n}`);
   assert.ok(ICON_NAMES.includes('equalizer'));
 });
