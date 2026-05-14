@@ -31,6 +31,7 @@ import {
   withFavoriteRemoved,
   replaceFavorites,
 } from '../favorites.js';
+import { installFavoriteDrag } from './favorites-drag.js';
 
 const UNDO_DWELL_MS = 5000;
 
@@ -185,18 +186,21 @@ function buildIconButton({ glyph, label, className, onClick }) {
 }
 
 // buildRow — one favourite entry rendered as the full management row.
-// Returns the row element; the caller hangs it on the list.
+// Returns { row, handle }; the caller hangs the row on the list and
+// wires drag on the handle (drag plumbing needs the listEl + live
+// store, both of which are owned at the buildList level).
 function buildRow({ entry, store, onActivity }) {
   const row = document.createElement('div');
   row.className = 'favorites-row';
   row.setAttribute('role', 'listitem');
   row.dataset.favId = entry.id;
 
-  // [drag-handle]
+  // [drag-handle] — wiring lives in views/favorites-drag.js and is
+  // attached after the row joins the DOM (the controller needs the
+  // list container as its parent).
   const handle = document.createElement('span');
   handle.className = 'favorites-row__drag';
   handle.setAttribute('aria-hidden', 'true');
-  // Stub only — no drag wiring in #127; #128 will add the behaviour.
   handle.appendChild(icon('drag-handle', 16));
   row.appendChild(handle);
 
@@ -307,16 +311,44 @@ function buildRow({ entry, store, onActivity }) {
   });
   row.appendChild(trash);
 
-  return row;
+  return { row, handle };
 }
 
-function buildList({ entries, store, onActivity }) {
+function buildList({ entries, store, onActivity, onCleanup }) {
   const list = document.createElement('div');
   list.className = 'favorites-list';
   list.setAttribute('role', 'list');
+  const built = [];
   for (const entry of entries) {
     if (!entry || typeof entry.id !== 'string') continue;
-    list.appendChild(buildRow({ entry, store, onActivity }));
+    const { row, handle } = buildRow({ entry, store, onActivity });
+    list.appendChild(row);
+    built.push({ entry, row, handle });
+  }
+
+  // Drag wiring (#128). Hung on each handle after the row joins the
+  // list so the controller can re-parent its ghost / indicator inside
+  // the live container. `getFromIdx` resolves the source index on
+  // pointerdown so a between-renders mutation doesn't desync.
+  for (const item of built) {
+    installFavoriteDrag({
+      handle: item.handle,
+      row: item.row,
+      listEl: list,
+      getList: () => {
+        const cur = store.state.speaker && store.state.speaker.favorites;
+        return Array.isArray(cur) ? cur : [];
+      },
+      getFromIdx: () => {
+        const cur = store.state.speaker && store.state.speaker.favorites;
+        return indexOfFavorite(Array.isArray(cur) ? cur : [], item.entry.id);
+      },
+      onDrop: (next, prev) => {
+        onActivity();
+        replaceFavorites(store, next, prev, "Couldn't reorder favourite");
+      },
+      onCleanup,
+    });
   }
   return list;
 }
@@ -388,7 +420,10 @@ export default defineView({
       if (entries.length === 0) {
         body.replaceChildren(buildEmptyState());
       } else {
-        body.replaceChildren(buildList({ entries, store, onActivity }));
+        body.replaceChildren(buildList({
+          entries, store, onActivity,
+          onCleanup: env.onCleanup,
+        }));
         if (pendingFocusId && applyFocus(body, pendingFocusId)) {
           pendingFocusId = '';
         }
