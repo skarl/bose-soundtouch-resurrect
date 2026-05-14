@@ -22,9 +22,12 @@ const {
   renderPillBar,
   renderFilterBadge,
   renderFilterBadges,
-  renderEntry,
   backHrefFor,
   crumbLabelFor,
+} = await import('../app/views/browse/crumbs.js');
+
+const {
+  renderEntry,
   _setChildCrumbsForTest,
 } = await import('../app/views/browse.js');
 
