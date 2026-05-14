@@ -1,3 +1,4 @@
+// see also: optimistic.js — discrete actions use that path instead
 // Slider merge contract. A slider field is a value the speaker owns
 // (actualXxx) and a target the user is dragging toward (targetXxx). The
 // controller mediates between three event streams without yanking the

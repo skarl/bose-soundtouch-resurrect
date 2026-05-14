@@ -1,3 +1,4 @@
+// see also: sliders.js — value-with-target drags use that path instead
 // Optimistic action helper. Applies a local state mutation eagerly,
 // fires the POST, and on rejection rolls back the mutation and surfaces
 // an error toast. Modelled after the slider controller in sliders.js:
