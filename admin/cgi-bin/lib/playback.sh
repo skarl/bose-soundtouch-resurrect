@@ -1,28 +1,33 @@
 # shellcheck shell=sh
 #
-# playback.sh — shared helpers for the playback-family CGIs
-# (/play, /preview, /presets). Sourced via `. "$(dirname "$0")/../../lib/playback.sh"`.
+# playback.sh — playback-family helpers (/play, /preview, /presets).
+# Sourced via `. "$(dirname "$0")/../../lib/playback.sh"`.
+#
+# Cross-CGI primitives (emit_error, csrf_guard, slurp_body, json_escape,
+# xml_escape, emit_ok_headers) live in cgi-common.sh, which this file
+# sources. The helpers here are playback-specific: the /select POST,
+# the <ContentItem> XML builder, the JSON body-field parsers, and the
+# small `emit_ok_empty` / CORS-preflight conveniences used by the three
+# playback CGIs.
 #
 # This file is sourced, not executed. It must:
 #   - Be busybox-shell safe (no bash-isms, no `local`).
-#   - Tolerate `set -u` in the caller — every referenced env var defaults
-#     via `${VAR:-}` and every helper documents its inputs.
+#   - Tolerate `set -u` in the caller.
 #   - Not run any code at source time apart from defining functions and
-#     a small set of read-only constants. Callers compose handlers.
-#
-# Error envelope: `{ ok:false, error: { code:"SHOUTY", message:"..." } }`.
-# All three playback CGIs use this shape so the SPA's cgiErrorMessage()
-# helper handles them uniformly. The /play CGI's pre-0.4.2 flat envelope
-# (`{ok:false, error:"off-air"}`) is gone — see admin/app/error-messages.js
-# for the client-side mapping that absorbs both shapes during transition.
-#
-# CSRF: busybox httpd v1.19.4 does not always forward Origin as
-# HTTP_ORIGIN on this firmware, so we ALSO check HTTP_REFERER (which
-# busybox does forward). Same shape as cgi-bin/api/v1/speaker — kept in
-# one place here so the three playback CGIs can't drift apart again.
+#     a small set of read-only constants.
+
+# Pull in the cross-CGI primitives unless the caller has already done so
+# (e.g. a unit test that sourced cgi-common.sh first from a different
+# location). Probing for one of its definitions keeps the source path
+# resolution simple: `$(dirname "$0")` is the calling CGI's directory,
+# so `../../lib/` reaches cgi-bin/lib/ both for /play and /preview etc.
+# shellcheck source=cgi-common.sh
+if ! command -v emit_error >/dev/null 2>&1; then
+    . "$(dirname "$0")/../../lib/cgi-common.sh"
+fi
 
 # Resolver path for per-station Bose JSON. Same constant in all three
-# CGIs pre-extract; centralising it here avoids the three-copy drift.
+# playback CGIs pre-extract; centralised here to avoid drift.
 # shellcheck disable=SC2034  # consumed by sourcing CGIs
 PLAYBACK_RESOLVER_DIR='/mnt/nv/resolver/bmx/tunein/v1/playback/station'
 
@@ -33,41 +38,9 @@ PLAYBACK_SPEAKER_BASE='http://localhost:8090'
 # Fallback for $TMPDIR when busybox httpd doesn't set one.
 PLAYBACK_TMPDIR="${TMPDIR:-/tmp}"
 
-# --- envelope emitters ---------------------------------------------
+# --- success-envelope conveniences --------------------------------
 #
-# emit_error <status-line> <SHOUTY_CODE> <message>
-# emit_error_ok <SHOUTY_CODE> <message>   (200 OK with ok:false — used
-#                                           for the placeholder-filter
-#                                           outcomes that aren't really
-#                                           transport errors)
-#
-# emit_ok_headers   — print the success preamble; caller writes the body.
-# emit_ok_empty     — `{ok:true}` shorthand (preview / presets POST).
-
-emit_error() {
-    pb_status="$1"
-    pb_code="$2"
-    pb_msg="$3"
-    printf 'Status: %s\r\n' "$pb_status"
-    printf 'Content-Type: application/json; charset=utf-8\r\n'
-    printf 'Cache-Control: no-store\r\n'
-    printf 'Access-Control-Allow-Origin: *\r\n'
-    printf '\r\n'
-    pb_msg_j=$(json_escape "$pb_msg")
-    printf '{"ok":false,"error":{"code":"%s","message":"%s"}}\n' \
-        "$pb_code" "$pb_msg_j"
-}
-
-emit_ok_headers() {
-    printf 'Status: 200 OK\r\n'
-    printf 'Content-Type: application/json; charset=utf-8\r\n'
-    printf 'Cache-Control: no-store\r\n'
-    printf 'Access-Control-Allow-Origin: *\r\n'
-    printf 'Access-Control-Allow-Methods: %s\r\n' "${1:-POST, OPTIONS}"
-    printf 'Access-Control-Allow-Headers: Content-Type\r\n'
-    printf '\r\n'
-}
-
+# emit_ok_empty — `{ok:true}` shorthand (preview / presets POST).
 emit_ok_empty() {
     emit_ok_headers "${1:-POST, OPTIONS}"
     printf '{"ok":true}\n'
@@ -75,7 +48,7 @@ emit_ok_empty() {
 
 # --- CORS preflight ------------------------------------------------
 #
-# Sources call this BEFORE doing any work and exit if it returns 0.
+# Callers invoke this BEFORE any work and exit if it returns 0.
 # Returns 0 (i.e. "handled, please exit") iff REQUEST_METHOD == OPTIONS.
 # The allowed-methods string is per-CGI (presets includes GET, the
 # others don't), so callers pass it explicitly.
@@ -89,59 +62,6 @@ handle_cors_preflight() {
     printf 'Access-Control-Allow-Headers: Content-Type\r\n'
     printf '\r\n'
     return 0
-}
-
-# --- CSRF guard ----------------------------------------------------
-#
-# Same shape as cgi-bin/api/v1/speaker: a request whose Origin OR
-# Referer points at a different host than HTTP_HOST is rejected with
-# 403 CSRF_BLOCKED. Empty Origin/Referer (curl, same-origin GET-style)
-# passes freely.
-#
-# Returns 0 if the caller should continue, 1 if a 403 has already been
-# emitted (caller exits). Honour: the caller is responsible for the
-# `exit 0` — this helper does not call exit so it's safe under `set -u`.
-csrf_guard() {
-    case "${HTTP_ORIGIN:-}" in
-        "http://${HTTP_HOST:-}"|"https://${HTTP_HOST:-}"|"")
-            ;;
-        *)
-            emit_error 403 CSRF_BLOCKED \
-                "cross-origin mutating request rejected"
-            return 1
-            ;;
-    esac
-    pb_ref_host=$(printf '%s' "${HTTP_REFERER:-}" | \
-        sed 's|^https\{0,1\}://||; s|/.*||')
-    if [ -n "$pb_ref_host" ] && [ "$pb_ref_host" != "${HTTP_HOST:-}" ]; then
-        emit_error 403 CSRF_BLOCKED \
-            "cross-origin mutating request rejected"
-        return 1
-    fi
-    return 0
-}
-
-# --- escape helpers ------------------------------------------------
-
-# JSON-escape a string for embedding as a JSON value. Handles the two
-# JSON-mandatory escapes plus the common control chars. Doesn't escape
-# Unicode — inputs are short and ASCII in practice.
-json_escape() {
-    printf '%s' "$1" \
-        | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
-        | tr '\n' ' ' \
-        | tr '\r' ' ' \
-        | tr '\t' ' '
-}
-
-# XML-escape a string for embedding in an attribute or element value.
-xml_escape() {
-    printf '%s' "$1" | sed \
-        -e 's/&/\&amp;/g' \
-        -e 's/</\&lt;/g' \
-        -e 's/>/\&gt;/g' \
-        -e 's/"/\&quot;/g' \
-        -e "s/'/\\&apos;/g"
 }
 
 # --- JSON field parsers --------------------------------------------
@@ -193,21 +113,6 @@ json_object_field() {
             out = out "\n"
         }
     '
-}
-
-# --- request-body slurp -------------------------------------------
-#
-# slurp_body <dest>
-# Read up to CONTENT_LENGTH bytes from stdin into <dest>. Truncates the
-# file if CONTENT_LENGTH is missing or zero. Callers own the file
-# (path + trap-driven cleanup).
-slurp_body() {
-    pb_cl="${CONTENT_LENGTH:-0}"
-    if [ "$pb_cl" -gt 0 ] 2>/dev/null; then
-        dd bs=1 count="$pb_cl" of="$1" 2>/dev/null
-    else
-        : >"$1"
-    fi
 }
 
 # --- ContentItem builder ------------------------------------------

@@ -34,6 +34,9 @@ RENDER='render=json'
 # and TuneIn's OPML endpoint serves the same body over either scheme.
 BASE='http://opml.radiotime.com'
 
+# shellcheck source=../../lib/cgi-common.sh
+. "$(dirname "$0")/../../lib/cgi-common.sh"
+
 # CORS preflight: respond and exit before doing any work.
 if [ "${REQUEST_METHOD:-GET}" = 'OPTIONS' ]; then
   printf 'Status: 204 No Content\r\n'
@@ -43,16 +46,6 @@ if [ "${REQUEST_METHOD:-GET}" = 'OPTIONS' ]; then
   printf '\r\n'
   exit 0
 fi
-
-emit_error() {
-  printf 'Status: %s\r\n' "$1"
-  printf 'Content-Type: application/json; charset=utf-8\r\n'
-  printf 'Cache-Control: no-store\r\n'
-  printf 'Access-Control-Allow-Origin: *\r\n'
-  printf '\r\n'
-  printf '{"error":"%s"}\n' "$2"
-  exit 0
-}
 
 # Resolve PATH_INFO to a TuneIn endpoint + extra query string.
 # QUERY_STRING is forwarded for /search and /browse (the only routes
@@ -74,7 +67,8 @@ case "$PI" in
     SID=${PI#/probe/}
     URL="$BASE/Tune.ashx?$MAGIC_TUNE&$RENDER&id=$SID" ;;
   *)
-    emit_error '404 Not Found' 'unknown tunein route' ;;
+    emit_error '404 Not Found' UNKNOWN_ROUTE 'unknown tunein route'
+    exit 0 ;;
 esac
 
 # Headers first, then body. busybox wget writes the body to stdout

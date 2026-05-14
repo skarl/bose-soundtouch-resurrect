@@ -16,13 +16,20 @@ set -u
 # any cwd. POSIX-portable: %P doesn't exist, but the worktree path
 # always has admin/test/test_play_cgi as the deepest two segments.
 THIS_DIR=$(cd "$(dirname "$0")" && pwd)
+COMMON="$THIS_DIR/../../cgi-bin/lib/cgi-common.sh"
 LIB="$THIS_DIR/../../cgi-bin/lib/playback.sh"
 
-if [ ! -f "$LIB" ]; then
-    printf 'fixture missing: %s\n' "$LIB" >&2
-    exit 1
-fi
+for f in "$COMMON" "$LIB"; do
+    if [ ! -f "$f" ]; then
+        printf 'fixture missing: %s\n' "$f" >&2
+        exit 1
+    fi
+done
 
+# Source the cross-CGI primitives first; playback.sh skips its own
+# source step when emit_error is already defined.
+# shellcheck source=../../cgi-bin/lib/cgi-common.sh
+. "$COMMON"
 # shellcheck source=../../cgi-bin/lib/playback.sh
 . "$LIB"
 

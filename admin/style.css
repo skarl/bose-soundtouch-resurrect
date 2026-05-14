@@ -2003,6 +2003,12 @@ select.settings-input {
 
 .shell-body {
   overflow-y: auto;
+  /* Belt-and-braces: a stray wide descendant (long unbreakable label,
+     fixed-width artwork) must never force the whole shell to scroll
+     horizontally on a phone viewport. The container-query block at
+     §1642 narrows per-component layouts; this is the safety net for
+     anything those rules don't cover. Issue #119. */
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding: 0.75rem 1rem 1rem;
   max-width: 720px;
@@ -3033,6 +3039,12 @@ select.settings-input {
 a.browse-bar__crumb {
   text-decoration: none;
   color: var(--fg);
+  /* Long station names ("Bayerischer Rundfunk - Bayern 1") must wrap
+     inside the crumb rather than force the trail wider than its
+     parent. `anywhere` kicks in only when the segment can't fit on
+     a line otherwise. Issue #119. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 a.browse-bar__crumb:hover { text-decoration: underline; }
@@ -3054,6 +3066,11 @@ a.browse-bar__crumb:focus-visible {
   color: var(--fg);
   font-weight: 600;
   cursor: default;
+  /* Same wrap policy as the link crumbs above — the current segment
+     is often the longest text in the trail (full station / show
+     name) and must not push the trail past the viewport. Issue #119. */
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .browse-bar__crumb.is-current:hover { text-decoration: none; }
