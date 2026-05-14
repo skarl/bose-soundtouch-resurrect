@@ -222,6 +222,20 @@ export async function reconcile(store) {
   store.touch('speaker');
 }
 
+// Refresh one field by name. Same shape as the hint-only fallback in
+// dispatch(): fetch via the row's fetcher (or xmlGet), swallow rejection
+// and null payloads, apply and notify once on success. Returns nothing —
+// callers observe the new value via the store subscription.
+export async function reconcileField(store, fieldName) {
+  const entry = BY_NAME.get(fieldName);
+  if (!entry) return;
+  let value;
+  try { value = await fetchEntry(entry); } catch (_err) { return; }
+  if (value == null) return;
+  applyEntry(entry, store.state, value);
+  store.touch('speaker');
+}
+
 // Locate the first descendant element matching the entry's `tag` inside
 // the envelope child and parse it. Returns null when the envelope is
 // hint-only (no inline payload) so dispatch() can fall back to fetch.
