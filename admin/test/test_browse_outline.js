@@ -356,6 +356,72 @@ test('primeLabelForEntry emits a `<anchor>:<filter>` combined token for filter-b
   tc.cache.invalidate('tunein.label.r101821:g26');
 });
 
+// --- issue #117: parasitic filter context on terminal entities ---------
+//
+// The TuneIn cursor URL for a section carries the parent's scoping
+// filter (`&filter=s` for a "stations only" cursor on a genre page).
+// The service echoes that filter back into every row URL on the
+// follow-on page, including `Tune.ashx?id=s<NNN>&filter=s` for leaf
+// stations where the filter has no functional meaning. The cache
+// key for a terminal entity is its identity — `guide_id` alone —
+// not the arrival path. The bare-anchor token rule keeps page-0 and
+// page-N visits of the same station from double-keying the cache.
+
+test('primeLabelForEntry strips parasitic filter context from station URLs (#117)', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.s10003');
+  tc.cache.invalidate('tunein.label.s10003:s');
+  // The wire shape the TuneIn service emits for cursor-page stations:
+  // a Tune URL with the parent cursor's `filter=s` echoed in.
+  primeLabelForEntry({
+    type: 'audio',
+    guide_id: 's10003',
+    text: 'Radio Folk Forever',
+    URL: 'http://opml.radiotime.com/Tune.ashx?id=s10003&filter=s',
+  });
+  assert.equal(tc.cache.get('tunein.label.s10003'), 'Radio Folk Forever',
+    'station label caches under the bare guide_id');
+  assert.equal(tc.cache.get('tunein.label.s10003:s'), undefined,
+    'no double-key under the parasitic filter token');
+  tc.cache.invalidate('tunein.label.s10003');
+});
+
+test('primeLabelForEntry strips parasitic filter context from topic URLs (#117)', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.t40001');
+  tc.cache.invalidate('tunein.label.t40001:s');
+  // Topics classify as `topic` and tune via Tune.ashx — same parasitic
+  // filter inheritance applies.
+  primeLabelForEntry({
+    type: 'link',
+    item: 'topic',
+    guide_id: 't40001',
+    text: 'Episode 42',
+    URL: 'http://opml.radiotime.com/Tune.ashx?id=t40001&filter=s',
+  });
+  assert.equal(tc.cache.get('tunein.label.t40001'), 'Episode 42',
+    'topic label caches under the bare guide_id');
+  assert.equal(tc.cache.get('tunein.label.t40001:s'), undefined,
+    'no double-key under the parasitic filter token');
+  tc.cache.invalidate('tunein.label.t40001');
+});
+
+test('primeLabelForEntry keeps the combined token for filter-bearing drill rows (#117)', async () => {
+  const tc = await import('../app/tunein-cache.js');
+  tc.cache.invalidate('tunein.label.r101821:g26');
+  // Drill rows whose URL carries a filter encode legitimate state
+  // (e.g. "Bayreuth filtered by Country" is a distinct page from
+  // bare "Bayreuth"), so the combined token rule from #106 stands.
+  primeLabelForEntry({
+    type: 'link',
+    text: 'Bayreuth · Country',
+    URL: 'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=g26',
+  });
+  assert.equal(tc.cache.get('tunein.label.r101821:g26'), 'Bayreuth · Country',
+    'filter-bearing drill row keeps the combined cache token');
+  tc.cache.invalidate('tunein.label.r101821:g26');
+});
+
 test('primeLabelForEntry skips entries with no usable label or drill target', async () => {
   const tc = await import('../app/tunein-cache.js');
   // No text → no write

@@ -305,15 +305,23 @@ test('TuneIn drill: cache miss → fetch page 0 → paginate → classify → re
   assert.equal(cache.get('tunein.label.g81'), 'Bluegrass',
     'pivot chip Bluegrass cached its label under tunein.label.g81');
 
-  // The page-1 rows we appended also primed their labels. Page-1 row
-  // URLs carry the parent's `filter=s` (the cursor-emitted filter; see
-  // tunein-url § 7.2), so the cache token folds the filter into the key:
-  // `tunein.label.<id>:<filter>`. That's the correct multi-filter
-  // composition rule from outline-render.crumbTokenForParts (#106).
-  assert.equal(cache.get('tunein.label.s10003:s'), 'Radio Folk Forever',
-    'page-1 station s10003 cached its label under the filter-bearing token');
-  assert.equal(cache.get('tunein.label.s10004:s'), 'Sligo Folk Radio',
-    'page-1 station s10004 cached its label under the filter-bearing token');
+  // The page-1 rows we appended also primed their labels under the
+  // bare guide_id. Their wire URLs carry the parent cursor's
+  // `&filter=s` ("stations only") which the TuneIn service echoes back
+  // into every emitted row URL — but that filter is parasitic on a
+  // Tune.ashx for a leaf station, so terminal-entity rows cache under
+  // the bare anchor regardless of arrival path (#117).
+  assert.equal(cache.get('tunein.label.s10003'), 'Radio Folk Forever',
+    'page-1 station s10003 cached its label under the bare guide_id');
+  assert.equal(cache.get('tunein.label.s10004'), 'Sligo Folk Radio',
+    'page-1 station s10004 cached its label under the bare guide_id');
+  // The parasitic-filter form must NOT exist — stations identify by
+  // guide_id alone, the inherited parent filter is not part of the
+  // entity's label key.
+  assert.equal(cache.get('tunein.label.s10003:s'), undefined,
+    'no parasitic filter-bearing cache entry leaks alongside the bare key');
+  assert.equal(cache.get('tunein.label.s10004:s'), undefined,
+    'no parasitic filter-bearing cache entry leaks alongside the bare key');
 
   // No leak: a guide_id we never rendered has no cache entry.
   assert.equal(cache.get('tunein.label.s99999'), undefined,

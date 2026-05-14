@@ -493,15 +493,44 @@ function crumbTokenForParts(parts) {
 //   - the entry has no usable drill parts (no anchor → no crumb token)
 //   - the entry has no usable label text
 //
+// Terminal-entity rule (#117): for `station` / `topic` rows — audio
+// leaves whose `URL` is a `Tune.ashx?id=<sid>` form — strip filter
+// context from the cache token. The TuneIn service echoes the
+// parent cursor's scoping filter (e.g. `&filter=s` for "stations
+// only") back into every emitted row URL, including the leaf Tune
+// URLs where the filter has no functional meaning. Caching "Folk
+// Alley" under both `s10001` (page-0 visit) and `s10001:s`
+// (cursor-emitted page-1 visit) double-keys the same logical entity.
+// The entity name is identified by `guide_id`, not by how the user
+// arrived — so terminal entities cache under the bare anchor.
+//
+// Drill rows (categories / regions / shows) keep the combined token:
+// `r101821:g26` ("Bayreuth · Country") is a distinct page from
+// `r101821` ("Bayreuth"), with its own human label, so the filter
+// IS load-bearing state for those.
+//
 // Never fires a fetch — every value comes from data already in hand.
 export function primeLabelForEntry(entry) {
   if (!entry || typeof entry !== 'object') return;
   const text = typeof entry.text === 'string' ? entry.text.trim() : '';
   if (!text) return;
   const parts = drillPartsFor(entry);
-  const token = crumbTokenForParts(parts);
+  const kind = classifyOutline(entry);
+  const token = (kind === 'station' || kind === 'topic')
+    ? bareAnchorToken(parts)
+    : crumbTokenForParts(parts);
   if (!token) return;
   cache.set(`tunein.label.${token}`, text, TTL_LABEL);
+}
+
+// Anchor-only token (no filter suffix) — for caching terminal-entity
+// labels whose identity is fully determined by their guide_id. See
+// the #117 note on primeLabelForEntry.
+function bareAnchorToken(parts) {
+  if (!parts) return null;
+  if (typeof parts.id === 'string' && parts.id !== '') return parts.id;
+  if (typeof parts.c  === 'string' && parts.c  !== '') return parts.c;
+  return null;
 }
 
 // primeLabelForChip — same idea as primeLabelForEntry, but tailored to
