@@ -17,44 +17,14 @@
 
 set -u
 
-emit_error() {
-    status="$1"
-    code="$2"
-    msg="$3"
-    printf 'Status: %s\r\n' "$status"
-    printf 'Content-Type: application/json; charset=utf-8\r\n'
-    printf 'Cache-Control: no-store\r\n'
-    printf 'Access-Control-Allow-Origin: *\r\n'
-    printf '\r\n'
-    printf '{"ok":false,"error":{"code":"%s","message":"%s"}}\n' "$code" "$msg"
-}
+# shellcheck source=../../lib/cgi-common.sh
+. "$(dirname "$0")/../../lib/cgi-common.sh"
 
 # CSRF guard: same-origin or no cross-origin header (curl) → pass.
-# Cross-origin mutating request → 403.
-#
-# busybox httpd v1.19.4 does not forward the Origin header as HTTP_ORIGIN,
-# so we check HTTP_REFERER (which busybox DOES forward). A Referer that
-# starts with a different origin than HTTP_HOST is treated as cross-origin.
-# Absent Referer (curl, same-origin navigations) passes freely.
+# Cross-origin mutating request → 403. Idempotent verbs aren't guarded;
+# the browser's default CORS rules already block cross-origin reads.
 case "${REQUEST_METHOD:-GET}" in
-    POST|PUT|DELETE)
-        case "${HTTP_ORIGIN:-}" in
-            "http://${HTTP_HOST:-}"|"https://${HTTP_HOST:-}"|"")
-                ;;
-            *)
-                emit_error 403 CSRF_BLOCKED \
-                    "cross-origin mutating request rejected"
-                exit 0
-                ;;
-        esac
-        REFERER_HOST=$(printf '%s' "${HTTP_REFERER:-}" | \
-            sed 's|^https\{0,1\}://||; s|/.*||')
-        if [ -n "$REFERER_HOST" ] && [ "$REFERER_HOST" != "${HTTP_HOST:-}" ]; then
-            emit_error 403 CSRF_BLOCKED \
-                "cross-origin mutating request rejected"
-            exit 0
-        fi
-        ;;
+    POST|PUT|DELETE) csrf_guard || exit 0 ;;
 esac
 
 # PATH_INFO is everything after the script name. e.g. for
