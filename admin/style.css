@@ -242,6 +242,34 @@ main {
 .conn-pill[data-state="reconnecting"] { color: var(--pill-amber); }
 .conn-pill[data-state="polling"]      { color: var(--fg-muted);   }
 
+/* --- page title (shared across top-level views) ------------------ */
+
+/* Flex container that puts the page heading on one row with any
+   sibling top-of-page affordance (filter input, action button, etc.).
+   Stacks on narrow viewports so the title keeps its full width. */
+.page-title-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  margin: 0 0 1rem;
+}
+
+@media (min-width: 480px) {
+  .page-title-bar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+}
+
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+}
+
 /* --- browse view ------------------------------------------------- */
 
 /* Segmented 3-tab control. Sunken track + active pill matches
@@ -1256,10 +1284,6 @@ main {
 .favorites {
   padding: 1rem;
 }
-.favorites-header h1 {
-  font-size: 1.5rem;
-  margin: 0 0 1rem;
-}
 .favorites-empty {
   color: var(--muted);
   padding: 2rem 0;
@@ -1775,12 +1799,6 @@ main {
   flex-direction: column;
   gap: 0.5rem;
   max-width: 640px;
-}
-
-.settings-title {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin: 0 0 0.25rem;
 }
 
 /* Card-with-chevron collapsibles. The header is a real <button>, so

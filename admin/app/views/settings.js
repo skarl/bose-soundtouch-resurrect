@@ -37,7 +37,9 @@ export default defineView({
   mount(root, store, _ctx, env) {
     mount(root, html`
       <section class="settings-view" data-view="settings">
-        <h1 class="settings-title">Settings</h1>
+        <div class="page-title-bar">
+          <h1 class="page-title">Settings</h1>
+        </div>
         <div class="settings-cards"></div>
       </section>
     `);
