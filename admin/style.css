@@ -1031,9 +1031,11 @@ main {
   margin: 0 0 0.75rem;
 }
 
-/* Pill-shaped input with leading search glyph + trailing clear button.
-   The wrapper is the visible border, the <input> is borderless inside. */
-.search-input-wrap {
+/* Pill-shaped input with leading glyph + trailing clear button. The
+   wrapper is the visible border, the <input> is borderless inside.
+   Namespaced .pill-input* so non-search callers (favourites filter,
+   future browse-text-filter) can reuse the shell. */
+.pill-input-wrap {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1046,17 +1048,17 @@ main {
   transition: border-color 120ms ease, background 120ms ease;
 }
 
-.search-input-wrap:focus-within {
+.pill-input-wrap:focus-within {
   border-color: var(--accent);
   background: var(--bg);
   color: var(--fg);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .search-input-wrap { transition: none; }
+  .pill-input-wrap { transition: none; }
 }
 
-.search-input {
+.pill-input {
   flex: 1 1 auto;
   min-width: 0;
   font: inherit;
@@ -1068,16 +1070,16 @@ main {
   padding: 0;
 }
 
-.search-input::placeholder { color: var(--muted); }
+.pill-input::placeholder { color: var(--muted); }
 
-.search-input-icon {
+.pill-input-icon {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
   color: var(--muted);
 }
 
-.search-clear {
+.pill-input-clear {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1090,7 +1092,7 @@ main {
   cursor: pointer;
 }
 
-.search-clear:hover { color: var(--fg); background: var(--surface-hi); }
+.pill-input-clear:hover { color: var(--fg); background: var(--surface-hi); }
 
 .search-pending {
   display: inline-block;

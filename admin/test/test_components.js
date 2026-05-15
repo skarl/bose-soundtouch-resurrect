@@ -25,6 +25,7 @@ const {
   throttleLeadingTrailing,
   stationRow,
   stationCard,
+  pillInput,
 } = await import('../app/components.js');
 
 // --- pill ------------------------------------------------------------
@@ -421,4 +422,112 @@ test('stationCard href: p-prefix sid routes to c=pbrowse show landing', () => {
 test('stationCard href: unknown prefix collapses to "#"', () => {
   const c = stationCard({ sid: 'g42', name: 'Genre card' });
   assert.equal(c.getAttribute('href'), '#');
+});
+
+// --- pillInput -------------------------------------------------------
+
+test('pillInput: builds the .pill-input-wrap shell with leading icon + input', () => {
+  const { wrap, input } = pillInput({
+    placeholder: 'Type…',
+    ariaLabel:   'Search things',
+  });
+  assert.ok(classOf(wrap).includes('pill-input-wrap'));
+  assert.ok(findFirstByClass(wrap, 'pill-input-icon'), 'leading icon slot present');
+  assert.equal(input.tagName, 'input');
+  assert.equal(input.getAttribute('class'), 'pill-input');
+  assert.equal(input.getAttribute('aria-label'), 'Search things');
+  assert.equal(input.getAttribute('placeholder'), 'Type…');
+});
+
+test('pillInput: initialValue pre-fills the input and shows the clear button', () => {
+  const { wrap, input } = pillInput({ initialValue: 'jazz' });
+  assert.equal(input.getAttribute('value'), 'jazz');
+  const clearBtn = findFirstByClass(wrap, 'pill-input-clear');
+  assert.ok(clearBtn, 'clear-X present by default');
+  assert.equal(clearBtn.hidden, false, 'clear-X visible when initial value is non-empty');
+});
+
+test('pillInput: clear-X is hidden when initialValue is empty', () => {
+  const { wrap } = pillInput({ initialValue: '' });
+  const clearBtn = findFirstByClass(wrap, 'pill-input-clear');
+  assert.equal(clearBtn.hidden, true);
+});
+
+test('pillInput: showClear=false omits the clear button entirely', () => {
+  const { wrap } = pillInput({ showClear: false });
+  assert.equal(findFirstByClass(wrap, 'pill-input-clear'), null);
+});
+
+test('pillInput: input event fires onInput with the live value (no debounce)', () => {
+  const calls = [];
+  const { input } = pillInput({
+    onInput: (v) => calls.push(v),
+  });
+  input.setAttribute('value', 'kexp');
+  input.dispatchEvent(ev('input', { target: input }));
+  assert.deepEqual(calls, ['kexp']);
+});
+
+test('pillInput: debounceMs > 0 trailing-debounces onInput', async () => {
+  const calls = [];
+  const { input } = pillInput({
+    debounceMs: 30,
+    onInput: (v) => calls.push(v),
+  });
+  input.setAttribute('value', 'a');
+  input.dispatchEvent(ev('input', { target: input }));
+  input.setAttribute('value', 'ab');
+  input.dispatchEvent(ev('input', { target: input }));
+  input.setAttribute('value', 'abc');
+  input.dispatchEvent(ev('input', { target: input }));
+  assert.deepEqual(calls, [], 'no synchronous fire while debouncing');
+  await new Promise((r) => setTimeout(r, 60));
+  assert.deepEqual(calls, ['abc'], 'only the trailing value fires');
+});
+
+test('pillInput: clear-X click empties input, fires onInput(""), refocuses', () => {
+  const calls = [];
+  const { wrap, input } = pillInput({
+    initialValue: 'folk',
+    onInput: (v) => calls.push(v),
+  });
+  input.setAttribute('value', 'folk');
+  const clearBtn = findFirstByClass(wrap, 'pill-input-clear');
+  globalThis.__focus_target__ = null;
+  clearBtn.dispatchEvent(ev('click'));
+  assert.equal(input.getAttribute('value'), '');
+  assert.equal(clearBtn.hidden, true, 'clear-X hides itself after clearing');
+  assert.deepEqual(calls, ['']);
+  assert.equal(globalThis.__focus_target__, input, 'focus returns to the input');
+});
+
+test('pillInput: setValue() updates the input and fires onInput when changed', () => {
+  const calls = [];
+  const { input, setValue } = pillInput({
+    initialValue: 'one',
+    onInput: (v) => calls.push(v),
+  });
+  setValue('two');
+  assert.equal(input.getAttribute('value'), 'two');
+  assert.deepEqual(calls, ['two']);
+});
+
+test('pillInput: setValue() with the same value is a no-op', () => {
+  const calls = [];
+  const { setValue } = pillInput({
+    initialValue: 'same',
+    onInput: (v) => calls.push(v),
+  });
+  setValue('same');
+  assert.deepEqual(calls, [], 'same value does not re-fire onInput');
+});
+
+test('pillInput: setValue() shows / hides clear-X to match the new value', () => {
+  const { wrap, setValue } = pillInput({ initialValue: '' });
+  const clearBtn = findFirstByClass(wrap, 'pill-input-clear');
+  assert.equal(clearBtn.hidden, true);
+  setValue('something');
+  assert.equal(clearBtn.hidden, false);
+  setValue('');
+  assert.equal(clearBtn.hidden, true);
 });

@@ -122,6 +122,107 @@ export function updatePill(el, state) {
   applyConnPill(el, modeOf(state));
 }
 
+// pillInput({ placeholder, ariaLabel, initialValue, onInput, debounceMs,
+//             showClear, iconGlyph }) — pill-shaped text input with a
+// leading icon and an optional clear-X. Returns { wrap, input, setValue }.
+//
+// `wrap` is the .pill-input-wrap element ready to mount. `input` is the
+// live <input> reference (callers that want to focus / select can).
+// `setValue(v)` sets the input value programmatically and fires onInput
+// when the value changes; clear-X empties the input, fires onInput(''),
+// and refocuses. When `debounceMs > 0`, onInput is trailing-debounced.
+export function pillInput({
+  placeholder = '',
+  ariaLabel = '',
+  initialValue = '',
+  onInput,
+  debounceMs = 0,
+  showClear = true,
+  iconGlyph = 'search',
+} = {}) {
+  const wrap = document.createElement('div');
+  wrap.className = 'pill-input-wrap';
+
+  const leading = document.createElement('span');
+  leading.className = 'pill-input-icon';
+  leading.appendChild(icon(iconGlyph, 14));
+  wrap.appendChild(leading);
+
+  const input = document.createElement('input');
+  input.setAttribute('type', 'search');
+  input.setAttribute('class', 'pill-input');
+  if (placeholder) input.setAttribute('placeholder', placeholder);
+  input.setAttribute('autocomplete', 'off');
+  input.setAttribute('spellcheck', 'false');
+  if (ariaLabel) input.setAttribute('aria-label', ariaLabel);
+  input.value = initialValue;
+  wrap.appendChild(input);
+
+  let clearBtn = null;
+  if (showClear) {
+    clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'pill-input-clear';
+    clearBtn.setAttribute('aria-label', 'Clear');
+    clearBtn.appendChild(icon('x', 12));
+    clearBtn.hidden = !initialValue;
+    wrap.appendChild(clearBtn);
+  }
+
+  let debounceTimer = null;
+  function clearDebounce() {
+    if (debounceTimer != null) {
+      clearTimeout(debounceTimer);
+      debounceTimer = null;
+    }
+  }
+
+  function fire(value) {
+    if (typeof onInput !== 'function') return;
+    if (debounceMs > 0) {
+      clearDebounce();
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        onInput(value);
+      }, debounceMs);
+    } else {
+      onInput(value);
+    }
+  }
+
+  function syncClearVisibility(value) {
+    if (clearBtn) clearBtn.hidden = !value;
+  }
+
+  input.addEventListener('input', (ev) => {
+    const v = ev && ev.target && typeof ev.target.value === 'string'
+      ? ev.target.value
+      : input.value;
+    syncClearVisibility(v);
+    fire(v);
+  });
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      input.value = '';
+      syncClearVisibility('');
+      clearDebounce();
+      if (typeof onInput === 'function') onInput('');
+      input.focus();
+    });
+  }
+
+  function setValue(v) {
+    const next = v == null ? '' : String(v);
+    if (next === input.value) return;
+    input.value = next;
+    syncClearVisibility(next);
+    fire(next);
+  }
+
+  return { wrap, input, setValue };
+}
+
 // switchEl({ checked, label, onChange }) — binary toggle with proper
 // role="switch" + aria-checked. The returned element exposes toggle()
 // and setChecked(next) so callers (and tests) can flip programmatically;
