@@ -104,6 +104,41 @@ export function spliceReorder(list, fromIdx, toGap) {
   return next;
 }
 
+// normaliseForFilter — case-fold + diacritic-strip a string into a form
+// suitable for substring comparison. Uses NFD to decompose accents into
+// combining marks, then drops the marks (Unicode block U+0300..U+036F).
+// Empty / non-string input collapses to ''. Kept local to favorites.js
+// because no other module in the admin app needs it today; promote to a
+// shared helper if a second caller appears.
+function normaliseForFilter(s) {
+  if (typeof s !== 'string' || s === '') return '';
+  let n = s;
+  if (typeof n.normalize === 'function') {
+    try { n = n.normalize('NFD'); } catch (_err) { /* hosts without NFD */ }
+  }
+  return n.replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+// filterFavorites — return a filtered copy of `list` whose entries match
+// `query` as a case-folded, diacritic-stripped substring of any of name,
+// note, or id. Empty / whitespace `query` returns the original `list`
+// reference so callers can `if (next === list)` to skip extra work.
+// Order is preserved.
+export function filterFavorites(list, query) {
+  if (!Array.isArray(list)) return [];
+  const needle = normaliseForFilter(typeof query === 'string' ? query.trim() : '');
+  if (!needle) return list;
+  const out = [];
+  for (const entry of list) {
+    if (!entry) continue;
+    const hay = normaliseForFilter(
+      `${entry.name || ''} ${entry.note || ''} ${entry.id || ''}`,
+    );
+    if (hay.indexOf(needle) >= 0) out.push(entry);
+  }
+  return out;
+}
+
 // replaceFavorites — write a hand-built next-list to the speaker, with
 // optimistic state + rollback to the supplied snapshot on failure.
 //
