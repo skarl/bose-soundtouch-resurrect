@@ -424,7 +424,7 @@ function applyFocus(body, focusId) {
 export default defineView({
   mount(root, store, ctx, env) {
     mount(root, html`
-      <section class="favorites" data-view="favorites">
+      <section class="page favorites" data-view="favorites">
         <div class="page-title-bar">
           <h1 class="page-title">Favourites</h1>
         </div>

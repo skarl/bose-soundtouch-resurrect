@@ -66,7 +66,7 @@ export default defineView({
     volumeSlider.classList.add('np-slider');
 
     mount(root, html`
-      <section class="np-view" data-view="now-playing">
+      <section class="page np-view" data-view="now-playing">
         <div class="np-card">
           <div class="np-card__top">
             <div class="np-art-wrap">

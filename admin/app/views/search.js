@@ -435,7 +435,7 @@ export default defineView({
     emptyEl.appendChild(popularSection);
 
     mount(root, html`
-      <section data-view="search">
+      <section class="page" data-view="search">
         <div class="search-bar">
           ${wrap}
           ${toggleWrap}

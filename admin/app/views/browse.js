@@ -191,7 +191,7 @@ function renderRoot(root) {
   });
 
   mount(root, html`
-    <section data-view="browse">
+    <section class="page" data-view="browse">
       ${tabsBar}
       ${header}
       ${body}
@@ -307,7 +307,7 @@ function renderDrill(root, parts, crumbs) {
   body.setAttribute('aria-live', 'polite');
 
   mount(root, html`
-    <section data-view="browse" data-mode="drill">
+    <section class="page" data-view="browse" data-mode="drill">
       ${frame.bar}
       ${frame.titleRow}
       ${filterWrap}
@@ -465,7 +465,7 @@ function renderShowLanding(root, parts, crumbs) {
   body.setAttribute('aria-live', 'polite');
 
   mount(root, html`
-    <section data-view="browse" data-mode="show-landing">
+    <section class="page" data-view="browse" data-mode="show-landing">
       ${frame.bar}
       ${frame.titleRow}
       ${frame.header}

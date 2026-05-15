@@ -143,7 +143,7 @@ function renderSkeleton(root, sid) {
   assignBox.appendChild(buildAssignGrid());
 
   mount(root, html`
-    <section class="station-detail" data-view="station" data-sid="${sid}">
+    <section class="page station-detail" data-view="station" data-sid="${sid}">
       ${backBar}
       <header class="station-header">
         <div class="station-art" hidden></div>
