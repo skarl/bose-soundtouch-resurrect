@@ -355,7 +355,7 @@ function mountNowPlaying() {
 test('Now-Playing card: heart visible when source=TUNEIN and item.location carries an s-id', () => {
   setNowPlaying({
     source: 'TUNEIN',
-    item: { itemName: 'KEXP', location: '/v1/playback/station/s12345' },
+    item: { name: 'KEXP', location: '/v1/playback/station/s12345' },
     playStatus: 'PLAY_STATE',
     art: 'http://example/kexp.png',
   });
@@ -383,7 +383,7 @@ test('Now-Playing card: heart visible when source=TUNEIN and item.location carri
 test('Now-Playing card: heart visible on p-id (show drill) under TUNEIN', () => {
   setNowPlaying({
     source: 'TUNEIN',
-    item: { itemName: 'Fresh Air', location: '/v1/playback/station/p17' },
+    item: { name: 'Fresh Air', location: '/v1/playback/station/p17' },
     playStatus: 'PLAY_STATE',
     art: 'http://example/show.png',
   });
@@ -412,7 +412,7 @@ test('Now-Playing card: heart hidden on STANDBY', () => {
 test('Now-Playing card: heart hidden on AUX', () => {
   setNowPlaying({
     source: 'AUX',
-    item: { itemName: 'AUX IN', location: '' },
+    item: { name: 'AUX IN', location: '' },
     playStatus: 'PLAY_STATE',
   });
   const { root, destroy } = mountNowPlaying();
@@ -427,7 +427,7 @@ test('Now-Playing card: heart hidden on AUX', () => {
 test('Now-Playing card: heart hidden on BLUETOOTH', () => {
   setNowPlaying({
     source: 'BLUETOOTH',
-    item: { itemName: 'iPhone', location: '' },
+    item: { name: 'iPhone', location: '' },
     playStatus: 'PLAY_STATE',
   });
   const { root, destroy } = mountNowPlaying();
@@ -442,7 +442,7 @@ test('Now-Playing card: heart hidden on BLUETOOTH', () => {
 test('Now-Playing card: heart hidden on TUNEIN with topic (t-prefix not favouritable)', () => {
   setNowPlaying({
     source: 'TUNEIN',
-    item: { itemName: 'Episode 1', location: '/v1/playback/station/t12345' },
+    item: { name: 'Episode 1', location: '/v1/playback/station/t12345' },
     playStatus: 'PLAY_STATE',
   });
   const { root, destroy } = mountNowPlaying();
@@ -454,11 +454,11 @@ test('Now-Playing card: heart hidden on TUNEIN with topic (t-prefix not favourit
   }
 });
 
-test('Now-Playing card: heart toggle captures {id, name, art, note: ""} from item.location + itemName + np.art', async () => {
+test('Now-Playing card: heart toggle captures {id, name, art, note: ""} from item.location + item.name + np.art', async () => {
   store.state.speaker.favorites = [];
   setNowPlaying({
     source: 'TUNEIN',
-    item: { itemName: 'KEXP', location: '/v1/playback/station/s12345' },
+    item: { name: 'KEXP', location: '/v1/playback/station/s12345' },
     playStatus: 'PLAY_STATE',
     art: 'http://example/kexp.png',
   });
@@ -485,6 +485,51 @@ test('Now-Playing card: heart toggle captures {id, name, art, note: ""} from ite
     assert.deepEqual(body[0], {
       id: 's12345', name: 'KEXP', art: 'http://example/kexp.png', note: '',
     });
+    destroy();
+  } finally {
+    restore();
+  }
+});
+
+// Regression for #131: item.name is empty in transient firmware states
+// (TUNEIN streams where the station label rides on <track> rather than
+// <itemName>, mid-resolve, source switches). The heart's getEntry must
+// fall through to np.track via renderNowPlayingTitle, otherwise
+// toggleFavorite's empty-name fallback persists the sid as the label.
+test('Now-Playing card: heart capture falls through to np.track when item.name is empty (#131)', async () => {
+  store.state.speaker.favorites = [];
+  setNowPlaying({
+    source: 'TUNEIN',
+    item: { name: '', location: '/v1/playback/station/s123456' },
+    track: 'Example Radio',
+    playStatus: 'PLAY_STATE',
+    art: 'http://example/example.png',
+  });
+  const calls = [];
+  const restore = installFetchStub(async (url, opts) => {
+    calls.push({ url: String(url), opts });
+    if (/\/favorites$/.test(String(url))) {
+      return {
+        ok: true, status: 200,
+        json: async () => ({ ok: true, data: [{ id: 's123456', name: 'Example Radio', art: 'http://example/example.png', note: '' }] }),
+      };
+    }
+    return new Promise(() => {});
+  });
+  try {
+    const { root, destroy } = mountNowPlaying();
+    const heart = findFirstByClass(root, 'fav-heart');
+    assert.ok(heart, 'heart present');
+    heart.dispatchEvent({ type: 'click', defaultPrevented: false, preventDefault() {}, stopPropagation() {} });
+    await new Promise((r) => setTimeout(r, 5));
+    const post = calls.find((c) => /\/favorites$/.test(c.url) && c.opts.method === 'POST');
+    assert.ok(post, 'POST /favorites issued');
+    const body = JSON.parse(post.opts.body);
+    assert.equal(body[0].id, 's123456');
+    assert.equal(body[0].name, 'Example Radio',
+      'name comes from np.track, not the sid');
+    assert.notEqual(body[0].name, 's123456',
+      'sid must not be persisted as the favourite name');
     destroy();
   } finally {
     restore();
