@@ -72,6 +72,19 @@ export function filtersOf(parts) {
   return [];
 }
 
+// Joined-string view of filtersOf — the wire form `l109,g22`. Prefers
+// `parts.filters: string[]` (the canonical multi-value form); falls
+// back to the legacy `parts.filter: string` verbatim. Empty → ''.
+export function joinFilters(parts) {
+  if (!parts) return '';
+  if (Array.isArray(parts.filters)) {
+    const cleaned = parts.filters.filter((s) => typeof s === 'string' && s !== '');
+    return cleaned.join(',');
+  }
+  if (typeof parts.filter === 'string' && parts.filter !== '') return parts.filter;
+  return '';
+}
+
 // Stash a `filters: string[]` (and back-compat `filter: string`) on a
 // parts object. Empty arrays drop both fields so the URL composer emits
 // the bare drill (no `filter=` param).
