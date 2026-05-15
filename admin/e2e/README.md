@@ -1,16 +1,19 @@
 # admin/e2e — Playwright smoke suite
 
 End-to-end coverage for the admin SPA, running against a deployed admin
-on a Bose SoundTouch speaker. This is the verification gate before
-human-in-the-loop review for the 0.4.2 TuneIn rewrite.
+on a Bose SoundTouch speaker. The suite was scaffolded as the
+verification gate for the 0.4.2 TuneIn rewrite and has grown alongside
+the admin since; new specs land here whenever a slice ships behaviour
+that the unit suite can't pin without a real browser + speaker.
 
 ## Prerequisites
 
 - **Node.js** ≥ 18 (project standardises on 20 LTS).
 - **Playwright browsers** (Chromium is enough for this suite).
-- A speaker on your network running the resolver from `resolver/install.sh`
-  with the admin SPA deployed via `admin/deploy.sh`. The project's test
-  speaker is **Bo** at `192.168.178.36:8181`.
+- A speaker on your network running the resolver and the admin SPA
+  deployed via `admin/deploy.sh`. The default `BOSE_HOST` in
+  `playwright.config.js` points at the project's test speaker; override
+  via the `BOSE_HOST` env var to target your own.
 
 ## First-time setup
 
@@ -27,11 +30,11 @@ repo, and the directory is git-ignored.
 ## Running
 
 ```bash
-# Run the full suite against the default host (Bo at 192.168.178.36).
+# Run the full suite against the default host (the project test speaker).
 npm test
 
 # Target a different speaker.
-BOSE_HOST=192.168.178.42 npm test
+BOSE_HOST=<speaker-ip> npm test
 
 # Watch it run with a real browser window.
 npm run test:headed
@@ -62,6 +65,9 @@ single-spec dev runs (e.g. `npx playwright test tests/play.spec.js
 | `search.spec.js`       | #80 | "Folk Alley" yields a p-prefix row with inline Play; toggling "Include podcasts" off removes p-prefix rows. |
 | `show-drill.spec.js`   | #81 | Show drill renders topic rows; tapping a topic's Play icon fires the /play CGI. |
 | `local-polish.spec.js` | #82 / #85 | "Browse all of <country>" card, retired-annotation guard on a live tiny-country drill (#85), every `<img loading="lazy">`, `related` chips, station-detail CTA reads "Play". |
+| `station-redirect.spec.js` | #86 | `#/station/p<N>` and `#/station/t<N>` redirect to the browse view (no dead-end on the not-found placeholder); unknown prefixes still 404; `s`-sids unaffected. |
+| `transport-controls.spec.js` | #88 | Buffering indicator on the now-playing play button (MITM `BUFFERING_STATE`); Prev/Next enable on a topic-list drill and fire `/play` with the neighbour topic id. |
+| `mobile-overflow.spec.js` | #119 | Phone-viewport horizontal-overflow guard for every primary view + the station-detail / preset-modal carriers. |
 | `full-smoke.spec.js`   | —   | Orchestrator entry — writes `test-results/0.4.2-smoke-report.md` summarising the run. |
 
 ## Patterns
@@ -93,31 +99,10 @@ The reporter is wired into `playwright.config.js`; `--reporter=line`
 overrides the config and skips it (handy for single-spec dev iteration
 where the report is not needed).
 
-## Deferred — orchestrator run
-
-**The orchestrator run + closing comment on issue #83 is deferred.**
-
-During the scaffolding pass (Wave 7 of the 0.4.2 milestone) the user's
-internet was down, and Bo's TuneIn-dependent routes would have produced
-spurious failures against the upstream. The suite is structurally
-complete: every spec ships with assertions matching its slice's
-acceptance criteria, the standard listener block is wired in, and the
-MITM error path is hooked up.
-
-Once connectivity returns:
-
-1. `cd admin/e2e && npm install && npx playwright install chromium`
-2. `BOSE_HOST=192.168.178.36 npm test`
-3. Read `test-results/0.4.2-smoke-report.md` + the HTML report at
-   `playwright-report/`.
-4. Post the report as a closing comment on
-   [issue #83](https://github.com/skarl/bose-soundtouch-resurrect/issues/83)
-   if every spec passes, or as a follow-up comment naming the
-   originating slice issue(s) if any fail.
-
 ## Where this fits
 
-The unit-test suite (`admin/test/*.js`) covers reshape, validators, and
-WS message handling in pure JS — no browser, no speaker. This suite
-covers the rendered DOM + the live speaker. They are complementary;
-both should pass before a 0.4.x tag is cut.
+The unit-test suite (`admin/test/*.js`) covers reshape, validators,
+WebSocket dispatch, render helpers, and favourites logic in pure JS —
+no browser, no speaker. This suite covers the rendered DOM + the live
+speaker. They are complementary; both should pass before a release tag
+is cut.

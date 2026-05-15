@@ -107,11 +107,15 @@ via Bluetooth from your phone, or from another preset that already
 points at it), hold the desired preset button (1–6) for a few seconds.
 This is how Bose meant it to work.
 
-But because we don't have an in-app browse UI yet (planned in
-[../admin/PLAN.md](../admin/PLAN.md)), the more practical route is
-Option B.
+### Option B — Via the browser admin
 
-### Option B — Via the speaker's local API
+Open `http://<speaker-ip>:8181/`, search or browse to the station,
+open it, and tap one of the six preset slots in the assignment grid.
+The admin handles the `/storePreset` POST and atomically rewrites the
+matching `/v1/playback/station/<id>` resolver entry. This is the
+day-to-day path once the admin is deployed.
+
+### Option C — Via the speaker's local API
 
 There's a wrapper script:
 
@@ -183,7 +187,9 @@ need to:
 1. Hand-edit a Bose-shaped JSON file with your direct stream URL.
 2. Push it to `/mnt/nv/resolver/bmx/tunein/v1/playback/station/<some-id>`
    (give it any unique `s`-prefixed ID).
-3. Assign as a preset via Option B above.
+3. Assign as a preset via Option C above (the browser admin won't help
+   for a non-TuneIn id — its assignment grid POSTs through the
+   resolver's TuneIn-shaped path).
 
 That works but isn't supported by `build.py`. Patches welcome (see
 [../CONTRIBUTING.md](../CONTRIBUTING.md)).

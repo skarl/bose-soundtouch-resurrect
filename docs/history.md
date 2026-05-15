@@ -143,13 +143,16 @@ Acknowledged trade-offs:
 
 ## Where it's going
 
-A small browser-based admin UI is planned (see
-[../admin/PLAN.md](../admin/PLAN.md)). The aim is to replace the
-`build.py` + scp + curl-storePreset workflow with point-and-click,
-hosted entirely on the speaker via static SPA + thin shell CGI.
+The browser admin landed in 0.4 and has grown through 0.7.1 — it now
+covers transport, presets, full TuneIn browse + search, station
+detail, an admin-owned favourites list, and a settings page. The
+`build.py` + scp + curl-storePreset workflow is no longer the
+day-to-day path; the admin's `refresh-all` CGI does the on-speaker
+equivalent of `python3 resolver/build.py` from the browser. See
+[CHANGELOG.md](../CHANGELOG.md) for the per-release detail.
 
 Long-term, an awk-based dynamic resolver could eliminate the
-periodic-refresh chore. Wanted but not needed yet.
+periodic-refresh chore entirely. Wanted but not needed yet.
 
 ## Acknowledgements
 

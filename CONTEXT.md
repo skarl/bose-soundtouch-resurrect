@@ -51,8 +51,24 @@ The act of crawling TuneIn's outline tree — from a root (genre / location / la
 _Avoid_: browse, search (those are distinct concepts in TuneIn's API).
 
 **Crumb stack**:
-The breadcrumb trail in the browse view plus the `parts` value type that backs it. Owns parsing, rendering, hydration, and the trail's relationship to the URL hash. Split across two sibling modules: `crumb-parts.js` (pure value type + label-resolution reads, no DOM) and `crumb-renderer.js` (DOM pillbar + async hydration).
+The breadcrumb trail in the browse view plus the `parts` value type that backs it. Owns parsing, rendering, hydration, and the trail's relationship to the URL hash. Split across two sibling modules: `crumb-parts.js` (pure value type + label-resolution reads + filter normalisation via `joinFilters`, no DOM) and `crumb-renderer.js` (DOM pillbar + async hydration). `outline-render.js` imports both `stringifyCrumbs` and `joinFilters` from `crumb-parts`.
 _Avoid_: breadcrumb, trail (those refer to the visual element only; the stack is the value).
+
+**Render context (`ctx`)**:
+The `{childCrumbs, currentParts}` argument threaded through every render entry-point in `admin/app/views/browse/outline-render.js`. `childCrumbs` is the crumb-token prefix child rows embed in `from=…`; `currentParts` is the current drill's parts, used by the refinement-chip composer to stack THIS page's filters onto chip URLs. Built at each navigation seam in `browse.js` (`renderRoot` / `selectTab` / `renderDrill` / `renderShowLanding`). Replaced the earlier module-level `_childCrumbs` / `_currentParts` slots — render state is per-call now, not per-module.
+_Avoid_: state, scope (too generic).
+
+**Row-internals**:
+`admin/app/row-internals.js` — shared helpers used by both `stationRow` (in `components.js`) and `showHero` (in `show-hero.js`): meta-separator dot, clickable genre chip, browse-URL → SPA-hash converter, favourite-heart mount. Renderer details, not row primitives — kept out of `components.js` because they carry no public surface.
+_Avoid_: row helpers, row utils (lose the file boundary).
+
+**Pill-input**:
+The `pillInput({...})` primitive in `admin/app/components.js` and the `.pill-input*` CSS namespace it owns. Leading-icon + clear-button text input shared by the Search bar and the Favourites filter. Renamed from the earlier `.search-input*` namespace once it became a multi-caller primitive.
+_Avoid_: search-input (the legacy name; bound to one caller).
+
+**Page**:
+The shared `.page` outer wrapper plus `.page-title` / `.page-title-bar` block — the normalised view-chrome primitive. Every primary view (Browse, Search, Favourites, Settings) wraps its body in `.page`; the title renders in a subtle pill that visually rhymes with the filter input. `.page` only contributes vertical gap between section blocks; horizontal centring + max-width come from `.shell-body`.
+_Avoid_: container, view-shell (already overloaded; the shell is the four-zone outer chrome, the page is the per-view inner chrome).
 
 **Drill seam**:
 `admin/app/tunein-drill.js` — single classifier owning the one-shot **TuneIn drill** fetch policy. Maps every wire shape (transport throws, structured envelopes, raw `{"error":"..."}` bodies, `head.status` non-200 + empty body, status-200 empty body, single-tombstone bodies, ok payloads) onto a tagged result: `{kind:'ok'|'empty'|'error'}`. Browse's drill renderer and show-landing's browse half both consume it.

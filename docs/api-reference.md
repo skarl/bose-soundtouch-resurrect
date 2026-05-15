@@ -2,8 +2,8 @@
 
 The speaker firmware exposes 102 endpoints on **TCP 8090**, plain HTTP,
 LAN-local. They don't depend on any cloud service — they're served by
-the firmware itself. Useful for automation, scripting, and the admin UI
-this project plans to ship.
+the firmware itself. Useful for automation, scripting, and the admin
+SPA this project ships under `admin/`.
 
 There's also a **WebSocket on TCP 8080** for real-time events (button
 presses, track changes, volume, source changes, play state). Connect
