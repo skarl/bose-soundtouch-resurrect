@@ -174,7 +174,7 @@ export default defineView({
         const item = np.item;
         const id = extractGuideIdFromLocation(item && item.location);
         if (!id) return null;
-        const name = (item && (item.itemName || item.name)) || '';
+        const name = renderNowPlayingTitle(np);
         const art  = (np && typeof np.art === 'string' && np.art.startsWith('http'))
           ? np.art : '';
         return { id, name, art, note: '' };
