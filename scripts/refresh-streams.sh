@@ -23,11 +23,11 @@ SCP="scp -O -oHostKeyAlgorithms=+ssh-rsa -oUserKnownHostsFile=/dev/null -oStrict
   || { echo "error: resolver/stations.json missing." >&2; exit 1; }
 
 echo "=== Building station files ==="
-( cd "$ROOT/resolver" && rm -f s* 2>/dev/null; python3 build.py )
+( cd "$ROOT/resolver" && rm -f s[0-9]* 2>/dev/null; python3 build.py )
 
 echo
 echo "=== Pushing to speaker ==="
-$SCP "$ROOT"/resolver/s* \
+$SCP "$ROOT"/resolver/s[0-9]* \
      root@"$SPEAKER":/mnt/nv/resolver/bmx/tunein/v1/playback/station/
 
 echo

@@ -54,7 +54,7 @@ $SSH root@"$SPEAKER" 'true' \
        See docs/opening-up-your-speaker.md."
 
 say "Building station files (TuneIn → Bose JSON)"
-( cd "$ROOT/resolver" && rm -f s* 2>/dev/null; python3 build.py )
+( cd "$ROOT/resolver" && rm -f s[0-9]* 2>/dev/null; python3 build.py )
 
 STATION_COUNT=$(find "$ROOT/resolver" -maxdepth 1 -type f -name 's[0-9]*' 2>/dev/null | wc -l | tr -d ' ')
 [ "$STATION_COUNT" -gt 0 ] \
@@ -93,7 +93,7 @@ $SSH root@"$SPEAKER" "
 "
 
 say "Pushing per-station JSON files"
-$SCP "$ROOT"/resolver/s* \
+$SCP "$ROOT"/resolver/s[0-9]* \
      root@"$SPEAKER":/mnt/nv/resolver/bmx/tunein/v1/playback/station/
 
 say "Pushing shepherd-resolver.xml (auto-start at boot)"

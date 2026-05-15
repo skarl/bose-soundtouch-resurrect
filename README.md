@@ -116,8 +116,9 @@ Five steps. Each one links to the full doc.
    SPA), points the speaker at `127.0.0.1:8181`, reboots.
 4. **Customise your presets** —
    [docs/customizing-presets.md](docs/customizing-presets.md). Either
-   edit `resolver/stations.example.json` and run `build.py`, or use
-   the browser admin: search → assign to slot.
+   copy `resolver/stations.example.json` to `resolver/stations.json`,
+   edit it, and run `build.py`, or use the browser admin: search →
+   assign to slot.
 5. **Verify** with `scripts/verify.sh <speaker-ip>` and press a
    preset button on the speaker.
 
