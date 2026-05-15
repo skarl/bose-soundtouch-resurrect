@@ -53,7 +53,7 @@ import {
 // fire in parallel; we wait on Describe synchronously and route the
 // Browse half through resolveBrowseDrill so empty / error / tombstone
 // classification is structured rather than swallowed.
-export function loadShowLanding(body, showId, headerCount, head) {
+export function loadShowLanding(body, showId, headerCount, head, ctx) {
   body.replaceChildren();
   body.appendChild(skeleton());
   if (headerCount) headerCount.textContent = '';
@@ -72,7 +72,7 @@ export function loadShowLanding(body, showId, headerCount, head) {
 
   Promise.all([describePromise, browsePromise])
     .then(([describeJson, browseJson]) => {
-      renderShowLandingBody(body, describeJson, browseJson, headerCount, head);
+      renderShowLandingBody(body, describeJson, browseJson, headerCount, head, ctx);
     })
     .catch((err) => {
       body.replaceChildren();
@@ -84,11 +84,11 @@ export function loadShowLanding(body, showId, headerCount, head) {
 // Browse payloads and walks them into the body. Exported (as the
 // test-only `_renderShowLandingForTest`) so tests can drive the path
 // without faking fetch.
-export function _renderShowLandingForTest(body, describeJson, browseJson, headerCount, head) {
-  return renderShowLandingBody(body, describeJson, browseJson, headerCount, head);
+export function _renderShowLandingForTest(body, describeJson, browseJson, headerCount, head, ctx) {
+  return renderShowLandingBody(body, describeJson, browseJson, headerCount, head, ctx);
 }
 
-function renderShowLandingBody(body, describeJson, browseJson, headerCount, head) {
+function renderShowLandingBody(body, describeJson, browseJson, headerCount, head, ctx) {
   // Clear any prior children (skeleton). Use replaceChildren when the
   // host DOM supports it; fall back to a manual removeChild loop for
   // the xmldom test shim which lacks replaceChildren.
@@ -133,7 +133,7 @@ function renderShowLandingBody(body, describeJson, browseJson, headerCount, head
   if (browseJson && Array.isArray(browseJson.body) && browseJson.body.length > 0) {
     for (const entry of browseJson.body) {
       if (Array.isArray(entry.children) && entry.children.length > 0) {
-        const rendered = renderSection(entry);
+        const rendered = renderSection(entry, ctx);
         if (rendered) {
           relatedCount += rendered.visibleCount;
           body.appendChild(rendered.element);

@@ -29,7 +29,7 @@
 // READ-ONLY against production code. This test must not import any
 // helper that mutates tunein-* — it composes the public surfaces.
 
-import { test, before, beforeEach } from 'node:test';
+import { test, beforeEach } from 'node:test';
 import { strict as assert } from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -54,10 +54,13 @@ const { canonicaliseBrowseUrl } = await import('../app/tunein-url.js');
 const {
   renderOutline,
   renderEntry,
-  _setChildCrumbsForTest,
-  _setCurrentPartsForTest,
 } = await import('../app/views/browse/outline-render.js');
 const { cache } = await import('../app/tunein-cache.js');
+
+// Default render context for the drill simulation. The fixture's
+// drill is the top-level entry point — empty childCrumbs, no
+// currentParts.
+const RENDER_CTX = { childCrumbs: [], currentParts: null };
 
 // --- helpers -------------------------------------------------------------
 
@@ -119,13 +122,6 @@ const PAGE1_NEW_GUIDE_IDS = ['s10003', 's10004'];  // s10001 re-emits and dedupe
 
 // --- reset between tests -------------------------------------------------
 
-before(() => {
-  // The renderer reads two module-locals (childCrumbs, currentParts). The
-  // drill simulates the top-level entry point so both are empty.
-  _setChildCrumbsForTest([]);
-  _setCurrentPartsForTest(null);
-});
-
 beforeEach(() => {
   ssStore.clear();
 });
@@ -172,7 +168,7 @@ test('TuneIn drill: cache miss → fetch page 0 → paginate → classify → re
   // three sections (stations, shows, related) so we expect three
   // [data-section] cards.
   const body = doc.createElement('div');
-  const visibleCount = renderOutline(body, json0);
+  const visibleCount = renderOutline(body, json0, RENDER_CTX);
 
   // Two stations + one show row count as "visible" rows in the drill UI.
   // The pivots / cursor are meta and don't increment the count.
@@ -266,7 +262,7 @@ test('TuneIn drill: cache miss → fetch page 0 → paginate → classify → re
   for (const row of pager.rows) {
     assert.equal(classifyOutline(row), 'station',
       `page-1 row ${row.guide_id} classifies as station`);
-    const node = renderEntry(row);
+    const node = renderEntry(row, RENDER_CTX);
     assert.ok(hasClass(node, 'station-row'),
       `page-1 row ${row.guide_id} renders into .station-row`);
     stationCard.appendChild(node);

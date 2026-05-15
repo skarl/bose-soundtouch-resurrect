@@ -29,13 +29,10 @@ import { resolveBrowseDrill } from '../tunein-drill.js';
 import {
   renderOutline,
   renderEntry,
-  setChildCrumbs,
-  setCurrentParts,
   pluralize,
   skeleton,
   errorNode,
   emptyNode,
-  _setChildCrumbsForTest,
 } from './browse/outline-render.js';
 import {
   loadShowLanding,
@@ -99,7 +96,6 @@ export {
   renderFilterBadge,
   renderFilterBadges,
   _renderShowLandingForTest,
-  _setChildCrumbsForTest,
   _setActivePagersForTest,
   _setFilterInputForTest,
   _resetBrowseStateForTest,
@@ -164,9 +160,6 @@ function isShowDrillParts(parts) {
 // ---- root view (segmented tabs) -------------------------------------
 
 function renderRoot(root) {
-  // Root tabs view has no current parts (no drill).
-  setCurrentParts(null);
-
   const tabsBar = document.createElement('div');
   tabsBar.className = 'browse-tabs';
   tabsBar.setAttribute('role', 'tablist');
@@ -205,8 +198,6 @@ function renderRoot(root) {
     </section>
   `);
 
-  // Root view has no parent crumbs — children embed an empty `from=`.
-  setChildCrumbs([]);
   selectTab(TABS[0], buttons, body, headerLeft, headerCount);
 }
 
@@ -218,13 +209,16 @@ function selectTab(tab, buttons, body, headerLeft, headerCount) {
     b.setAttribute('aria-selected', active ? 'true' : 'false');
   }
   // Each tab is a top-level entry: children's crumb stack starts with
-  // just this tab's anchor token. setChildCrumbs hands the prefix off
-  // to outline-render so renderEntry sees the correct value.
+  // just this tab's anchor token. The ctx threads the prefix into
+  // outline-render so renderEntry composes child hrefs correctly.
   const tabToken = crumbTokenFor(tab.params);
-  setChildCrumbs(tabToken ? [tabToken] : []);
+  const ctx = {
+    childCrumbs: tabToken ? [tabToken] : [],
+    currentParts: null,
+  };
   headerLeft.textContent = tab.label;
   headerCount.textContent = '';
-  loadInto(body, tuneinBrowse(tab.params), headerCount, null);
+  loadInto(body, tuneinBrowse(tab.params), headerCount, null, ctx);
 }
 
 // ---- drill view (id=...) --------------------------------------------
@@ -290,12 +284,16 @@ function buildDrillFrame(parts, crumbs) {
 }
 
 function renderDrill(root, parts, crumbs) {
-  // Hand the current parts to outline-render so refinement chips
-  // (renderPivotChips / renderRelatedChips) can append THIS page's
-  // filters to their own when composing chip hrefs (#106).
-  setCurrentParts(parts);
-
   const frame = buildDrillFrame(parts, crumbs);
+
+  // Render context for the outline pipeline. childCrumbs is the stack
+  // child rows embed in `from=…`; currentParts hands THIS page's
+  // filters to the refinement-chip composer so chaining stacks rather
+  // than replaces (#106).
+  const ctx = {
+    childCrumbs: frame.childCrumbs,
+    currentParts: parts,
+  };
 
   // Page-top filter input, always visible (not behind an icon).
   // Instant DOM filter on keystroke; 300ms-debounced auto-crawl
@@ -317,8 +315,6 @@ function renderDrill(root, parts, crumbs) {
       ${body}
     </section>
   `);
-
-  setChildCrumbs(frame.childCrumbs);
 
   // Cold-load: any crumb whose label isn't already cached gets
   // hydrated in parallel (concurrency cap DESCRIBE_CONCURRENCY).
@@ -347,7 +343,7 @@ function renderDrill(root, parts, crumbs) {
     titleEl: frame.titleEl,
     crumbToken: frame.currentToken,
     trailEl: frame.trailEl,
-  });
+  }, ctx);
 }
 
 // loadDrillBody — drill-specific body loader. Reads the seam's
@@ -355,7 +351,7 @@ function renderDrill(root, parts, crumbs) {
 // the renderOutline branch keeps the success-path side-effects the
 // original loadInto carried (header count, title upgrade, crumb-label
 // cache write, Load-more wiring, sticky-filter rehydration).
-function loadDrillBody(body, parts, headerCount, head) {
+function loadDrillBody(body, parts, headerCount, head, ctx) {
   body.replaceChildren();
   body.appendChild(skeleton());
   if (headerCount) headerCount.textContent = '';
@@ -371,7 +367,7 @@ function loadDrillBody(body, parts, headerCount, head) {
         return;
       }
       const json = r.json;
-      const total = renderOutline(body, json);
+      const total = renderOutline(body, json, ctx);
       if (headerCount && total > 0) {
         headerCount.textContent = `${total.toLocaleString()} ${pluralize(total)}`;
       }
@@ -391,7 +387,9 @@ function loadDrillBody(body, parts, headerCount, head) {
       }
       // Mount one pager + Load-more button per section that came back
       // with a cursor URL parked on it by renderSection / renderFlatSection.
-      mountLoadMoreButtons(body);
+      // Hand the same ctx to the pager so paginated rows get the same
+      // childCrumbs / currentParts as the page-0 render.
+      mountLoadMoreButtons(body, { ctx });
       // If the filter input already has text (e.g. user navigates with
       // a sticky filter), apply it to the freshly-rendered rows and
       // kick the coordinator.
@@ -451,11 +449,15 @@ function registerLcodeRepatch(parts, crumbIdEl, trailEl, stack, backEl, filterBa
 // the show landing has no list tall enough to need filtering. The
 // body is filled by loadShowLanding.
 function renderShowLanding(root, parts, crumbs) {
-  // Show-landing isn't a filterable drill, but keep _currentParts in
-  // sync so the chip composers see a consistent state across mounts.
-  setCurrentParts(parts);
-
   const frame = buildDrillFrame(parts, crumbs);
+
+  // Show-landing isn't a filterable drill, but the related sections
+  // it mounts are real drill rows — they need the child crumb prefix
+  // and currentParts so chip / row hrefs compose correctly.
+  const ctx = {
+    childCrumbs: frame.childCrumbs,
+    currentParts: parts,
+  };
 
   const body = document.createElement('div');
   body.className = 'browse-body';
@@ -471,14 +473,12 @@ function renderShowLanding(root, parts, crumbs) {
     </section>
   `);
 
-  setChildCrumbs(frame.childCrumbs);
-
   if (frame.trailEl) hydrateCrumbLabels(frame.stack, frame.trailEl, frame.backEl);
 
   loadShowLanding(body, parts.id, frame.headerCount, {
     titleEl: frame.titleEl,
     crumbToken: frame.currentToken,
-  });
+  }, ctx);
 }
 
 // ---- shared loader --------------------------------------------------
@@ -488,14 +488,14 @@ function renderShowLanding(root, parts, crumbs) {
 // the loader upgrades titleEl to json.head.title and stashes the label
 // in the cache under tunein.label.<crumbToken>.
 
-function loadInto(body, promise, headerCount, head) {
+function loadInto(body, promise, headerCount, head, ctx) {
   body.replaceChildren();
   body.appendChild(skeleton());
   if (headerCount) headerCount.textContent = '';
   promise
     .then((json) => {
       body.replaceChildren();
-      const total = renderOutline(body, json);
+      const total = renderOutline(body, json, ctx);
       if (headerCount && total > 0) {
         headerCount.textContent = `${total.toLocaleString()} ${pluralize(total)}`;
       }
@@ -515,7 +515,7 @@ function loadInto(body, promise, headerCount, head) {
       }
       // Mount one pager + Load-more button per section that came back
       // with a cursor URL parked on it by renderSection / renderFlatSection.
-      mountLoadMoreButtons(body);
+      mountLoadMoreButtons(body, { ctx });
       // If the filter input already has text (e.g. user navigates with
       // a sticky filter), apply it to the freshly-rendered rows and
       // kick the coordinator. The DOM filter is cheap; skipping it

@@ -8,11 +8,13 @@
 // outline-render imports them so renderSection's existing dispatch
 // stays unchanged.
 //
-// All drill-row hash composition runs through drillHashFor, which
-// reads the module-local `_childCrumbs` set by browse.js (renderRoot
-// / selectTab / renderDrill) before rendering. Tests poke
-// _setChildCrumbsForTest to drive renderEntry without mounting a
-// full view.
+// Every render entry-point takes a `ctx = {childCrumbs, currentParts}`
+// argument that browse.js builds at each navigation seam (renderRoot
+// / selectTab / renderDrill / renderShowLanding). `childCrumbs` is the
+// crumb-token prefix child rows embed in `from=…`; `currentParts` is
+// the current drill's parts, used by the refinement-chip composer
+// (#106) to stack THIS page's filters onto chip URLs. The ctx threads
+// explicitly through every internal helper — no module-level state.
 
 import { stationRow } from '../../components.js';
 import { icon } from '../../icons.js';
@@ -40,49 +42,27 @@ import {
 import { stringifyCrumbs, filtersOf, joinFilters } from './crumb-parts.js';
 import { trailingAffordance } from '../../components.js';
 
-// The crumb-token prefix that child links should embed in `from=...`.
-// Set by renderDrill / selectTab before the row constructor runs, and
-// read by drillHashFor() when composing each row's href. Module-local
-// rather than thread-through-args so renderEntry's signature (which
-// is exported and used by tests) stays stable.
-let _childCrumbs = [];
+// Default ctx used when callers don't supply one (test fixtures that
+// only exercise the row-shape without caring about from= / filter
+// stacking). Equivalent to "root-level entry, no current parts".
+const EMPTY_CTX = { childCrumbs: [], currentParts: null };
 
-// Browse.js drives the production setter — every drill mount pushes the
-// stack for child rows here. Tests use _setChildCrumbsForTest below.
-export function setChildCrumbs(crumbs) {
-  _childCrumbs = Array.isArray(crumbs) ? crumbs.slice() : [];
-}
-
-// Test-only setter for the module-local crumb prefix. Production code
-// drives _childCrumbs through renderRoot / selectTab / renderDrill;
-// tests use this to assert renderEntry's href composition without
-// having to mount a full view.
-export function _setChildCrumbsForTest(crumbs) {
-  _childCrumbs = Array.isArray(crumbs) ? crumbs.slice() : [];
-}
-
-// Current-page parts (#106). The pivot / related chip composers append
-// THIS page's filters to the chip's own filter list so multi-filter
-// drills stack cleanly (e.g. Bayreuth → +Country → +German lands on
-// `?id=r101821&filter=g26,l170`). browse.js renderDrill sets this
-// before rendering the outline; root view / tests clear it.
-let _currentParts = null;
-
-export function setCurrentParts(parts) {
-  _currentParts = (parts && typeof parts === 'object') ? parts : null;
-}
-
-export function _setCurrentPartsForTest(parts) {
-  _currentParts = (parts && typeof parts === 'object') ? parts : null;
+function normaliseCtx(ctx) {
+  if (!ctx) return EMPTY_CTX;
+  const childCrumbs = Array.isArray(ctx.childCrumbs) ? ctx.childCrumbs : [];
+  const currentParts = (ctx.currentParts && typeof ctx.currentParts === 'object')
+    ? ctx.currentParts
+    : null;
+  return { childCrumbs, currentParts };
 }
 
 // Compose the hash anchor for a drill row from its parts. Mirrors
 // composeDrillUrl but emits the SPA-internal hash form. The keys are
 // already plain strings; URLSearchParams handles encoding.
 //
-// `crumbs` is the prefix the child link should embed in `from=...`.
-// Defaults to the module-level `_childCrumbs` so renderEntry callers
-// don't need to pass it through. Empty arrays omit `from=` entirely.
+// `crumbs` is the prefix the child link embeds in `from=...`. Required
+// — every call site has a stack to pass (an empty array for the root
+// view). Empty arrays omit `from=` entirely.
 //
 // Multi-filter (#106): emits the joined wire form `filter=l109,g22`
 // when `parts.filters: string[]` is non-empty. Falls back to the
@@ -96,7 +76,7 @@ export function drillHashFor(parts, crumbs) {
   if (filterStr)    qs.set('filter', filterStr);
   if (parts.pivot)  qs.set('pivot', parts.pivot);
   if (parts.offset) qs.set('offset', parts.offset);
-  const fromList = Array.isArray(crumbs) ? crumbs : _childCrumbs;
+  const fromList = Array.isArray(crumbs) ? crumbs : [];
   const fromStr  = stringifyCrumbs(fromList);
   if (fromStr) qs.set('from', fromStr);
   return `#/browse?${qs.toString()}`;
@@ -146,7 +126,8 @@ export function emptyNode(message) {
 //
 // Returns the total visible row count (cursors + pivots are excluded
 // — they're meta, not rows the user reads through).
-export function renderOutline(body, json) {
+export function renderOutline(body, json, ctx) {
+  const c = normaliseCtx(ctx);
   const rawItems = Array.isArray(json && json.body) ? json.body : [];
 
   // Local Radio surface (issue #82): c=local responses include a
@@ -156,7 +137,7 @@ export function renderOutline(body, json) {
   // The localCountry row can sit either at body root (typical c=local
   // shape) or inside a section's children — handle both by walking
   // one level deep.
-  const items = liftLocalCountry(rawItems, body, json);
+  const items = liftLocalCountry(rawItems, body, json, c);
 
   let total = 0;
 
@@ -166,7 +147,7 @@ export function renderOutline(body, json) {
   const flatRows = [];
   for (const entry of items) {
     if (Array.isArray(entry.children) && entry.children.length > 0) {
-      const rendered = renderSection(entry);
+      const rendered = renderSection(entry, c);
       if (rendered != null) {
         total += rendered.visibleCount;
         body.appendChild(rendered.element);
@@ -176,7 +157,7 @@ export function renderOutline(body, json) {
     }
   }
   if (flatRows.length > 0) {
-    const rendered = renderFlatSection(flatRows);
+    const rendered = renderFlatSection(flatRows, c);
     total += rendered.visibleCount;
     body.appendChild(rendered.element);
   }
@@ -189,12 +170,12 @@ export function renderOutline(body, json) {
 // double-mount it. Search depth is one level: body[] root, then any
 // section's `children`. Returns the original array unchanged when
 // no localCountry row is found.
-function liftLocalCountry(rawItems, body, json) {
+function liftLocalCountry(rawItems, body, json, ctx) {
   // Top-level scan first — c=local typically lays out the link as a
   // body-root sibling of the audio entries.
   for (let i = 0; i < rawItems.length; i++) {
     if (isLocalCountryEntry(rawItems[i])) {
-      const card = renderLocalCountryCard(rawItems[i], json);
+      const card = renderLocalCountryCard(rawItems[i], json, ctx);
       if (card) body.appendChild(card);
       return rawItems.slice(0, i).concat(rawItems.slice(i + 1));
     }
@@ -207,7 +188,7 @@ function liftLocalCountry(rawItems, body, json) {
     if (!entry || !Array.isArray(entry.children)) return entry;
     const idx = entry.children.findIndex(isLocalCountryEntry);
     if (idx < 0) return entry;
-    const card = renderLocalCountryCard(entry.children[idx], json);
+    const card = renderLocalCountryCard(entry.children[idx], json, ctx);
     if (card) body.appendChild(card);
     const newKids = entry.children.slice(0, idx).concat(entry.children.slice(idx + 1));
     return { ...entry, children: newKids };
@@ -227,14 +208,15 @@ function isLocalCountryEntry(entry) {
 // The label prefers `entry.text` ("Germany"); if missing, the head
 // title is the next-best signal. Final fallback is a bare "country
 // root" so the affordance still surfaces.
-function renderLocalCountryCard(entry, json) {
+function renderLocalCountryCard(entry, json, ctx) {
+  const c = normaliseCtx(ctx);
   const parts = drillPartsFor(entry);
   const drillable = parts != null;
   const card = document.createElement(drillable ? 'a' : 'span');
   card.className = drillable
     ? 'browse-local-country'
     : 'browse-local-country is-disabled';
-  if (drillable) card.setAttribute('href', drillHashFor(parts));
+  if (drillable) card.setAttribute('href', drillHashFor(parts, c.childCrumbs));
   card.setAttribute('data-local-country', '1');
 
   const labelEl = document.createElement('span');
@@ -281,7 +263,8 @@ function pickLocalCountryName(entry, json) {
 //
 // Returns { element, visibleCount }. visibleCount counts rows the
 // user sees — pivots and the cursor don't count.
-export function renderSection(section) {
+export function renderSection(section, ctx) {
+  const cx = normaliseCtx(ctx);
   const sectionKey = typeof section.key === 'string' ? section.key : '';
   const headerText = typeof section.text === 'string' ? section.text : '';
 
@@ -328,9 +311,9 @@ export function renderSection(section) {
     } else if (sectionKey === 'topics') {
       wrap.appendChild(renderTopicsCard(visibleChildren));
     } else if (sectionKey === 'related') {
-      wrap.appendChild(renderRelatedChips(section.children || []));
+      wrap.appendChild(renderRelatedChips(section.children || [], cx));
     } else {
-      wrap.appendChild(renderCard(visibleChildren));
+      wrap.appendChild(renderCard(visibleChildren, cx));
     }
   } else if (sectionKey === 'related') {
     // Pure-pivot related sections (visibleChildren empty because every
@@ -340,7 +323,7 @@ export function renderSection(section) {
       return t === 'pivot';
     });
     if (onlyPivots.length > 0) {
-      wrap.appendChild(renderRelatedChips(section.children || []));
+      wrap.appendChild(renderRelatedChips(section.children || [], cx));
     }
   }
 
@@ -350,7 +333,7 @@ export function renderSection(section) {
   if (sectionKey !== 'related') {
     const pivots = extractPivots(section);
     if (pivots.length > 0) {
-      wrap.appendChild(renderPivotChips(pivots));
+      wrap.appendChild(renderPivotChips(pivots, cx));
     }
   }
 
@@ -374,7 +357,8 @@ export function renderSection(section) {
 // 2 lays out identically to page 1 inside a section card. The
 // `data-section="flat"` marker keeps the live-verification selector
 // honest in the flat case too.
-export function renderFlatSection(entries) {
+export function renderFlatSection(entries, ctx) {
+  const cx = normaliseCtx(ctx);
   const visible = entries.filter((c) => {
     const t = classifyOutline(c);
     return t !== 'cursor' && t !== 'pivot' && t !== 'tombstone';
@@ -393,7 +377,7 @@ export function renderFlatSection(entries) {
   primeTuneinSkipCaches(visible);
 
   if (visible.length > 0) {
-    wrap.appendChild(renderCard(visible));
+    wrap.appendChild(renderCard(visible, cx));
   }
 
   const footer = document.createElement('div');
@@ -410,11 +394,12 @@ export function renderFlatSection(entries) {
   return { element: wrap, visibleCount: visible.length };
 }
 
-export function renderCard(entries) {
+export function renderCard(entries, ctx) {
+  const cx = normaliseCtx(ctx);
   const card = document.createElement('div');
   card.className = 'browse-card';
   for (let i = 0; i < entries.length; i++) {
-    const row = renderEntry(entries[i]);
+    const row = renderEntry(entries[i], cx);
     if (i === entries.length - 1) row.classList.add('is-last');
     card.appendChild(row);
   }
@@ -562,14 +547,15 @@ export function primeTuneinSkipCaches(entries) {
 // new filter axis (typically one value); the merge happens at href
 // composition time, the label-cache prime stays keyed on the new
 // filter only (`primeLabelForChip` writes the bare filter key).
-export function renderPivotChips(pivots) {
+export function renderPivotChips(pivots, ctx) {
+  const cx = normaliseCtx(ctx);
   const wrap = document.createElement('div');
   wrap.className = 'browse-pivots';
   for (const pivot of pivots) {
     const parts = drillPartsForUrl(pivot.url);
     const chip = document.createElement(parts ? 'a' : 'span');
     chip.className = parts ? 'browse-pivot' : 'browse-pivot is-disabled';
-    if (parts) chip.setAttribute('href', drillHashFor(mergeFiltersFromCurrent(parts)));
+    if (parts) chip.setAttribute('href', drillHashFor(mergeFiltersFromCurrent(parts, cx), cx.childCrumbs));
     chip.textContent = pivot.label || `pivot=${pivot.axis}`;
     chip.setAttribute('data-pivot-axis', pivot.axis);
     // Issue #105: pivot chips' text labels the axis value (e.g.
@@ -588,9 +574,10 @@ export function renderPivotChips(pivots) {
 // appended after the current page's filters (deduped — TuneIn's
 // upstream accepts repeats but emitting the same filter twice is just
 // noise on the wire).
-function mergeFiltersFromCurrent(chipParts) {
-  if (!_currentParts) return chipParts;
-  const current = filtersOf(_currentParts);
+function mergeFiltersFromCurrent(chipParts, ctx) {
+  const currentParts = ctx && ctx.currentParts;
+  if (!currentParts) return chipParts;
+  const current = filtersOf(currentParts);
   if (current.length === 0) return chipParts;
   const chipFilters = filtersOf(chipParts);
   const seen = new Set();
@@ -623,7 +610,8 @@ function mergeFiltersFromCurrent(chipParts) {
 // as the pivot chips that already shipped — visual parity, no extra
 // stylesheet entries. Each chip carries `data-chip-kind` (pivot /
 // nav / drill / station / show) so tests can target by intent.
-export function renderRelatedChips(children) {
+export function renderRelatedChips(children, ctx) {
+  const cx = normaliseCtx(ctx);
   const wrap = document.createElement('div');
   wrap.className = 'browse-pivots browse-related';
   for (const entry of children || []) {
@@ -636,7 +624,7 @@ export function renderRelatedChips(children) {
     // page's filters so chaining filter chips stacks rather than
     // replaces. Plain drill chips (no filter axis) pass through
     // unchanged.
-    if (parts) chip.setAttribute('href', drillHashFor(mergeFiltersFromCurrent(parts)));
+    if (parts) chip.setAttribute('href', drillHashFor(mergeFiltersFromCurrent(parts, cx), cx.childCrumbs));
     chip.setAttribute('data-chip-kind', kind);
     if (kind === 'pivot') {
       const k = typeof entry.key === 'string' ? entry.key : '';
@@ -669,7 +657,8 @@ export function renderRelatedChips(children) {
 //                    out before renderEntry is called; we still
 //                    render something sensible if a caller passes
 //                    one in)
-export function renderEntry(entry) {
+export function renderEntry(entry, ctx) {
+  const cx = normaliseCtx(ctx);
   const kind = classifyOutline(entry);
   const norm = normaliseRow(entry);
 
@@ -702,7 +691,7 @@ export function renderEntry(entry) {
   } else if (kind === 'show') {
     // Shows are drill-into-detail, not direct play. Reuse stationRow
     // for layout parity but the URL goes through the drill hash.
-    node = showRow(entry, norm);
+    node = showRow(entry, norm, cx);
   } else if (kind === 'tombstone') {
     node = disabledRow(norm.primary || '(unavailable)');
   } else {
@@ -710,7 +699,7 @@ export function renderEntry(entry) {
     // browse-row shape. Pivot/cursor entries shouldn't reach here in
     // the multi-section path (they're stripped or chip-rendered) but
     // we keep the fallback honest.
-    node = drillRow(entry, norm, kind);
+    node = drillRow(entry, norm, kind, cx);
   }
   // Stash the raw outline so the page-top filter can match against
   // text / subtext / playing / current_track without a re-classify
@@ -728,13 +717,14 @@ export function renderEntry(entry) {
 // Show rows reuse the station-row layout (art + name + secondary line
 // + chevron) but route to a browse-drill hash, since shows are an
 // `id=p<NNN>` browse target rather than a direct stream.
-function showRow(entry, norm) {
+function showRow(entry, norm, ctx) {
+  const cx = normaliseCtx(ctx);
   const id = norm.id || (entry && entry.guide_id) || '';
   const row = document.createElement('a');
   row.className = 'station-row';
   // Shows live under Browse.ashx — drill, don't tune.
   const parts = drillPartsFor(entry) || (id ? { id } : null);
-  row.setAttribute('href', parts ? drillHashFor(parts) : '#');
+  row.setAttribute('href', parts ? drillHashFor(parts, cx.childCrumbs) : '#');
   if (id) row.setAttribute('data-sid', id);
 
   // Inline the station-row internals so we don't pull in stationRow's
@@ -794,12 +784,13 @@ function showRow(entry, norm) {
 // through canonicaliseBrowseUrl so the language-tree rewrite
 // (§ 7.3) and magic-param strip (§ 7.4) happen once, at the seam
 // where API-emitted URLs cross into client-emitted URLs.
-function drillRow(entry, norm, _kind) {
+function drillRow(entry, norm, _kind, ctx) {
+  const cx = normaliseCtx(ctx);
   const drillParts = drillPartsFor(entry);
   const drillable = drillParts != null;
   const row = document.createElement(drillable ? 'a' : 'span');
   row.className = drillable ? 'browse-row' : 'browse-row is-disabled';
-  if (drillable) row.setAttribute('href', drillHashFor(drillParts));
+  if (drillable) row.setAttribute('href', drillHashFor(drillParts, cx.childCrumbs));
 
   const badgeText = drillParts
     ? (drillParts.id || (drillParts.c ? `c=${drillParts.c}` : ''))

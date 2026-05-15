@@ -30,7 +30,6 @@ const {
 
 const {
   renderEntry,
-  _setChildCrumbsForTest,
 } = await import('../app/views/browse.js');
 
 const { cache, TTL_LABEL } = await import('../app/tunein-cache.js');
@@ -256,27 +255,21 @@ test('renderPillBar trail composes Browse › <Tab> › <Ancestor> › <Current>
 test('renderEntry: child row href embeds the parent crumb stack as from=', () => {
   // Simulate the user being on `?c=music&from=lang` — the next click
   // should produce `from=lang,music` (parent stack + current node).
-  _setChildCrumbsForTest(['lang', 'music']);
-  try {
-    const row = renderEntry({
-      text: 'Folk',
-      URL:  'http://opml.radiotime.com/Browse.ashx?id=g79',
-    });
-    const href = row.getAttribute('href');
-    assert.match(href, /^#\/browse\?/);
-    assert.match(href, /id=g79/);
-    assert.match(href, /from=lang%2Cmusic/, `expected from=lang,music in ${href}`);
-  } finally {
-    _setChildCrumbsForTest([]);
-  }
+  const row = renderEntry({
+    text: 'Folk',
+    URL:  'http://opml.radiotime.com/Browse.ashx?id=g79',
+  }, { childCrumbs: ['lang', 'music'], currentParts: null });
+  const href = row.getAttribute('href');
+  assert.match(href, /^#\/browse\?/);
+  assert.match(href, /id=g79/);
+  assert.match(href, /from=lang%2Cmusic/, `expected from=lang,music in ${href}`);
 });
 
 test('renderEntry: with empty child crumb stack, href has no from= param', () => {
-  _setChildCrumbsForTest([]);
   const row = renderEntry({
     text: 'Genre',
     URL:  'http://opml.radiotime.com/Browse.ashx?id=g22',
-  });
+  }, { childCrumbs: [], currentParts: null });
   const href = row.getAttribute('href');
   assert.equal(href, '#/browse?id=g22', `no from= for root-level child: ${href}`);
 });
