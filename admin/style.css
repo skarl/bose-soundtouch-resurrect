@@ -997,7 +997,7 @@ main {
   top: 0;
   z-index: 5;
   background: var(--bg);
-  padding: 0.5rem 0;
+  padding: 0;
   margin: 0;
 }
 
