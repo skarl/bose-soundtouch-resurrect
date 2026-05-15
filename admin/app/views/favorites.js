@@ -384,9 +384,9 @@ export default defineView({
   mount(root, store, ctx, env) {
     mount(root, html`
       <section class="favorites" data-view="favorites">
-        <header class="favorites-header">
-          <h1>Favourites</h1>
-        </header>
+        <div class="page-title-bar">
+          <h1 class="page-title">Favourites</h1>
+        </div>
         <div class="favorites-body"></div>
       </section>
     `);
