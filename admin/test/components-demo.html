@@ -175,19 +175,23 @@
   }
 
   // --- station art --------------------------------------------------
+  // Demo wraps each art slot in a sized .station-row so the
+  // `.station-row .station-art` rule picks up the 40x40 dimensions.
   const artRow = document.getElementById('art-row');
   for (const [label, opts] of [
-    ['url',      { url: 'https://placehold.co/96x96/png',     name: 'Real',       size: 96 }],
-    ['no url',   { url: '',                                   name: 'BBC Radio 1', size: 96 }],
-    ['no name',  { url: '',                                   name: '',           size: 96 }],
-    ['48 px',    { url: '',                                   name: 'Small',      size: 48 }],
+    ['url',      { url: 'https://placehold.co/96x96/png',     name: 'Real' }],
+    ['no url',   { url: '',                                   name: 'BBC Radio 1' }],
+    ['no name',  { url: '',                                   name: '' }],
+    ['fallback', { url: '',                                   name: 'Small' }],
   ]) {
     const group = document.createElement('div');
     group.className = 'group';
-    const a = stationArt(opts);
+    const sized = document.createElement('div');
+    sized.className = 'station-row';
+    sized.appendChild(stationArt(opts));
     const lbl = document.createElement('span');
     lbl.textContent = label;
-    group.appendChild(a);
+    group.appendChild(sized);
     group.appendChild(lbl);
     artRow.appendChild(group);
   }

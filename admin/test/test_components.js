@@ -247,7 +247,7 @@ test('equalizer: wraps the .eq icon (3 bars)', () => {
 // --- stationArt ------------------------------------------------------
 
 test('stationArt: with url, the <img> src is set to that url', () => {
-  const a = stationArt({ url: 'http://example/a.png', name: 'Foo', size: 32 });
+  const a = stationArt({ url: 'http://example/a.png', name: 'Foo' });
   const img = a.firstChild;
   assert.equal(img.tagName, 'img');
   assert.equal(img.src, 'http://example/a.png');
@@ -277,13 +277,6 @@ test('stationArt: update({ url }) swaps src in place', () => {
   const img = a.firstChild;
   a.update({ url: 'http://example/new.png' });
   assert.equal(img.src, 'http://example/new.png');
-});
-
-test('stationArt: size prop sets the wrapper width/height', () => {
-  const a = stationArt({ name: 'X', size: 72 });
-  // xmldom keeps style as a string attribute; just probe substrings.
-  const style = a.getAttribute('style') || '';
-  assert.ok(style.includes('72px'), `expected 72px in style, got "${style}"`);
 });
 
 // --- stationRow ------------------------------------------------------

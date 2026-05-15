@@ -44,7 +44,7 @@ export function showHero({
   hero.className = 'station-row station-row--hero';
   hero.dataset.sid = sid;
 
-  hero.appendChild(stationArt({ url: art, name: name || sid, size: 40 }));
+  hero.appendChild(stationArt({ url: art, name: name || sid }));
 
   const body = document.createElement('span');
   body.className = 'station-row__body';

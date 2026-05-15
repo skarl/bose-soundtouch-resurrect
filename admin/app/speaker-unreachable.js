@@ -56,67 +56,10 @@ export function reduce(prev, event) {
   return cur;
 }
 
-// Inline styles keep the blocking overlay self-contained — no edit to
-// style.css required. The position:fixed + inset:0 + high z-index makes
-// the overlay a true modal: pointer events can't reach the shell behind
-// it. The card centers via flex on the root. The colour tokens reuse
-// the existing CSS custom properties so light + dark themes both work
-// without per-theme overrides.
-const ROOT_STYLE = [
-  'position: fixed',
-  'inset: 0',
-  'z-index: 2000',
-  'background: rgba(0, 0, 0, 0.55)',
-  'display: flex',
-  'align-items: center',
-  'justify-content: center',
-  'padding: 1rem',
-  'font: inherit',
-].join('; ');
-
-const CARD_STYLE = [
-  'background: var(--bg, #fff)',
-  'color: var(--fg, #000)',
-  'border: 1px solid var(--border, rgba(0,0,0,0.12))',
-  'border-radius: 12px',
-  'padding: 1.25rem 1.25rem 1rem',
-  'max-width: 28rem',
-  'width: 100%',
-  'box-shadow: 0 8px 32px rgba(0, 0, 0, 0.32)',
-  'display: flex',
-  'flex-direction: column',
-  'gap: 0.75rem',
-].join('; ');
-
-const TITLE_STYLE = [
-  'margin: 0',
-  'font-size: 1.05rem',
-  'font-weight: 600',
-].join('; ');
-
-const BODY_STYLE = [
-  'margin: 0',
-  'color: var(--muted, #555)',
-  'font-size: 0.95rem',
-  'line-height: 1.4',
-].join('; ');
-
-const BUTTON_STYLE = [
-  'align-self: flex-end',
-  'margin-top: 0.5rem',
-  'padding: 0.5rem 1rem',
-  'border-radius: 8px',
-  'border: 1px solid var(--border, rgba(0,0,0,0.12))',
-  'background: var(--accent, #2563eb)',
-  'color: #fff',
-  'font: inherit',
-  'font-weight: 600',
-  'cursor: pointer',
-].join('; ');
-
 // Build the overlay DOM. Returns the root element plus handles to the
 // pieces that need to mutate on state change. The overlay starts hidden
-// — render() decides when to show it.
+// — render() decides when to show it. All visual rules live under the
+// `.speaker-unreachable*` selectors in style.css.
 function buildOverlay() {
   const root = document.createElement('div');
   root.className = 'speaker-unreachable';
@@ -124,27 +67,22 @@ function buildOverlay() {
   root.setAttribute('aria-modal', 'true');
   root.setAttribute('aria-labelledby', 'speaker-unreachable-title');
   root.setAttribute('aria-describedby', 'speaker-unreachable-body');
-  root.setAttribute('style', ROOT_STYLE);
   root.hidden = true;
 
   const card = document.createElement('div');
   card.className = 'speaker-unreachable__card';
-  card.setAttribute('style', CARD_STYLE);
 
   const title = document.createElement('h2');
   title.id = 'speaker-unreachable-title';
   title.className = 'speaker-unreachable__title';
-  title.setAttribute('style', TITLE_STYLE);
 
   const body = document.createElement('p');
   body.id = 'speaker-unreachable-body';
   body.className = 'speaker-unreachable__body';
-  body.setAttribute('style', BODY_STYLE);
 
   const retry = document.createElement('button');
   retry.type = 'button';
   retry.className = 'speaker-unreachable__retry';
-  retry.setAttribute('style', BUTTON_STYLE);
   retry.textContent = 'Retry';
 
   card.appendChild(title);

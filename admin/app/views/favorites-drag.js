@@ -95,10 +95,10 @@ function buildGhost(sourceRow) {
 
 function positionGhost(ghost, x, y) {
   if (!ghost || !ghost.style) return;
-  ghost.style.setProperty('position', 'fixed');
+  // Cursor coordinates — must stay inline. position:fixed +
+  // pointer-events:none live on .favorites-drag-ghost in style.css.
   ghost.style.setProperty('left', `${x}px`);
   ghost.style.setProperty('top',  `${y}px`);
-  ghost.style.setProperty('pointer-events', 'none');
 }
 
 function buildIndicator() {

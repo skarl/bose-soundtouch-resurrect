@@ -239,7 +239,7 @@ function buildRow({ entry, store, onActivity, dragDisabled }) {
   });
   row.appendChild(handle);
 
-  row.appendChild(stationArt({ url: entry.art || '', name: entry.name || entry.id, size: 40 }));
+  row.appendChild(stationArt({ url: entry.art || '', name: entry.name || entry.id }));
 
   // [body — name + optional meta]. The row itself is the play target.
   row.appendChild(buildBody({ entry }));

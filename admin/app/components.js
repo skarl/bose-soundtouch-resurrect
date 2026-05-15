@@ -364,14 +364,14 @@ export function equalizer({ playing = false } = {}) {
   return wrap;
 }
 
-// stationArt({ url, name, size }) — uniform art slot that delegates
-// loading + hashed-name fallback to setArt(). Wraps an <img> in a sized
-// box so callers don't have to repeat the box-art-image pattern.
+// stationArt({ url, name }) — uniform art slot that delegates
+// loading + hashed-name fallback to setArt(). Wraps an <img> in a
+// box sized by the parent context's CSS (`.station-row .station-art`
+// is 40x40; .station-header .station-art is 5rem).
 // update({ url, name }) re-points the image without re-creating the node.
-export function stationArt({ url = '', name = '', size = 48 } = {}) {
+export function stationArt({ url = '', name = '' } = {}) {
   const wrap = document.createElement('span');
   wrap.setAttribute('class', 'station-art');
-  wrap.setAttribute('style', `width:${size}px;height:${size}px`);
 
   const img = document.createElement('img');
   img.setAttribute('class', 'station-art__img');
@@ -602,7 +602,7 @@ export function stationRow({
   row.href = hrefForSid(sid);
   row.dataset.sid = sid;
 
-  row.appendChild(stationArt({ url: art, name: name || sid, size: 40 }));
+  row.appendChild(stationArt({ url: art, name: name || sid }));
 
   const body = document.createElement('span');
   body.className = 'station-row__body';

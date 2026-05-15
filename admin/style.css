@@ -990,56 +990,6 @@ main {
   .np-mute { transition: none; }
 }
 
-.preset-row {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 0.5rem;
-}
-
-.preset-slot {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.5rem;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.8rem;
-  min-height: 5rem;
-  position: relative;
-}
-
-.preset-slot.empty {
-  color: var(--muted);
-  background: var(--surface);
-}
-
-.preset-num {
-  position: absolute;
-  top: 0.25rem;
-  left: 0.4rem;
-  font-size: 0.7rem;
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.preset-art {
-  width: 2rem;
-  height: 2rem;
-  object-fit: cover;
-  border-radius: 3px;
-  margin-top: 0.5rem;
-}
-
-.preset-name {
-  display: block;
-  width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* --- search view ------------------------------------------------- */
 
 .search-bar {
@@ -1223,16 +1173,19 @@ main {
   align-items: flex-start;
 }
 
-.station-art {
+/* Larger station-art variant used by the station-detail header. The
+   base .station-art rules (display, overflow, border-radius, bg) live
+   in the `--- station-art` block; this scopes only the size and
+   header-specific override of the background token. */
+.station-header .station-art {
   width: 5rem;
   height: 5rem;
   flex: 0 0 auto;
   background: var(--border);
   border-radius: 6px;
-  overflow: hidden;
 }
 
-.station-art img {
+.station-header .station-art img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -1589,12 +1542,6 @@ main {
   margin: 0 0 0.5rem;
   color: var(--muted);
   font-size: 0.9rem;
-}
-
-.station-assign-row {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 0.5rem;
 }
 
 .station-assign-btn {
@@ -2120,22 +2067,12 @@ select.settings-input {
       padding: 8px 12px;
     }
 
-    /* Preset assign / row layouts also shift to 3-up on narrow views. */
-    .preset-row,
-    .station-assign-row {
-      grid-template-columns: repeat(3, 1fr);
-    }
-
     .station-test-play {
       min-height: 3.5rem;
     }
 
     .np-preset {
       min-height: 92px;
-    }
-
-    .preset-slot {
-      min-height: 5.5rem;
     }
 
     /* Station detail: stack header art above text. */
@@ -2213,6 +2150,63 @@ select.settings-input {
 .confirm-btn--danger:hover {
   background: #a93226;
   border-color: #a93226;
+}
+
+/* --- speaker-unreachable overlay (api.js upstream-failure) -------- */
+/* Blocking modal raised when the speaker proxy reports the device is
+   unreachable. Higher z-index than .confirm-backdrop so it always
+   trumps any in-flight confirm dialog. */
+
+.speaker-unreachable {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  font: inherit;
+}
+
+.speaker-unreachable__card {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem 1.25rem 1rem;
+  max-width: 28rem;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.32);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.speaker-unreachable__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.speaker-unreachable__body {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.speaker-unreachable__retry {
+  align-self: flex-end;
+  margin-top: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 /* --- prefers-reduced-motion -------------------------------------- */
@@ -3592,14 +3586,9 @@ a.browse-bar__crumb:focus-visible {
   font-size: 0.8rem;
 }
 
-/* Search empty state — single stacked column. The earlier two-column
-   grid was the polish that didn't match the mockup. */
-.search-empty {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
+/* Search empty state — single stacked column. Layout for the wrap
+   itself lives at the `.search-results, .search-empty` block above
+   in the search view section. */
 .search-empty-section {
   margin: 0;
   display: flex;

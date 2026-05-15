@@ -732,7 +732,6 @@ function showRow(entry, norm, ctx) {
   // parity with station rows.
   const art = document.createElement('span');
   art.className = 'station-art';
-  art.setAttribute('style', 'width:40px;height:40px');
   if (norm.image) {
     const img = document.createElement('img');
     img.className = 'station-art__img';
