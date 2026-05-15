@@ -7,6 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.7.1] - 2026-05-15
+
+### Added
+
+- **Favourites filter** — pill input above the Favourites tab list
+  filters by name and id substring (case-insensitive). Drag reorder
+  is disabled while a filter is active so the filtered subset can't
+  be reordered against the unfiltered ground truth. The predicate is
+  exported as `filterFavorites(list, query)` from
+  `admin/app/favorites.js`.
+- **Shared `pillInput({...})` primitive** in
+  `admin/app/components.js` — leading-icon + clear-button text input
+  used by the Search bar and the Favourites filter. CSS namespace is
+  `.pill-input*` (renamed from the previous `.search-input*`).
+- **Shared `.page` outer wrapper + `.page-title` / `.page-title-bar`
+  primitive** — every primary view (Browse, Search, Favourites,
+  Settings) wraps its body in `.page` for normalised vertical chrome
+  and renders its title in a subtle pill box that visually rhymes
+  with the filter input. Favourites list renders as one continuous
+  rounded card.
+- **`admin/app/row-internals.js`** — new module hoisting the
+  helpers `appendMetaSeparator`, `genreChipEl`, `browseUrlToHash`,
+  and `buildFavoriteHeart` that were previously duplicated between
+  `components.js` (`stationRow`) and `show-hero.js` (`showHero`).
+  Both call sites now import from `row-internals.js`.
+- **ADR 0003** —
+  [`docs/adr/0003-favourites-stay-fetch-only.md`](docs/adr/0003-favourites-stay-fetch-only.md).
+  Documents why the Favourites field stays a fetch-only Field
+  reconciled on boot + `visibilitychange`, and why no
+  resolver-to-SPA push channel is being added.
+
+### Changed
+
+- **Now-Playing heart captures the station label, not the sid.** The
+  heart on the Now-Playing card now resolves the entry's `name`
+  through `renderNowPlayingTitle(np)` (the same source of truth used
+  to render the visible title) instead of falling back to the sid.
+  Hearting from the NP card now seeds `name` consistently with
+  hearting from any row.
+- **`toggleFavorite` collapsed into a thin wrapper over
+  `replaceFavorites`.** The two action shapes now share one
+  optimistic-write + rollback + toast path; `toggleFavorite`
+  validates the id, computes the next list, and delegates.
+- **Favourites row uses the shared station-row skin.** The dedicated
+  `.favorites-row*` CSS namespace is gone; favourites rows render
+  through `.station-row` with a `.station-row--crud` modifier that
+  adds the drag-handle / pencil / trash affordances and the
+  expand-in-place edit row.
+- **`joinFilters` lives in `crumb-parts.js`.** Filter normalisation
+  consolidated into the pure crumb-parts module;
+  `outline-render.js` imports both `stringifyCrumbs` and
+  `joinFilters` from there.
+- **Outline-render takes an explicit render context.** Every render
+  entry-point in `admin/app/views/browse/outline-render.js` now
+  receives `ctx = {childCrumbs, currentParts}` from the navigation
+  seam in `browse.js`. The old module-level `_childCrumbs` /
+  `_currentParts` slots are gone — render state threads through
+  arguments end-to-end, so two parallel renders can no longer race
+  the same module slots.
+
+### Fixed
+
+- **Mobile horizontal-overflow** on `.section-h__meta` and
+  `.settings-segment__opt`. Both elements force-wrap inside narrow
+  viewports rather than triggering a horizontal scrollbar.
+- **Mini-player title clamps on narrow viewports.** Adds
+  `min-width: 0` to `.shell-mini` so the grid item lets long station
+  names ellipsis instead of widening the row.
+- **Inline CSS dropped from JS-emitted DOM.** The speaker-unreachable
+  modal moved its chrome to dedicated `.speaker-unreachable*` rules
+  in `style.css`; the `stationArt` `size` parameter is gone (the
+  size lives entirely in CSS now). Several duplicate CSS blocks
+  consolidated.
+- **Search sticky bar aligns with sibling views.** Vertical padding
+  on the Search tab's sticky filter bar is dropped so the input row
+  sits on the same baseline as the title-pill rows in Favourites /
+  Browse / Settings.
+
 ## [v0.7.0] - 2026-05-14
 
 ### Added
@@ -269,5 +347,6 @@ Calling these out so future maintainers don't re-derive them:
 - CI: GitHub Actions workflow running shellcheck on `scripts/` and a
   Python compile + error-path check on `resolver/build.py`.
 
+[v0.7.1]: https://github.com/skarl/bose-soundtouch-resurrect/releases/tag/v0.7.1
 [v0.7.0]: https://github.com/skarl/bose-soundtouch-resurrect/releases/tag/v0.7.0
 [v0.1.0]: https://github.com/skarl/bose-soundtouch-resurrect/releases/tag/v0.1.0

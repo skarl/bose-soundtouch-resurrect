@@ -31,10 +31,6 @@ const {
   skeleton,
   errorNode,
   pluralize,
-  setChildCrumbs,
-  setCurrentParts,
-  _setChildCrumbsForTest,
-  _setCurrentPartsForTest,
 } = await import('../app/views/browse/outline-render.js');
 
 function classOf(el) { return el.getAttribute('class') || ''; }
@@ -66,43 +62,26 @@ function findAllBy(root, predicate) {
 // --- drillHashFor contract ------------------------------------------
 
 test('drillHashFor composes id / c / filter / pivot / offset query keys', () => {
-  _setChildCrumbsForTest([]);
-  const h = drillHashFor({ id: 'g79', filter: 'l109', offset: '20' });
+  const h = drillHashFor({ id: 'g79', filter: 'l109', offset: '20' }, []);
   assert.match(h, /^#\/browse\?/);
   assert.match(h, /id=g79/);
   assert.match(h, /filter=l109/);
   assert.match(h, /offset=20/);
 });
 
-test('drillHashFor reads module-level _childCrumbs as the default from= prefix', () => {
-  _setChildCrumbsForTest(['music', 'g79']);
-  const h = drillHashFor({ id: 'c424724' });
+test('drillHashFor embeds the supplied crumbs as the from= prefix', () => {
+  const h = drillHashFor({ id: 'c424724' }, ['music', 'g79']);
   assert.match(h, /from=music%2Cg79/);
-  _setChildCrumbsForTest([]);
 });
 
-test('drillHashFor accepts an explicit crumbs override (used by the Back link)', () => {
-  _setChildCrumbsForTest(['music', 'g79']);
+test('drillHashFor accepts an explicit crumbs argument (used by the Back link)', () => {
   const h = drillHashFor({ id: 'g79' }, ['music']);
   assert.match(h, /from=music(?:&|$)/);
-  // The module-level value is ignored when the caller passes one in.
-  assert.equal(h.includes('music%2Cg79'), false);
-  _setChildCrumbsForTest([]);
 });
 
 test('drillHashFor with empty crumbs array omits from= entirely', () => {
-  _setChildCrumbsForTest([]);
-  const h = drillHashFor({ c: 'music' });
+  const h = drillHashFor({ c: 'music' }, []);
   assert.equal(h.includes('from='), false);
-});
-
-// --- setChildCrumbs / _setChildCrumbsForTest are equivalent ---------
-
-test('setChildCrumbs is the production setter for the crumb prefix', () => {
-  setChildCrumbs(['g1', 'g2']);
-  const h = drillHashFor({ id: 'g3' });
-  assert.match(h, /from=g1%2Cg2/);
-  setChildCrumbs([]);
 });
 
 // --- drillPartsFor / drillPartsForUrl --------------------------------
@@ -540,27 +519,23 @@ test('renderEntry does not fire a fetch when priming the cache (#105)', async ()
 //
 // Refinement chips (renderPivotChips / renderRelatedChips) compose
 // their hrefs by APPENDING to the current page's filters, not
-// replacing them. The composer reads `_currentParts` (set by
-// browse.js before each drill mount); tests drive it through
-// _setCurrentPartsForTest.
+// replacing them. The composer reads `ctx.currentParts`; tests pass
+// ctx directly at the call site.
 
 test('drillHashFor emits parts.filters: [N] as a comma-joined filter= — #106', () => {
-  _setChildCrumbsForTest([]);
-  const h = drillHashFor({ id: 'r101821', filters: ['g26', 'l170'] });
+  const h = drillHashFor({ id: 'r101821', filters: ['g26', 'l170'] }, []);
   // URLSearchParams encodes the comma as %2C; the hash router decodes
   // it back to ',' on the receiving end. Either form is wire-correct.
   assert.match(h, /filter=g26%2Cl170/);
 });
 
 test('drillHashFor falls back to legacy parts.filter when filters is absent — #106 back-compat', () => {
-  _setChildCrumbsForTest([]);
-  const h = drillHashFor({ id: 'r101821', filter: 'g26,l170' });
+  const h = drillHashFor({ id: 'r101821', filter: 'g26,l170' }, []);
   assert.match(h, /filter=g26%2Cl170/);
 });
 
 test('drillHashFor with empty parts.filters omits filter= entirely — #106', () => {
-  _setChildCrumbsForTest([]);
-  const h = drillHashFor({ id: 'r101821', filters: [] });
+  const h = drillHashFor({ id: 'r101821', filters: [] }, []);
   assert.doesNotMatch(h, /filter=/);
 });
 
@@ -568,55 +543,46 @@ test('renderPivotChips appends to current page filters when composing the chip h
   // Current page is Bayreuth refined by Country (g26). A pivot chip
   // adding a Language filter (l170) must produce filter=g26,l170 on
   // its href so the click stacks rather than replaces.
-  _setCurrentPartsForTest({ id: 'r101821', filters: ['g26'] });
-  try {
-    const wrap = renderPivotChips([{
-      url:   'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=l170',
-      label: 'Hungarian',
-      axis:  'language',
-    }]);
-    const chip = findFirstByClass(wrap, 'browse-pivot');
-    assert.ok(chip);
-    const href = chip.getAttribute('href');
-    assert.match(href, /filter=g26%2Cl170/, `expected filter=g26,l170 in ${href}`);
-    assert.match(href, /id=r101821/);
-  } finally {
-    _setCurrentPartsForTest(null);
-  }
+  const ctx = { childCrumbs: [], currentParts: { id: 'r101821', filters: ['g26'] } };
+  const wrap = renderPivotChips([{
+    url:   'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=l170',
+    label: 'Hungarian',
+    axis:  'language',
+  }], ctx);
+  const chip = findFirstByClass(wrap, 'browse-pivot');
+  assert.ok(chip);
+  const href = chip.getAttribute('href');
+  assert.match(href, /filter=g26%2Cl170/, `expected filter=g26,l170 in ${href}`);
+  assert.match(href, /id=r101821/);
 });
 
 test('renderRelatedChips appends to current page filters when composing chip hrefs — #106', () => {
-  _setCurrentPartsForTest({ id: 'r101821', filters: ['g26'] });
-  try {
-    const wrap = renderRelatedChips([
-      {
-        text: 'Hungarian',
-        URL:  'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=l170',
-        key:  'pivotLanguage',
-      },
-    ]);
-    const chip = findFirstByClass(wrap, 'browse-pivot');
-    assert.ok(chip);
-    const href = chip.getAttribute('href');
-    assert.match(href, /filter=g26%2Cl170/, `expected filter=g26,l170 in ${href}`);
-  } finally {
-    _setCurrentPartsForTest(null);
-  }
+  const ctx = { childCrumbs: [], currentParts: { id: 'r101821', filters: ['g26'] } };
+  const wrap = renderRelatedChips([
+    {
+      text: 'Hungarian',
+      URL:  'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=l170',
+      key:  'pivotLanguage',
+    },
+  ], ctx);
+  const chip = findFirstByClass(wrap, 'browse-pivot');
+  assert.ok(chip);
+  const href = chip.getAttribute('href');
+  assert.match(href, /filter=g26%2Cl170/, `expected filter=g26,l170 in ${href}`);
 });
 
 test('renderPivotChips with no current parts emits the chip URL verbatim — #106', () => {
   // No current parts (root view or test default) — chip composition
   // falls through to the URL-derived parts unchanged.
-  _setCurrentPartsForTest(null);
   const wrap = renderPivotChips([{
     url:   'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=l170',
     label: 'Hungarian',
     axis:  'language',
-  }]);
+  }], { childCrumbs: [], currentParts: null });
   const chip = findFirstByClass(wrap, 'browse-pivot');
   const href = chip.getAttribute('href');
   assert.match(href, /filter=l170/);
-  assert.doesNotMatch(href, /g26/, `no inherited filters when _currentParts is null: ${href}`);
+  assert.doesNotMatch(href, /g26/, `no inherited filters when currentParts is null: ${href}`);
 });
 
 test('renderPivotChips cumulative stack — Bayreuth → +Country → +German lands on filter=g26,l170 — #106', () => {
@@ -625,40 +591,32 @@ test('renderPivotChips cumulative stack — Bayreuth → +Country → +German la
   // Step 2: clicks Country chip → URL adds filter=g26.
   // Step 3: clicks Language chip with current parts {filters: ['g26']}
   //         → URL becomes filter=g26,l170.
-  _setCurrentPartsForTest({ id: 'r101821', filters: ['g26'] });
-  try {
-    const wrap = renderPivotChips([{
-      url:   'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=l170',
-      label: 'German',
-      axis:  'language',
-    }]);
-    const chip = findFirstByClass(wrap, 'browse-pivot');
-    const href = chip.getAttribute('href');
-    assert.match(href, /filter=g26%2Cl170/, `cumulative stack: ${href}`);
-  } finally {
-    _setCurrentPartsForTest(null);
-  }
+  const ctx = { childCrumbs: [], currentParts: { id: 'r101821', filters: ['g26'] } };
+  const wrap = renderPivotChips([{
+    url:   'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=l170',
+    label: 'German',
+    axis:  'language',
+  }], ctx);
+  const chip = findFirstByClass(wrap, 'browse-pivot');
+  const href = chip.getAttribute('href');
+  assert.match(href, /filter=g26%2Cl170/, `cumulative stack: ${href}`);
 });
 
 test('renderPivotChips dedupes when the chip filter is already in current parts — #106', () => {
   // Defence: a chip pointing at a filter that's already active should
   // not appear twice in the URL.
-  _setCurrentPartsForTest({ id: 'r101821', filters: ['g26', 'l170'] });
-  try {
-    const wrap = renderPivotChips([{
-      url:   'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=g26',
-      label: 'Country',
-      axis:  'genre',
-    }]);
-    const chip = findFirstByClass(wrap, 'browse-pivot');
-    const href = chip.getAttribute('href');
-    // The chip's g26 collapses into the existing g26; the URL keeps
-    // both filters but doesn't double up.
-    assert.match(href, /filter=g26%2Cl170/);
-    assert.doesNotMatch(href, /g26%2Cl170%2Cg26/);
-  } finally {
-    _setCurrentPartsForTest(null);
-  }
+  const ctx = { childCrumbs: [], currentParts: { id: 'r101821', filters: ['g26', 'l170'] } };
+  const wrap = renderPivotChips([{
+    url:   'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=g26',
+    label: 'Country',
+    axis:  'genre',
+  }], ctx);
+  const chip = findFirstByClass(wrap, 'browse-pivot');
+  const href = chip.getAttribute('href');
+  // The chip's g26 collapses into the existing g26; the URL keeps
+  // both filters but doesn't double up.
+  assert.match(href, /filter=g26%2Cl170/);
+  assert.doesNotMatch(href, /g26%2Cl170%2Cg26/);
 });
 
 test('drillPartsForUrl surfaces parts.filters: [oneEntry] for single-filter URLs (back-compat) — #106', () => {
@@ -687,19 +645,15 @@ test('primeLabelForChip with parts.filters: [N] keys on the last (new) filter �
   tc.cache.invalidate('tunein.label.l170');
 });
 
-test('setCurrentParts is the production setter for current parts — #106', () => {
-  // Equivalent to _setCurrentPartsForTest; verify both wire the same
-  // module-level value.
-  setCurrentParts({ id: 'r101821', filters: ['g26'] });
-  try {
-    const wrap = renderPivotChips([{
-      url:   'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=l170',
-      label: 'Hungarian',
-      axis:  'language',
-    }]);
-    const chip = findFirstByClass(wrap, 'browse-pivot');
-    assert.match(chip.getAttribute('href'), /filter=g26%2Cl170/);
-  } finally {
-    setCurrentParts(null);
-  }
+test('renderPivotChips reads currentParts directly from the supplied ctx — #106', () => {
+  // The ctx object passed at call time is the production drive — no
+  // module-level state lurks underneath it.
+  const ctx = { childCrumbs: [], currentParts: { id: 'r101821', filters: ['g26'] } };
+  const wrap = renderPivotChips([{
+    url:   'http://opml.radiotime.com/Browse.ashx?id=r101821&filter=l170',
+    label: 'Hungarian',
+    axis:  'language',
+  }], ctx);
+  const chip = findFirstByClass(wrap, 'browse-pivot');
+  assert.match(chip.getAttribute('href'), /filter=g26%2Cl170/);
 });

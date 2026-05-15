@@ -66,7 +66,7 @@ export default defineView({
     volumeSlider.classList.add('np-slider');
 
     mount(root, html`
-      <section class="np-view" data-view="now-playing">
+      <section class="page np-view" data-view="now-playing">
         <div class="np-card">
           <div class="np-card__top">
             <div class="np-art-wrap">
@@ -174,7 +174,7 @@ export default defineView({
         const item = np.item;
         const id = extractGuideIdFromLocation(item && item.location);
         if (!id) return null;
-        const name = (item && (item.itemName || item.name)) || '';
+        const name = renderNowPlayingTitle(np);
         const art  = (np && typeof np.art === 'string' && np.art.startsWith('http'))
           ? np.art : '';
         return { id, name, art, note: '' };

@@ -205,7 +205,16 @@ Architecture in three layers:
 1. **Static SPA** — `index.html` + `style.css` + an ES-module tree
    under `/app/`. No build step (vanilla CSS, native ES modules,
    tagged-template DOM). Cache-busted via `?v=<git-describe>` query
-   strings rewritten at deploy time.
+   strings rewritten at deploy time. Every primary view wraps its
+   body in a shared `.page` outer chrome with a `.page-title-bar`
+   pill (Browse, Search, Favourites, Settings); shared row primitives
+   live in `components.js` (`stationRow`, `pillInput`, `stationArt`,
+   etc.) with rendering helpers hoisted into `row-internals.js` so
+   the Now-Playing show-hero and the browse station-row share the
+   same meta-separator, genre-chip, and favourite-heart code paths.
+   The browse outline-render pipeline threads an explicit render
+   context (`ctx = {childCrumbs, currentParts}`) through every
+   render entry-point — no module-level slots.
 2. **Shell CGIs under `/cgi-bin/api/v1/`** — `tunein` (forwarder for
    browse / search / probe), `presets` (atomic file-write +
    `/storePreset`), `favorites` (atomic JSON write for the admin-owned
@@ -226,7 +235,7 @@ Mono) live under `/mnt/nv/resolver/fonts/` and are referenced by
 relative URL — the LAN can be cut off from the public internet and
 the admin still loads. No CDN, no Google Fonts, no `unpkg`.
 
-User-facing surface as of 0.7:
+User-facing surface as of 0.7.1:
 
 - Now-playing — transport, volume, source picker, preset row,
   long-press to assign, 3×3 favourites preview grid below the preset
@@ -239,9 +248,13 @@ User-facing surface as of 0.7:
 - Station detail — metadata, probe state, 3×2 preset grid, test-play,
   inline heart next to the station name.
 - Favourites — dedicated tab with full CRUD (drag reorder,
-  expand-in-place edit, toast-undo delete). Persists in a JSON file
-  at `/mnt/nv/resolver/admin-data/favorites.json`. Disjoint from the
-  six firmware-owned hardware presets — a station can be both.
+  expand-in-place edit, toast-undo delete) and a pill filter input
+  above the list (drag is disabled while a filter is active).
+  Persists in a JSON file at
+  `/mnt/nv/resolver/admin-data/favorites.json`. Disjoint from the
+  six firmware-owned hardware presets — a station can be both. See
+  [adr/0003-favourites-stay-fetch-only.md](adr/0003-favourites-stay-fetch-only.md)
+  for why the favourites field is fetch-only with no push channel.
 - Settings — Appearance (theme), Speaker (name / power / sleep),
   Audio (bass / balance / mono-stereo), Bluetooth (own MAC + active
   device), Multi-room (placeholder), Network (signal bars),

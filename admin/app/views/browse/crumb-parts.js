@@ -72,6 +72,19 @@ export function filtersOf(parts) {
   return [];
 }
 
+// Joined-string view of filtersOf — the wire form `l109,g22`. Prefers
+// `parts.filters: string[]` (the canonical multi-value form); falls
+// back to the legacy `parts.filter: string` verbatim. Empty → ''.
+export function joinFilters(parts) {
+  if (!parts) return '';
+  if (Array.isArray(parts.filters)) {
+    const cleaned = parts.filters.filter((s) => typeof s === 'string' && s !== '');
+    return cleaned.join(',');
+  }
+  if (typeof parts.filter === 'string' && parts.filter !== '') return parts.filter;
+  return '';
+}
+
 // Stash a `filters: string[]` (and back-compat `filter: string`) on a
 // parts object. Empty arrays drop both fields so the URL composer emits
 // the bare drill (no `filter=` param).
@@ -180,10 +193,8 @@ export function crumbLabelFor(parts) {
 }
 
 // Pure URL composer for the SPA-internal drill hash. Mirrors
-// outline-render's drillHashFor but takes the crumb prefix explicitly
-// instead of reading the module-level `_childCrumbs` — this is the
-// pure surface backHrefFor needs (crumb-parts.js may not depend on
-// outline-render.js, which is DOM-bound).
+// outline-render's drillHashFor but is duplicated here so crumb-parts
+// stays DOM-free (it cannot import outline-render, which is DOM-bound).
 function drillHash(parts, crumbs) {
   const qs = new URLSearchParams();
   if (parts.id)     qs.set('id', parts.id);

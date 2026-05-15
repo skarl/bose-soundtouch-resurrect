@@ -27,6 +27,7 @@ const {
   withFavoriteRemoved,
   toggleFavorite,
   favoriteHeart,
+  filterFavorites,
 } = await import('../app/favorites.js');
 
 const { store } = await import('../app/state.js');
@@ -86,6 +87,66 @@ test('withFavoriteRemoved: drops the first match; no-op when missing', () => {
 
   const same = withFavoriteRemoved(base, 'sNope');
   assert.equal(same, base, 'miss returns the original reference');
+});
+
+// --- filterFavorites pure list transform ---------------------------
+
+test('filterFavorites: empty / whitespace query returns the original reference', () => {
+  const list = [{ id: 's1', name: 'A', note: '', art: '' }];
+  assert.equal(filterFavorites(list, ''), list, 'empty string is identity');
+  assert.equal(filterFavorites(list, '   '), list, 'whitespace-only is identity');
+  assert.equal(filterFavorites(list, null), list, 'non-string treated as empty');
+});
+
+test('filterFavorites: substring match against name', () => {
+  const list = [
+    { id: 's1', name: 'KEXP Seattle',  note: '', art: '' },
+    { id: 's2', name: 'BBC Radio 6',   note: '', art: '' },
+    { id: 's3', name: 'Radio Paradise', note: '', art: '' },
+  ];
+  const out = filterFavorites(list, 'radio');
+  assert.equal(out.length, 2);
+  assert.deepEqual(out.map((e) => e.id), ['s2', 's3'], 'order preserved');
+});
+
+test('filterFavorites: case-insensitive', () => {
+  const list = [{ id: 's1', name: 'KEXP', note: '', art: '' }];
+  assert.equal(filterFavorites(list, 'kexp').length, 1);
+  assert.equal(filterFavorites(list, 'KEXP').length, 1);
+  assert.equal(filterFavorites(list, 'KeXp').length, 1);
+});
+
+test('filterFavorites: diacritic-insensitive on both sides', () => {
+  const list = [
+    { id: 's1', name: 'Café del Mar', note: '', art: '' },
+    { id: 's2', name: 'Über Radio',   note: '', art: '' },
+  ];
+  // Plain ASCII needle matches the accented haystack.
+  assert.equal(filterFavorites(list, 'cafe')[0].id, 's1');
+  assert.equal(filterFavorites(list, 'uber')[0].id, 's2');
+  // Accented needle still matches the same row.
+  assert.equal(filterFavorites(list, 'CAFÉ')[0].id, 's1');
+});
+
+test('filterFavorites: matches against note and id, not just name', () => {
+  const list = [
+    { id: 's12345', name: 'Mystery', note: '',         art: '' },
+    { id: 'p99',    name: 'Show',    note: 'live mix', art: '' },
+  ];
+  assert.equal(filterFavorites(list, '12345')[0].id, 's12345', 'id substring matches');
+  assert.equal(filterFavorites(list, 'live')[0].id, 'p99',     'note substring matches');
+});
+
+test('filterFavorites: zero matches → empty array, not the original', () => {
+  const list = [{ id: 's1', name: 'A', note: '', art: '' }];
+  const out = filterFavorites(list, 'zzznope');
+  assert.notEqual(out, list);
+  assert.equal(out.length, 0);
+});
+
+test('filterFavorites: null / non-array list collapses to []', () => {
+  assert.deepEqual(filterFavorites(null, 'x'), []);
+  assert.deepEqual(filterFavorites(undefined, 'x'), []);
 });
 
 // --- toggleFavorite optimistic round-trip ---------------------------
@@ -335,7 +396,7 @@ test('favourites view: ?focus=<id> flashes the matching row on mount', async () 
   const root = makeRoot();
   const destroy = favoritesView.init(root, store, { query: { focus: 's2' } });
   try {
-    const rows = root.querySelectorAll('.favorites-row');
+    const rows = root.querySelectorAll('.station-row--crud');
     assert.equal(rows.length, 3, 'three rows rendered');
     const target = rows.find((r) => r.dataset.favId === 's2');
     assert.ok(target, 'row for s2 present');
@@ -359,7 +420,7 @@ test('favourites view: ?focus with no match → nothing flashes, no throw', () =
   const root = makeRoot();
   const destroy = favoritesView.init(root, store, { query: { focus: 'sNope' } });
   try {
-    const rows = root.querySelectorAll('.favorites-row');
+    const rows = root.querySelectorAll('.station-row--crud');
     for (const r of rows) {
       assert.equal(r.classList.contains('is-focused'), false,
         'no row should flash when ?focus does not match');
@@ -376,7 +437,7 @@ test('favourites view: mount without ?focus → no row flashes', () => {
   const root = makeRoot();
   const destroy = favoritesView.init(root, store, {});
   try {
-    const rows = root.querySelectorAll('.favorites-row');
+    const rows = root.querySelectorAll('.station-row--crud');
     for (const r of rows) {
       assert.equal(r.classList.contains('is-focused'), false,
         'mount without focus must leave rows untouched');
@@ -392,7 +453,7 @@ test('favourites view: ?focus on unfetched list applies after the list lands', (
   const root = makeRoot();
   const destroy = favoritesView.init(root, store, { query: { focus: 's42' } });
   try {
-    assert.equal(root.querySelectorAll('.favorites-row').length, 0,
+    assert.equal(root.querySelectorAll('.station-row--crud').length, 0,
       'empty state — no rows to flash yet');
     // Now the reconcile lands.
     store.update('speaker', (s) => {
@@ -401,7 +462,7 @@ test('favourites view: ?focus on unfetched list applies after the list lands', (
         { id: 's42', name: 'Magic',   art: '', note: '' },
       ];
     });
-    const rows = root.querySelectorAll('.favorites-row');
+    const rows = root.querySelectorAll('.station-row--crud');
     assert.equal(rows.length, 2, 'rows rendered after the update');
     const target = rows.find((r) => r.dataset.favId === 's42');
     assert.ok(target, 'row for s42 present');
@@ -419,7 +480,7 @@ test('favourites view: ?focus applies once — re-render after flash does not re
   const root = makeRoot();
   const destroy = favoritesView.init(root, store, { query: { focus: 's1' } });
   try {
-    const initialRow = root.querySelector('.favorites-row');
+    const initialRow = root.querySelector('.station-row--crud');
     assert.equal(initialRow.classList.contains('is-focused'), true,
       'first paint flashes the target row');
     // Manually drop the flash class to simulate the post-timeout state,
@@ -431,7 +492,7 @@ test('favourites view: ?focus applies once — re-render after flash does not re
         { id: 's2', name: 'Two',   art: '', note: '' },
       ];
     });
-    const rows = root.querySelectorAll('.favorites-row');
+    const rows = root.querySelectorAll('.station-row--crud');
     for (const r of rows) {
       assert.equal(r.classList.contains('is-focused'), false,
         `subsequent renders must not re-apply the flash (${r.dataset.favId})`);

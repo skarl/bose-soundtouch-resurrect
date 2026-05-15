@@ -100,6 +100,7 @@ export const FIELDS = [
     // to visible. The POST round-trip updates state optimistically from
     // the caller; the GET path is the floor in case another tab
     // mutated the list.
+    // see also: docs/adr/0003-favourites-stay-fetch-only.md
     name: 'favorites',
     fetcher: favoritesList,
     apply(state, env) {

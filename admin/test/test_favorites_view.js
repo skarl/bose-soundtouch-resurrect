@@ -38,13 +38,15 @@ function mountFavorites(root) {
 
 // Helpers — find row + its inline controls.
 
-function findRows(root) { return root.querySelectorAll('.favorites-row'); }
+function findRows(root) { return root.querySelectorAll('.station-row--crud'); }
 function findRow(root, idx) { return findRows(root)[idx] || null; }
-function findEditBtn(row)   { return row.querySelector('.favorites-row__edit-btn'); }
-function findDeleteBtn(row) { return row.querySelector('.favorites-row__delete-btn'); }
-function findDragHandle(row){ return row.querySelector('.favorites-row__drag'); }
-function findBody(row)      { return row.querySelector('.favorites-row__body'); }
-function findEditForm(row)  { return row.querySelector('.favorites-row__edit'); }
+function findEditBtn(row)   { return row.querySelector('.station-row__crud-edit'); }
+function findDeleteBtn(row) { return row.querySelector('.station-row__crud-delete'); }
+function findDragHandle(row){ return row.querySelector('.station-row__drag'); }
+// The row root itself is the play button (#134); the body is a layout
+// span. Tests click the row to fire play.
+function findBody(row)      { return row; }
+function findEditForm(row)  { return row.querySelector('.station-row__edit'); }
 function findToastAction()  { return doc.querySelector('.toast--action .toast__action'); }
 function findToastText()    { return doc.querySelector('.toast--action .toast__text'); }
 
@@ -84,11 +86,11 @@ test('favorites tab: each row renders drag-handle | body | pencil | trash', asyn
       assert.ok(findDeleteBtn(row),  'trash present');
     }
     // Body text reflects the entry.
-    const firstName = rows[0].querySelector('.favorites-row__name');
+    const firstName = rows[0].querySelector('.station-row__name');
     assert.equal(firstName && firstName.textContent, 'Radio One');
-    // Notes surface in the body.
-    const secondNote = rows[1].querySelector('.favorites-row__note');
-    assert.equal(secondNote && secondNote.textContent, 'live mix');
+    // Notes surface on the meta line — the shared station-row contract.
+    const secondMeta = rows[1].querySelector('.station-row__meta');
+    assert.equal(secondMeta && secondMeta.textContent, 'live mix');
   } finally {
     destroy();
   }
@@ -120,13 +122,13 @@ test('favorites tab: pencil expands row; Save commits + POSTs + collapses', asyn
     assert.ok(form, 'edit form appears after pencil click');
     assert.equal(row.classList.contains('is-expanded'), true, 'row marked as expanded');
 
-    const inputs = form.querySelectorAll('.favorites-edit__input');
+    const inputs = form.querySelectorAll('.station-row__edit-input');
     assert.equal(inputs.length, 3, 'three inputs (name, art, note)');
     setInputValue(inputs[0], 'New Name');
     setInputValue(inputs[1], 'http://art');
     setInputValue(inputs[2], 'edited note');
 
-    const saveBtn = form.querySelector('.favorites-edit__btn--save');
+    const saveBtn = form.querySelector('.station-row__edit-btn--save');
     click(saveBtn);
 
     // Optimistic mutation lands synchronously.
@@ -166,9 +168,9 @@ test('favorites tab: pencil → Cancel collapses without writing', async () => {
     click(findEditBtn(row));
     const form = findEditForm(row);
     assert.ok(form);
-    const inputs = form.querySelectorAll('.favorites-edit__input');
+    const inputs = form.querySelectorAll('.station-row__edit-input');
     setInputValue(inputs[0], 'Mutated');
-    const cancelBtn = form.querySelector('.favorites-edit__btn--cancel');
+    const cancelBtn = form.querySelector('.station-row__edit-btn--cancel');
     click(cancelBtn);
     assert.equal(findEditForm(findRow(root, 0)), null, 'form collapsed after Cancel');
     assert.equal(store.state.speaker.favorites[0].name, 'Radio One', 'state untouched');
@@ -313,9 +315,9 @@ test('favorites tab: edit Save + POST failure → state reverts, toast surfaces'
   try {
     click(findEditBtn(findRow(root, 0)));
     const form = findEditForm(findRow(root, 0));
-    const inputs = form.querySelectorAll('.favorites-edit__input');
+    const inputs = form.querySelectorAll('.station-row__edit-input');
     setInputValue(inputs[0], 'Mutated');
-    click(form.querySelector('.favorites-edit__btn--save'));
+    click(form.querySelector('.station-row__edit-btn--save'));
     // Optimistic edit lands first.
     assert.equal(store.state.speaker.favorites[0].name, 'Mutated');
     await new Promise((r) => setTimeout(r, 10));
@@ -359,6 +361,216 @@ test('favorites tab: any other user action dismisses the Undo toast early', asyn
   } finally {
     destroy();
     restore();
+  }
+});
+
+// --- filter input (#135) -------------------------------------------
+
+function findFilterInput(root) {
+  const inp = root.querySelector('.favorites-filter .pill-input');
+  return inp;
+}
+
+function fireInput(input, value) {
+  input.value = value;
+  input.dispatchEvent({
+    type: 'input',
+    target: input,
+    defaultPrevented: false,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+}
+
+test('favorites filter: pill input renders inside .page-title-bar beside the heading', () => {
+  store.state.speaker.favorites = [
+    { id: 's1', name: 'KEXP', note: '', art: '' },
+  ];
+  const root = makeRoot();
+  const destroy = mountFavorites(root);
+  try {
+    const titleBar = root.querySelector('.page-title-bar');
+    assert.ok(titleBar, 'page-title-bar present');
+    const heading = titleBar.querySelector('.page-title');
+    const filter  = titleBar.querySelector('.favorites-filter');
+    assert.ok(heading, 'heading is a child of the title bar');
+    assert.ok(filter,  'filter input is a child of the title bar');
+    const input = filter.querySelector('.pill-input');
+    assert.ok(input, 'pill-input nested inside the favorites-filter wrap');
+    assert.equal(input.getAttribute('placeholder'), 'Filter favourites');
+  } finally {
+    destroy();
+  }
+});
+
+test('favorites filter: typing narrows the visible rows after the debounce', async () => {
+  store.state.speaker.favorites = [
+    { id: 's1', name: 'KEXP Seattle',   note: '', art: '' },
+    { id: 's2', name: 'BBC Radio 6',    note: '', art: '' },
+    { id: 's3', name: 'Radio Paradise', note: '', art: '' },
+  ];
+  const root = makeRoot();
+  const destroy = mountFavorites(root);
+  try {
+    assert.equal(findRows(root).length, 3, 'all three rows visible initially');
+    fireInput(findFilterInput(root), 'radio');
+    // Debounce is 150 ms — wait it out.
+    await new Promise((r) => setTimeout(r, 200));
+    const rows = findRows(root);
+    assert.equal(rows.length, 2, 'two rows survive the substring filter');
+    const ids = Array.from(rows).map((r) => r.dataset.favId);
+    assert.deepEqual(ids, ['s2', 's3']);
+  } finally {
+    destroy();
+  }
+});
+
+test('favorites filter: drag handles get aria-disabled when the filter is active', async () => {
+  store.state.speaker.favorites = [
+    { id: 's1', name: 'KEXP Seattle',   note: '', art: '' },
+    { id: 's2', name: 'Radio Paradise', note: '', art: '' },
+  ];
+  const root = makeRoot();
+  const destroy = mountFavorites(root);
+  try {
+    // Unfiltered — handles are interactive.
+    for (const row of findRows(root)) {
+      const h = findDragHandle(row);
+      assert.equal(h.getAttribute('aria-disabled'), null, 'no aria-disabled when filter empty');
+    }
+    fireInput(findFilterInput(root), 'radio');
+    await new Promise((r) => setTimeout(r, 200));
+    for (const row of findRows(root)) {
+      const h = findDragHandle(row);
+      assert.equal(h.getAttribute('aria-disabled'), 'true', 'handle marked disabled while filter active');
+    }
+    // Clearing the filter restores drag.
+    fireInput(findFilterInput(root), '');
+    await new Promise((r) => setTimeout(r, 200));
+    for (const row of findRows(root)) {
+      const h = findDragHandle(row);
+      assert.equal(h.getAttribute('aria-disabled'), null, 'handle is interactive again after filter clear');
+    }
+  } finally {
+    destroy();
+  }
+});
+
+test('favorites filter: aria-disabled handle is a no-op for installFavoriteDrag', async () => {
+  store.state.speaker.favorites = [
+    { id: 's1', name: 'KEXP Seattle',   note: '', art: '' },
+    { id: 's2', name: 'BBC Radio 6',    note: '', art: '' },
+    { id: 's3', name: 'Radio Paradise', note: '', art: '' },
+  ];
+  const root = makeRoot();
+  const destroy = mountFavorites(root);
+  try {
+    fireInput(findFilterInput(root), 'radio');
+    await new Promise((r) => setTimeout(r, 200));
+    const row = findRow(root, 0);
+    const handle = findDragHandle(row);
+    handle.dispatchEvent({
+      type: 'pointerdown', button: 0, pointerId: 1,
+      clientX: 0, clientY: 0,
+      defaultPrevented: false,
+      preventDefault() { this.defaultPrevented = true; },
+      stopPropagation() {},
+    });
+    // No ghost / indicator gets mounted because the handler bails early.
+    assert.equal(doc.querySelector('.favorites-drag-ghost'), null,
+      'no drag ghost while filter is active');
+    assert.equal(root.querySelector('.favorites-drag-indicator'), null,
+      'no drop indicator while filter is active');
+    assert.equal(row.classList.contains('is-dragging'), false,
+      'row not marked is-dragging');
+  } finally {
+    destroy();
+  }
+});
+
+test('favorites filter: pencil / trash / body-tap stay active under filter', async () => {
+  store.state.speaker.favorites = [
+    { id: 's1', name: 'KEXP Seattle',   note: '', art: '' },
+    { id: 's2', name: 'Radio Paradise', note: '', art: '' },
+  ];
+  const calls = [];
+  const restore = installFetchStub(async (url, opts) => {
+    calls.push({ url: String(url), opts });
+    if (/\/play$/.test(String(url))) {
+      return { ok: true, status: 200, json: async () => ({ ok: true, url: 'http://stream' }) };
+    }
+    if (/\/favorites$/.test(String(url)) && opts && opts.method === 'POST') {
+      return { ok: true, status: 200, json: async () => ({ ok: true, data: [] }) };
+    }
+    return new Promise(() => {});
+  });
+  const root = makeRoot();
+  const destroy = mountFavorites(root);
+  try {
+    fireInput(findFilterInput(root), 'paradise');
+    await new Promise((r) => setTimeout(r, 200));
+    const rows = findRows(root);
+    assert.equal(rows.length, 1);
+    const row = rows[0];
+    // Pencil opens the inline edit form.
+    click(findEditBtn(row));
+    assert.ok(findEditForm(row), 'pencil still opens the edit form under filter');
+    // Trash fires a delete POST.
+    click(findDeleteBtn(row));
+    await new Promise((r) => setTimeout(r, 10));
+    assert.ok(calls.some((c) => /\/favorites$/.test(c.url) && c.opts.method === 'POST'),
+      'trash issues the delete POST under filter');
+    // Body tap fires /play.
+    click(row);
+    await new Promise((r) => setTimeout(r, 10));
+    assert.ok(calls.some((c) => /\/play$/.test(c.url) && c.opts.method === 'POST'),
+      'body tap fires /play under filter');
+  } finally {
+    destroy();
+    restore();
+  }
+});
+
+test('favorites filter: zero matches renders the no-match empty state with Clear filter', async () => {
+  store.state.speaker.favorites = [
+    { id: 's1', name: 'KEXP Seattle', note: '', art: '' },
+  ];
+  const root = makeRoot();
+  const destroy = mountFavorites(root);
+  try {
+    fireInput(findFilterInput(root), 'nothingmatchesthis');
+    await new Promise((r) => setTimeout(r, 200));
+    assert.equal(findRows(root).length, 0, 'no rows rendered for a no-match filter');
+    const empty = root.querySelector('.favorites-empty');
+    assert.ok(empty, 'no-match empty state present');
+    const code = empty.querySelector('code');
+    assert.ok(code && code.textContent === 'nothingmatchesthis',
+      'query echoed back inside <code>');
+    const clearBtn = empty.querySelector('.favorites-empty__clear');
+    assert.ok(clearBtn, 'Clear filter link present');
+    // Tapping Clear filter restores the row + clears the input.
+    click(clearBtn);
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(findRows(root).length, 1, 'rows restored after Clear filter');
+    const input = findFilterInput(root);
+    assert.equal(input.getAttribute('value'), '', 'filter input cleared');
+  } finally {
+    destroy();
+  }
+});
+
+test('favorites filter: zero-favourites empty state uses the broadened wording', () => {
+  store.state.speaker.favorites = [];
+  const root = makeRoot();
+  const destroy = mountFavorites(root);
+  try {
+    const empty = root.querySelector('.favorites-empty');
+    assert.ok(empty, 'empty state visible');
+    const para = empty.querySelector('p');
+    assert.ok(para && /station or show/.test(para.textContent),
+      'wording mentions station OR show, not just station');
+  } finally {
+    destroy();
   }
 });
 

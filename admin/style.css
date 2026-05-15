@@ -242,6 +242,58 @@ main {
 .conn-pill[data-state="reconnecting"] { color: var(--pill-amber); }
 .conn-pill[data-state="polling"]      { color: var(--fg-muted);   }
 
+/* --- page wrapper (shared outer chrome for top-level views) ------ */
+
+/* Single seam owning the per-view column rhythm. Outer padding +
+   max-width come from .shell-body; .page only contributes the vertical
+   gap between section blocks (page-title-bar, body, etc.) and a
+   consistent flex-column shape so individual views don't reinvent it.
+   No max-width here — keep it full-width like Favourites; the
+   .shell-body cap (720/880px) is the single horizontal constraint. */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* --- page title (shared across top-level views) ------------------ */
+
+/* Flex container that puts the page heading on one row with any
+   sibling top-of-page affordance (filter input, action button, etc.).
+   Stacks on narrow viewports so the title keeps its full width. The
+   bottom margin is 0 — .page's gap rule owns the spacing to the next
+   block so the title-bar doesn't double-space. */
+.page-title-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+@media (min-width: 480px) {
+  .page-title-bar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+}
+
+.page-title {
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 14px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
 /* --- browse view ------------------------------------------------- */
 
 /* Segmented 3-tab control. Sunken track + active pill matches
@@ -250,7 +302,7 @@ main {
   display: flex;
   gap: 4px;
   padding: 3px;
-  margin: 0.75rem 0 0.5rem;
+  margin: 0;
   background: var(--surface-hi);
   border-radius: 8px;
 }
@@ -369,11 +421,7 @@ main {
 
 /* --- now-playing view (compact card + 3-col preset grid) --------- */
 
-.np-view {
-  display: flex;
-  flex-direction: column;
-  gap: 0.875rem;
-}
+/* Outer chrome (padding, max-width, gap) lives in .page. */
 
 /* Single composite card: tinted top region (art + metadata + transport)
    sitting above a thin volume row separated by a border. The hero tint
@@ -836,7 +884,7 @@ main {
 
 /* Brief flash on the Favourites tab when arriving via
    `#/favorites?focus=<id>` (long-press from the Now-Playing grid). */
-.favorites-row.is-focused {
+.station-row--crud.is-focused {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   animation: favorites-focus-flash 1400ms ease-out;
@@ -848,7 +896,7 @@ main {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .favorites-row.is-focused { animation: none; }
+  .station-row--crud.is-focused { animation: none; }
 }
 
 /* STANDBY / asleep state */
@@ -942,56 +990,6 @@ main {
   .np-mute { transition: none; }
 }
 
-.preset-row {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 0.5rem;
-}
-
-.preset-slot {
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.5rem;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.8rem;
-  min-height: 5rem;
-  position: relative;
-}
-
-.preset-slot.empty {
-  color: var(--muted);
-  background: var(--surface);
-}
-
-.preset-num {
-  position: absolute;
-  top: 0.25rem;
-  left: 0.4rem;
-  font-size: 0.7rem;
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.preset-art {
-  width: 2rem;
-  height: 2rem;
-  object-fit: cover;
-  border-radius: 3px;
-  margin-top: 0.5rem;
-}
-
-.preset-name {
-  display: block;
-  width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* --- search view ------------------------------------------------- */
 
 .search-bar {
@@ -999,13 +997,15 @@ main {
   top: 0;
   z-index: 5;
   background: var(--bg);
-  padding: 0.5rem 0;
-  margin: 0 0 0.75rem;
+  padding: 0;
+  margin: 0;
 }
 
-/* Pill-shaped input with leading search glyph + trailing clear button.
-   The wrapper is the visible border, the <input> is borderless inside. */
-.search-input-wrap {
+/* Pill-shaped input with leading glyph + trailing clear button. The
+   wrapper is the visible border, the <input> is borderless inside.
+   Namespaced .pill-input* so non-search callers (favourites filter,
+   future browse-text-filter) can reuse the shell. */
+.pill-input-wrap {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1018,17 +1018,17 @@ main {
   transition: border-color 120ms ease, background 120ms ease;
 }
 
-.search-input-wrap:focus-within {
+.pill-input-wrap:focus-within {
   border-color: var(--accent);
   background: var(--bg);
   color: var(--fg);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .search-input-wrap { transition: none; }
+  .pill-input-wrap { transition: none; }
 }
 
-.search-input {
+.pill-input {
   flex: 1 1 auto;
   min-width: 0;
   font: inherit;
@@ -1040,16 +1040,16 @@ main {
   padding: 0;
 }
 
-.search-input::placeholder { color: var(--muted); }
+.pill-input::placeholder { color: var(--muted); }
 
-.search-input-icon {
+.pill-input-icon {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
   color: var(--muted);
 }
 
-.search-clear {
+.pill-input-clear {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1062,7 +1062,7 @@ main {
   cursor: pointer;
 }
 
-.search-clear:hover { color: var(--fg); background: var(--surface-hi); }
+.pill-input-clear:hover { color: var(--fg); background: var(--surface-hi); }
 
 .search-pending {
   display: inline-block;
@@ -1165,11 +1165,7 @@ main {
 
 /* --- station detail ---------------------------------------------- */
 
-.station-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
+/* Outer chrome (padding, max-width, gap) lives in .page. */
 
 .station-header {
   display: flex;
@@ -1177,16 +1173,19 @@ main {
   align-items: flex-start;
 }
 
-.station-art {
+/* Larger station-art variant used by the station-detail header. The
+   base .station-art rules (display, overflow, border-radius, bg) live
+   in the `--- station-art` block; this scopes only the size and
+   header-specific override of the background token. */
+.station-header .station-art {
   width: 5rem;
   height: 5rem;
   flex: 0 0 auto;
   background: var(--border);
   border-radius: 6px;
-  overflow: hidden;
 }
 
-.station-art img {
+.station-header .station-art img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -1252,14 +1251,8 @@ main {
 .fav-heart[hidden] { display: none; }
 
 /* Favourites tab body — plain list. The empty state mirrors the
- * search-empty hint style: a faint header + one-line tip. */
-.favorites {
-  padding: 1rem;
-}
-.favorites-header h1 {
-  font-size: 1.5rem;
-  margin: 0 0 1rem;
-}
+ * search-empty hint style: a faint header + one-line tip. Outer
+ * chrome (padding, max-width, gap) lives in .page. */
 .favorites-empty {
   color: var(--muted);
   padding: 2rem 0;
@@ -1273,38 +1266,65 @@ main {
 .favorites-empty p {
   margin: 0;
 }
+.favorites-empty__clear {
+  margin-top: 0.75rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent, #4a90e2);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* Filter input mounted in .page-title-bar — caps the width on wide
+ * viewports so the title still gets a useful share of the row. The
+ * .page-title-bar media query already stacks → row at 480 px. */
+.favorites-filter {
+  flex: 1 1 auto;
+}
+@media (min-width: 480px) {
+  .favorites-filter {
+    flex: 0 1 320px;
+  }
+}
 .favorites-list {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
 }
 
-/* Favourites row — [drag-handle stub] [body] [pencil] [trash]. The
- * body is a flex-1 button so the row can be tapped to play without
- * stealing pencil/trash click targets. Pencil expands the row in
- * place: the form is appended as a sibling under the row controls and
- * `.is-expanded` lifts the row's background so the form reads as
- * "part of this entry". */
-.favorites-row {
+/* Favourites CRUD row — reuses the .station-row pill skin (#134) and
+ * flips the layout to a 4-slot grid: drag-handle, art+body, pencil,
+ * trash. The shared .station-row base rules give us art sizing, name
+ * typography, and the meta-line treatment for free; the modifier
+ * overrides the flex layout to grid + drops the bottom border so the
+ * row reads as a pill in the list, not a list-item with a divider. */
+.station-row--crud {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto auto 1fr auto auto;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 6px;
-  background: transparent;
-  transition: background 120ms ease;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  width: 100%;
 }
-.favorites-row.is-expanded {
+.favorites-list .station-row--crud:last-child {
+  border-bottom: 0;
+}
+.station-row--crud.is-expanded {
   background: var(--surface-hi);
-  /* Make the form span the full row when expanded. */
-  grid-template-columns: auto 1fr auto auto;
 }
-.favorites-row.is-expanded .favorites-row__edit {
+.station-row--crud.is-expanded .station-row__edit {
   grid-column: 1 / -1;
 }
 
-.favorites-row__drag {
+.station-row__drag {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1317,11 +1337,20 @@ main {
   touch-action: none;
   user-select: none;
 }
-.favorites-row__drag:active { cursor: grabbing; }
+.station-row__drag:active { cursor: grabbing; }
+
+/* When the favourites filter is active the drag handle is no-op (#135).
+ * Fade + block pointer interaction so the affordance reads as inactive
+ * without being yanked from the layout. */
+.station-row__drag[aria-disabled="true"] {
+  opacity: 0.25;
+  cursor: default;
+  pointer-events: none;
+}
 
 /* Source row while a drag is in flight — fade it so the ghost reads
  * as "this is where the row currently lives". */
-.favorites-row.is-dragging {
+.station-row--crud.is-dragging {
   opacity: 0.4;
 }
 
@@ -1352,61 +1381,8 @@ main {
   overflow: hidden;
 }
 
-.favorites-row__body {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 6px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-  min-width: 0;
-  border-radius: 4px;
-  transition: background 120ms ease;
-}
-.favorites-row__body:hover,
-.favorites-row__body:focus-visible {
-  background: var(--surface-hi);
-}
-.favorites-row__body:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-.favorites-row__body.is-disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
-.favorites-row__text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.favorites-row__name {
-  font-weight: 500;
-  font-size: 13.5px;
-  line-height: 1.2;
-  color: var(--fg);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-.favorites-row__note {
-  font-size: 11.5px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.favorites-row__edit-btn,
-.favorites-row__delete-btn {
+.station-row__crud-edit,
+.station-row__crud-delete {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1420,20 +1396,21 @@ main {
   border-radius: 4px;
   transition: color 120ms ease, background 120ms ease;
 }
-.favorites-row__edit-btn:hover,
-.favorites-row__edit-btn:focus-visible,
-.favorites-row__delete-btn:hover,
-.favorites-row__delete-btn:focus-visible {
+.station-row__crud-edit:hover,
+.station-row__crud-edit:focus-visible,
+.station-row__crud-delete:hover,
+.station-row__crud-delete:focus-visible {
   color: var(--fg);
   background: var(--surface-hi);
 }
-.favorites-row__delete-btn:hover,
-.favorites-row__delete-btn:focus-visible {
+.station-row__crud-delete:hover,
+.station-row__crud-delete:focus-visible {
   color: var(--danger, #c0392b);
 }
 
-/* Inline edit form. Three single-line inputs + Save / Cancel. */
-.favorites-row__edit {
+/* Inline edit form, expanded under a CRUD row when the pencil is
+ * tapped. Three single-line inputs + Save / Cancel. */
+.station-row__edit {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1441,16 +1418,16 @@ main {
   margin-top: 6px;
   border-top: 1px solid var(--border);
 }
-.favorites-edit__field {
+.station-row__edit-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.favorites-edit__label {
+.station-row__edit-label {
   font-size: 11.5px;
   color: var(--muted);
 }
-.favorites-edit__input {
+.station-row__edit-input {
   font: inherit;
   padding: 6px 8px;
   border: 1px solid var(--border);
@@ -1458,17 +1435,17 @@ main {
   background: var(--surface);
   color: var(--fg);
 }
-.favorites-edit__input:focus-visible {
+.station-row__edit-input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.favorites-edit__actions {
+.station-row__edit-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
   margin-top: 4px;
 }
-.favorites-edit__btn {
+.station-row__edit-btn {
   font: inherit;
   padding: 6px 12px;
   border: 1px solid var(--border);
@@ -1477,7 +1454,7 @@ main {
   color: var(--fg);
   cursor: pointer;
 }
-.favorites-edit__btn--save {
+.station-row__edit-btn--save {
   background: var(--accent);
   color: var(--accent-fg, white);
   border-color: var(--accent);
@@ -1565,12 +1542,6 @@ main {
   margin: 0 0 0.5rem;
   color: var(--muted);
   font-size: 0.9rem;
-}
-
-.station-assign-row {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 0.5rem;
 }
 
 .station-assign-btn {
@@ -1770,18 +1741,8 @@ main {
 
 /* --- settings view (#/settings) ---------------------------------- */
 
-.settings-view {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  max-width: 640px;
-}
-
-.settings-title {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin: 0 0 0.25rem;
-}
+/* Outer chrome (padding, max-width, gap) lives in .page. The cards
+   container owns its own tighter inter-card gap below. */
 
 /* Card-with-chevron collapsibles. The header is a real <button>, so
    focus-visible + Enter/Space + aria-expanded all work for free; the
@@ -2106,22 +2067,12 @@ select.settings-input {
       padding: 8px 12px;
     }
 
-    /* Preset assign / row layouts also shift to 3-up on narrow views. */
-    .preset-row,
-    .station-assign-row {
-      grid-template-columns: repeat(3, 1fr);
-    }
-
     .station-test-play {
       min-height: 3.5rem;
     }
 
     .np-preset {
       min-height: 92px;
-    }
-
-    .preset-slot {
-      min-height: 5.5rem;
     }
 
     /* Station detail: stack header art above text. */
@@ -2199,6 +2150,63 @@ select.settings-input {
 .confirm-btn--danger:hover {
   background: #a93226;
   border-color: #a93226;
+}
+
+/* --- speaker-unreachable overlay (api.js upstream-failure) -------- */
+/* Blocking modal raised when the speaker proxy reports the device is
+   unreachable. Higher z-index than .confirm-backdrop so it always
+   trumps any in-flight confirm dialog. */
+
+.speaker-unreachable {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  font: inherit;
+}
+
+.speaker-unreachable__card {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem 1.25rem 1rem;
+  max-width: 28rem;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.32);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.speaker-unreachable__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.speaker-unreachable__body {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.speaker-unreachable__retry {
+  align-self: flex-end;
+  margin-top: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 /* --- prefers-reduced-motion -------------------------------------- */
@@ -2434,6 +2442,7 @@ select.settings-input {
   border-top: 1px solid var(--border);
   background: var(--surface);
   animation: shell-mini-in 180ms ease-out;
+  min-width: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2902,6 +2911,9 @@ select.settings-input {
   text-transform: none;
   color: var(--text-dim, var(--fg-muted));
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .section-h--inline {
@@ -3415,7 +3427,7 @@ select.settings-input {
   align-items: center;
   gap: 10px;
   padding: 4px 8px 4px 4px;
-  margin: 0 0 8px;
+  margin: 0;
   background: var(--surface);
   border-radius: 999px;
   min-height: 32px;
@@ -3578,14 +3590,9 @@ a.browse-bar__crumb:focus-visible {
   font-size: 0.8rem;
 }
 
-/* Search empty state — single stacked column. The earlier two-column
-   grid was the polish that didn't match the mockup. */
-.search-empty {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
+/* Search empty state — single stacked column. Layout for the wrap
+   itself lives at the `.search-results, .search-empty` block above
+   in the search view section. */
 .search-empty-section {
   margin: 0;
   display: flex;
@@ -3620,6 +3627,7 @@ a.browse-bar__crumb:focus-visible {
 
 .settings-segment__opt {
   flex: 1 1 0;
+  min-width: 0;
   font: inherit;
   font-size: 0.82rem;
   font-weight: 500;
@@ -3629,6 +3637,9 @@ a.browse-bar__crumb:focus-visible {
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 

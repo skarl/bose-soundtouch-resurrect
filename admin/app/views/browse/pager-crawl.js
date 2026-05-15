@@ -72,6 +72,11 @@ export function mountLoadMoreButtons(body, opts) {
   const pageCap = (opts && Number.isFinite(opts.pageCap))
     ? opts.pageCap
     : undefined;
+  // Render ctx for newly-fetched rows. Stashed on each pager so the
+  // Load-more click handler + the coordinator's appendNewRows can
+  // re-build the row with the same childCrumbs / currentParts the
+  // page-0 render used.
+  const ctx = (opts && opts.ctx) || null;
   const sections = findAllSections(body);
   for (const section of sections) {
     const cursorUrl = section.getAttribute('data-cursor-url');
@@ -89,6 +94,7 @@ export function mountLoadMoreButtons(body, opts) {
       pageCap,
       section: section.getAttribute('data-section') || '',
     });
+    pager._renderCtx = ctx;
     _activePagers.push(pager);
     mountLoadMoreButton(section, footer, pager);
   }
@@ -221,8 +227,9 @@ export function appendNewRows(section, pager) {
   if (lastBefore && lastBefore.classList && typeof lastBefore.classList.remove === 'function') {
     lastBefore.classList.remove('is-last');
   }
+  const ctx = pager && pager._renderCtx ? pager._renderCtx : null;
   for (let i = alreadyMounted; i < rows.length; i++) {
-    const node = renderEntry(rows[i]);
+    const node = renderEntry(rows[i], ctx);
     if (i === rows.length - 1) node.classList.add('is-last');
     card.appendChild(node);
   }

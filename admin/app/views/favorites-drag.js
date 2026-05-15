@@ -12,7 +12,7 @@
 //
 // Lifecycle, per drag:
 //
-//   pointerdown on .favorites-row__drag
+//   pointerdown on .station-row__drag
 //     → setPointerCapture(pointerId)
 //     → snapshot fromIdx + a ghost (semi-transparent fixed clone)
 //     → mount a drop indicator (a thin <div>) into the list container
@@ -95,10 +95,10 @@ function buildGhost(sourceRow) {
 
 function positionGhost(ghost, x, y) {
   if (!ghost || !ghost.style) return;
-  ghost.style.setProperty('position', 'fixed');
+  // Cursor coordinates — must stay inline. position:fixed +
+  // pointer-events:none live on .favorites-drag-ghost in style.css.
   ghost.style.setProperty('left', `${x}px`);
   ghost.style.setProperty('top',  `${y}px`);
-  ghost.style.setProperty('pointer-events', 'none');
 }
 
 function buildIndicator() {
@@ -125,8 +125,8 @@ function placeIndicator(listEl, indicator, rows, gap) {
 
 // installFavoriteDrag — wire one drag handle. Called per row.
 //
-//   handle      — the .favorites-row__drag span
-//   row         — the .favorites-row element (used as source + rect)
+//   handle      — the .station-row__drag span
+//   row         — the .station-row--crud element (used as source + rect)
 //   listEl      — the .favorites-list container (parent of all rows)
 //   getList     — () → current favourites array (pulled from store at
 //                  pointerdown so a mid-flight reconcile doesn't strand
@@ -161,7 +161,7 @@ export function installFavoriteDrag({
     // Re-read on every move — the DOM is the source of truth for which
     // rows are currently rendered (replaceChildren during a render
     // would otherwise leave the cache pointing at detached nodes).
-    return Array.from(listEl.querySelectorAll('.favorites-row'));
+    return Array.from(listEl.querySelectorAll('.station-row--crud'));
   }
 
   function teardown() {
@@ -194,6 +194,11 @@ export function installFavoriteDrag({
   function onPointerDown(evt) {
     if (evt && evt.button !== undefined && evt.button !== 0) return;
     if (active) return;
+    // aria-disabled on the handle is the kill-switch for the filter
+    // tab (#135) — drag against a filtered subset is semantically
+    // ambiguous, so the view marks the handle and we bail before any
+    // ghost / indicator gets mounted.
+    if (handle.getAttribute && handle.getAttribute('aria-disabled') === 'true') return;
     const list = typeof getList === 'function' ? getList() : null;
     const idx  = typeof getFromIdx === 'function' ? getFromIdx() : -1;
     if (!Array.isArray(list) || list.length < 2) return;

@@ -104,6 +104,41 @@ export function spliceReorder(list, fromIdx, toGap) {
   return next;
 }
 
+// normaliseForFilter — case-fold + diacritic-strip a string into a form
+// suitable for substring comparison. Uses NFD to decompose accents into
+// combining marks, then drops the marks (Unicode block U+0300..U+036F).
+// Empty / non-string input collapses to ''. Kept local to favorites.js
+// because no other module in the admin app needs it today; promote to a
+// shared helper if a second caller appears.
+function normaliseForFilter(s) {
+  if (typeof s !== 'string' || s === '') return '';
+  let n = s;
+  if (typeof n.normalize === 'function') {
+    try { n = n.normalize('NFD'); } catch (_err) { /* hosts without NFD */ }
+  }
+  return n.replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+// filterFavorites — return a filtered copy of `list` whose entries match
+// `query` as a case-folded, diacritic-stripped substring of any of name,
+// note, or id. Empty / whitespace `query` returns the original `list`
+// reference so callers can `if (next === list)` to skip extra work.
+// Order is preserved.
+export function filterFavorites(list, query) {
+  if (!Array.isArray(list)) return [];
+  const needle = normaliseForFilter(typeof query === 'string' ? query.trim() : '');
+  if (!needle) return list;
+  const out = [];
+  for (const entry of list) {
+    if (!entry) continue;
+    const hay = normaliseForFilter(
+      `${entry.name || ''} ${entry.note || ''} ${entry.id || ''}`,
+    );
+    if (hay.indexOf(needle) >= 0) out.push(entry);
+  }
+  return out;
+}
+
 // replaceFavorites — write a hand-built next-list to the speaker, with
 // optimistic state + rollback to the supplied snapshot on failure.
 //
@@ -160,11 +195,9 @@ export async function replaceFavorites(store, next, prev, errorLabel) {
 // entry: { id, name, art?, note? }. `id` is required; `name` falls back
 //        to the id if missing so the persisted record always has a label.
 //
-// Behaviour:
-//   1. Snapshot current state.speaker.favorites.
-//   2. Apply the toggle locally and touch('speaker').
-//   3. POST the new list. On structured-error or transport failure,
-//      restore the snapshot, touch('speaker') again, surface a toast.
+// Thin wrapper over replaceFavorites: validates the id, computes the
+// next list via withFavoriteAdded / withFavoriteRemoved, and delegates
+// the optimistic write + rollback + toast to replaceFavorites.
 //
 // Returns the response envelope on success, or a synthetic
 // `{ ok:false, error:{code:'TRANSPORT', message}}` on transport throw
@@ -176,38 +209,16 @@ export async function toggleFavorite(store, entry) {
   const prev = Array.isArray(store.state.speaker.favorites)
     ? store.state.speaker.favorites.slice()
     : [];
-  const isFav = indexOfFavorite(prev, entry.id) >= 0;
   const safeEntry = {
     id:   entry.id,
     name: typeof entry.name === 'string' && entry.name ? entry.name : entry.id,
     art:  typeof entry.art  === 'string' ? entry.art  : '',
     note: typeof entry.note === 'string' ? entry.note : '',
   };
-  const next = isFav
+  const next = indexOfFavorite(prev, entry.id) >= 0
     ? withFavoriteRemoved(prev, entry.id)
     : withFavoriteAdded(prev, safeEntry);
-  store.state.speaker.favorites = next;
-  store.touch('speaker');
-
-  let envelope;
-  try {
-    envelope = await favoritesReplace(next);
-  } catch (err) {
-    store.state.speaker.favorites = prev;
-    store.touch('speaker');
-    const msg = (err && err.message) || 'transport error';
-    showToast(`Couldn't update favourites: ${msg}`);
-    return { ok: false, error: { code: 'TRANSPORT', message: msg } };
-  }
-
-  if (!envelope || envelope.ok !== true) {
-    store.state.speaker.favorites = prev;
-    store.touch('speaker');
-    const code = (envelope && envelope.error && envelope.error.code) || 'UNKNOWN';
-    showToast(`Couldn't update favourites (${code})`);
-    return envelope || { ok: false, error: { code, message: '' } };
-  }
-  return envelope;
+  return replaceFavorites(store, next, prev, "Couldn't update favourites");
 }
 
 // favoriteHeart({ getEntry, store, sizePx, onCleanup? }) — heart toggle

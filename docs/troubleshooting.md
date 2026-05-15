@@ -120,8 +120,10 @@ Causes:
 - The speaker booted while it couldn't reach any cloud endpoint and
   decided things were inconsistent.
 
-Re-store each preset using the API call from
-[customizing-presets.md](customizing-presets.md) § "Option B".
+Re-store each preset — easiest route is the browser admin
+([customizing-presets.md](customizing-presets.md) § "Option B"); the
+raw API call lives in § "Option C" if you'd rather drive it from a
+terminal.
 
 ## SSH refused after a reboot
 
