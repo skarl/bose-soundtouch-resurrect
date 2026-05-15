@@ -11,7 +11,12 @@ import * as theme from './theme.js';
 import { canonicaliseBrowseUrl } from './tunein-url.js';
 import { parseSid, isPlayableSid } from './tunein-sid.js';
 import { createPlayButton } from './play-button.js';
-import { favoriteHeart, isFavoriteId } from './favorites.js';
+import {
+  appendMetaSeparator,
+  genreChipEl,
+  browseUrlToHash,
+  buildFavoriteHeart,
+} from './row-internals.js';
 
 export { isPlayableSid };
 
@@ -589,30 +594,12 @@ export function stationRow({
 // override exists for callers that want to resolve a live name/art
 // at click time (e.g. now-playing).
 export function trailingAffordance({ sid, name, art = '', favorite } = {}) {
-  if (favorite && favorite.store && isFavoriteId(sid)) {
-    const getEntry = typeof favorite.getEntry === 'function'
-      ? favorite.getEntry
-      : () => ({ id: sid, name: name || sid, art: art || '', note: '' });
-    return favoriteHeart({
-      store: favorite.store,
-      getEntry,
-      onCleanup: favorite.onCleanup,
-    });
-  }
+  const heart = buildFavoriteHeart({ sid, name, art, favorite });
+  if (heart) return heart;
   const chev = document.createElement('span');
   chev.className = 'station-row__chev';
   chev.appendChild(icon('arrow', 14));
   return chev;
-}
-
-// Append a "·" dot to a meta line. Used between each segment of the
-// chip-and-meta row so location/bitrate/reliability/genre never collide
-// when they line up.
-function appendMetaSeparator(meta) {
-  const sep = document.createElement('span');
-  sep.className = 'station-row__sep';
-  sep.textContent = '·';
-  meta.appendChild(sep);
 }
 
 // reliabilityBadge — small coloured dot + percentage label. CSS
@@ -640,53 +627,6 @@ function reliabilityBadge(spec) {
     el.appendChild(text);
   }
   return el;
-}
-
-// genreChipEl — small clickable pill that drills into the genre.
-// The href is composed via canonicaliseBrowseUrl so the URL passes
-// through the language-tree rewrite and the magic-param strip; the
-// resulting `Browse.ashx?id=g<NN>&render=json` is then translated
-// into the SPA hash form (#/browse?id=g<NN>).
-function genreChipEl(chip) {
-  const id = chip && typeof chip.id === 'string' ? chip.id : '';
-  if (!id) {
-    const stub = document.createElement('span');
-    stub.className = 'station-row__chip station-row__chip--genre is-disabled';
-    return stub;
-  }
-  // Compose a Browse URL from the bare id and canonicalise it, then
-  // strip the host/path/render so we land on a #/browse?... hash.
-  let drillHash;
-  try {
-    const browseUrl = canonicaliseBrowseUrl(`Browse.ashx?id=${encodeURIComponent(id)}`);
-    drillHash = browseUrlToHash(browseUrl);
-  } catch (_err) {
-    drillHash = `#/browse?id=${encodeURIComponent(id)}`;
-  }
-  const a = document.createElement('a');
-  a.className = 'station-row__chip station-row__chip--genre';
-  a.setAttribute('href', drillHash);
-  a.setAttribute('data-chip-kind', 'genre');
-  a.setAttribute('data-genre-id', id);
-  a.textContent = id;
-  // The chip is its own click target inside the row anchor; the row
-  // itself drills to the station's detail view, the chip drills to
-  // the genre. Stop the click bubbling so the row's href doesn't fire.
-  a.addEventListener('click', (evt) => {
-    if (evt && typeof evt.stopPropagation === 'function') evt.stopPropagation();
-  });
-  return a;
-}
-
-// Convert a canonical `Browse.ashx?...&render=json` URL into the SPA
-// hash form. Drops the path + render param; preserves drill keys.
-function browseUrlToHash(canonical) {
-  const qIdx = canonical.indexOf('?');
-  if (qIdx < 0) return '#/browse';
-  const qs = new URLSearchParams(canonical.slice(qIdx + 1));
-  qs.delete('render');
-  const out = qs.toString();
-  return out ? `#/browse?${out}` : '#/browse';
 }
 
 // tertiaryLine — the third subtitle slot. `spec` is either a plain
