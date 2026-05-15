@@ -2910,6 +2910,9 @@ select.settings-input {
   text-transform: none;
   color: var(--text-dim, var(--fg-muted));
   white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .section-h--inline {
@@ -3623,6 +3626,7 @@ a.browse-bar__crumb:focus-visible {
 
 .settings-segment__opt {
   flex: 1 1 0;
+  min-width: 0;
   font: inherit;
   font-size: 0.82rem;
   font-weight: 500;
@@ -3632,6 +3636,9 @@ a.browse-bar__crumb:focus-visible {
   background: transparent;
   color: var(--muted);
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
