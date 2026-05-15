@@ -2,14 +2,19 @@
 //
 // CRUD management surface. Each row carries always-on affordances:
 //
-//   [drag-handle stub]  [body — tap to play]  [pencil]  [trash]
+//   [drag-handle]  [body — tap to play]  [pencil]  [trash]
 //
-// The drag-handle is a visual stub in this slice (issue #127); the
-// behaviour wiring lands in #128. Pencil expands the row vertically
-// in place, exposing inputs for name / art / note plus Save & Cancel.
-// Trash optimistically removes the row, fires POST immediately, and
-// shows a 5-second toast with Undo; tapping Undo re-inserts the entry
-// at its previous index and POSTs the restored list.
+// The row reuses the shared .station-row pill skin (#134) — same art
+// size, name typography, and meta-line treatment as search/browse. The
+// .station-row--crud modifier flips the layout to a 4-slot grid and
+// adds the CRUD-specific affordances (drag-handle leading, pencil +
+// trash trailing, inline edit form expansion below).
+//
+// Pencil expands the row vertically in place, exposing inputs for
+// name / art / note plus Save & Cancel. Trash optimistically removes
+// the row, fires POST immediately, and shows a 5-second toast with
+// Undo; tapping Undo re-inserts the entry at its previous index and
+// POSTs the restored list.
 //
 // Validation failures from the CGI surface as toasts; local state
 // reverts to match the last-known-good response (via replaceFavorites
@@ -47,46 +52,26 @@ function buildEmptyState() {
   return wrap;
 }
 
-// Build the row body — the tappable play target. Mirrors the stationRow
-// visual contract (art + name + optional note) without the chev or
-// auto-attached Play icon, because here the row body itself is the
-// play affordance and the pencil/trash own the right gutter.
-function buildBody({ entry, onPlay }) {
-  const body = document.createElement('button');
-  body.type = 'button';
-  body.className = 'favorites-row__body';
-  body.setAttribute('aria-label', `Play ${entry.name || entry.id} on Bo`);
-
-  body.appendChild(stationArt({ url: entry.art || '', name: entry.name || entry.id, size: 40 }));
-
-  const text = document.createElement('span');
-  text.className = 'favorites-row__text';
+// Build the body block — name + optional meta line. Mirrors the
+// stationRow visual contract; the row root owns the click handler so
+// the body is a layout span, not a button.
+function buildBody({ entry }) {
+  const body = document.createElement('span');
+  body.className = 'station-row__body';
 
   const name = document.createElement('span');
-  name.className = 'favorites-row__name';
+  name.className = 'station-row__name';
   name.textContent = entry.name || entry.id;
-  text.appendChild(name);
+  body.appendChild(name);
 
   if (entry.note) {
-    const note = document.createElement('span');
-    note.className = 'favorites-row__note';
-    note.textContent = entry.note;
-    text.appendChild(note);
-  }
-
-  body.appendChild(text);
-
-  if (isPlayableSid(entry.id)) {
-    body.addEventListener('click', (evt) => {
-      if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
-      if (evt && typeof evt.stopPropagation === 'function') evt.stopPropagation();
-      onPlay();
-    });
-  } else {
-    // Non-playable ids (shouldn't appear in favourites, but keep the
-    // affordance honest) — render the body but disable the play action.
-    body.disabled = true;
-    body.classList.add('is-disabled');
+    const meta = document.createElement('span');
+    meta.className = 'station-row__meta';
+    const noteEl = document.createElement('span');
+    noteEl.className = 'station-row__loc';
+    noteEl.textContent = entry.note;
+    meta.appendChild(noteEl);
+    body.appendChild(meta);
   }
 
   return body;
@@ -98,21 +83,25 @@ function buildBody({ entry, onPlay }) {
 // tears the form down without writing.
 function buildEditForm({ seed, onSave, onCancel }) {
   const form = document.createElement('form');
-  form.className = 'favorites-row__edit';
-  // Prevent the browser's default form submission — we own the save.
+  form.className = 'station-row__edit';
   form.addEventListener('submit', (evt) => {
     if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
+  });
+  // The row root owns the play click; any click inside the form (inputs,
+  // labels) must not bubble up and trigger /play.
+  form.addEventListener('click', (evt) => {
+    if (evt && typeof evt.stopPropagation === 'function') evt.stopPropagation();
   });
 
   function fieldRow(labelText, inputType, value) {
     const wrap = document.createElement('label');
-    wrap.className = 'favorites-edit__field';
+    wrap.className = 'station-row__edit-field';
     const lbl = document.createElement('span');
-    lbl.className = 'favorites-edit__label';
+    lbl.className = 'station-row__edit-label';
     lbl.textContent = labelText;
     const input = document.createElement('input');
     input.type = inputType;
-    input.className = 'favorites-edit__input';
+    input.className = 'station-row__edit-input';
     input.value = value || '';
     wrap.appendChild(lbl);
     wrap.appendChild(input);
@@ -128,11 +117,11 @@ function buildEditForm({ seed, onSave, onCancel }) {
   form.appendChild(noteField.wrap);
 
   const actions = document.createElement('div');
-  actions.className = 'favorites-edit__actions';
+  actions.className = 'station-row__edit-actions';
 
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
-  cancelBtn.className = 'favorites-edit__btn favorites-edit__btn--cancel';
+  cancelBtn.className = 'station-row__edit-btn station-row__edit-btn--cancel';
   cancelBtn.textContent = 'Cancel';
   cancelBtn.addEventListener('click', (evt) => {
     if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
@@ -142,7 +131,7 @@ function buildEditForm({ seed, onSave, onCancel }) {
 
   const saveBtn = document.createElement('button');
   saveBtn.type = 'submit';
-  saveBtn.className = 'favorites-edit__btn favorites-edit__btn--save';
+  saveBtn.className = 'station-row__edit-btn station-row__edit-btn--save';
   saveBtn.textContent = 'Save';
   saveBtn.addEventListener('click', (evt) => {
     if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
@@ -190,8 +179,9 @@ function buildIconButton({ glyph, label, className, onClick }) {
 // wires drag on the handle (drag plumbing needs the listEl + live
 // store, both of which are owned at the buildList level).
 function buildRow({ entry, store, onActivity }) {
-  const row = document.createElement('div');
-  row.className = 'favorites-row';
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'station-row station-row--crud';
   row.setAttribute('role', 'listitem');
   row.dataset.favId = entry.id;
 
@@ -199,27 +189,44 @@ function buildRow({ entry, store, onActivity }) {
   // attached after the row joins the DOM (the controller needs the
   // list container as its parent).
   const handle = document.createElement('span');
-  handle.className = 'favorites-row__drag';
+  handle.className = 'station-row__drag';
   handle.setAttribute('aria-hidden', 'true');
   handle.appendChild(icon('drag-handle', 16));
+  // A tap on the handle that doesn't escalate to a drag would otherwise
+  // bubble to the row and fire /play. Block it.
+  handle.addEventListener('click', (evt) => {
+    if (evt && typeof evt.stopPropagation === 'function') evt.stopPropagation();
+  });
   row.appendChild(handle);
 
-  // [body — tap to play]
-  const body = buildBody({
-    entry,
-    onPlay: () => {
+  row.appendChild(stationArt({ url: entry.art || '', name: entry.name || entry.id, size: 40 }));
+
+  // [body — name + optional meta]. The row itself is the play target.
+  row.appendChild(buildBody({ entry }));
+
+  // Body tap → play. Wire on the row root since the body is a layout
+  // span (not a button) and the dom-shim doesn't bubble events.
+  if (isPlayableSid(entry.id)) {
+    row.setAttribute('aria-label', `Play ${entry.name || entry.id} on Bo`);
+    row.addEventListener('click', (evt) => {
+      if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
+      if (evt && typeof evt.stopPropagation === 'function') evt.stopPropagation();
       onActivity();
       playSid({ sid: entry.id, label: entry.name || entry.id });
-    },
-  });
-  row.appendChild(body);
+    });
+  } else {
+    // Non-playable ids (shouldn't appear in favourites, but keep the
+    // affordance honest) — render the row but disable the play action.
+    row.disabled = true;
+    row.classList.add('is-disabled');
+  }
 
   // [pencil]
   let editForm = null;
   const pencil = buildIconButton({
     glyph: 'pencil',
     label: `Edit ${entry.name || entry.id}`,
-    className: 'favorites-row__edit-btn',
+    className: 'station-row__crud-edit',
     onClick: () => {
       onActivity();
       if (editForm) {
@@ -251,9 +258,6 @@ function buildRow({ entry, store, onActivity }) {
             art:  next.art,
             note: next.note,
           };
-          // Collapse optimistically — the optimistic state already
-          // shows the new values on the visible row via the store
-          // subscription.
           if (editForm) editForm.remove();
           editForm = null;
           row.classList.remove('is-expanded');
@@ -275,7 +279,7 @@ function buildRow({ entry, store, onActivity }) {
   const trash = buildIconButton({
     glyph: 'trash',
     label: `Delete ${entry.name || entry.id}`,
-    className: 'favorites-row__delete-btn',
+    className: 'station-row__crud-delete',
     onClick: () => {
       onActivity();
       const list = (store.state.speaker && store.state.speaker.favorites) || [];
@@ -358,14 +362,11 @@ function buildList({ entries, store, onActivity, onCleanup }) {
 // string and passes it through `ctx.query`. We honour it once at mount
 // (and once after the initial render lands data) by scrolling the
 // matching row into view and applying `.is-focused` for a brief flash.
-// Deliberately scoped to mount-time so #127's CRUD edits to the row
-// renderer below stay disjoint. Edit-mode is never auto-entered — a
-// long-press from Now Playing must not accidentally open the editor.
 const FOCUS_FLASH_MS = 1600;
 
 function applyFocus(body, focusId) {
   if (!body || typeof focusId !== 'string' || !focusId) return false;
-  const rows = body.querySelectorAll('.favorites-row');
+  const rows = body.querySelectorAll('.station-row--crud');
   for (const row of rows) {
     const favId = row.dataset && row.dataset.favId;
     if (favId !== focusId) continue;

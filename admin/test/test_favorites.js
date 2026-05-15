@@ -335,7 +335,7 @@ test('favourites view: ?focus=<id> flashes the matching row on mount', async () 
   const root = makeRoot();
   const destroy = favoritesView.init(root, store, { query: { focus: 's2' } });
   try {
-    const rows = root.querySelectorAll('.favorites-row');
+    const rows = root.querySelectorAll('.station-row--crud');
     assert.equal(rows.length, 3, 'three rows rendered');
     const target = rows.find((r) => r.dataset.favId === 's2');
     assert.ok(target, 'row for s2 present');
@@ -359,7 +359,7 @@ test('favourites view: ?focus with no match → nothing flashes, no throw', () =
   const root = makeRoot();
   const destroy = favoritesView.init(root, store, { query: { focus: 'sNope' } });
   try {
-    const rows = root.querySelectorAll('.favorites-row');
+    const rows = root.querySelectorAll('.station-row--crud');
     for (const r of rows) {
       assert.equal(r.classList.contains('is-focused'), false,
         'no row should flash when ?focus does not match');
@@ -376,7 +376,7 @@ test('favourites view: mount without ?focus → no row flashes', () => {
   const root = makeRoot();
   const destroy = favoritesView.init(root, store, {});
   try {
-    const rows = root.querySelectorAll('.favorites-row');
+    const rows = root.querySelectorAll('.station-row--crud');
     for (const r of rows) {
       assert.equal(r.classList.contains('is-focused'), false,
         'mount without focus must leave rows untouched');
@@ -392,7 +392,7 @@ test('favourites view: ?focus on unfetched list applies after the list lands', (
   const root = makeRoot();
   const destroy = favoritesView.init(root, store, { query: { focus: 's42' } });
   try {
-    assert.equal(root.querySelectorAll('.favorites-row').length, 0,
+    assert.equal(root.querySelectorAll('.station-row--crud').length, 0,
       'empty state — no rows to flash yet');
     // Now the reconcile lands.
     store.update('speaker', (s) => {
@@ -401,7 +401,7 @@ test('favourites view: ?focus on unfetched list applies after the list lands', (
         { id: 's42', name: 'Magic',   art: '', note: '' },
       ];
     });
-    const rows = root.querySelectorAll('.favorites-row');
+    const rows = root.querySelectorAll('.station-row--crud');
     assert.equal(rows.length, 2, 'rows rendered after the update');
     const target = rows.find((r) => r.dataset.favId === 's42');
     assert.ok(target, 'row for s42 present');
@@ -419,7 +419,7 @@ test('favourites view: ?focus applies once — re-render after flash does not re
   const root = makeRoot();
   const destroy = favoritesView.init(root, store, { query: { focus: 's1' } });
   try {
-    const initialRow = root.querySelector('.favorites-row');
+    const initialRow = root.querySelector('.station-row--crud');
     assert.equal(initialRow.classList.contains('is-focused'), true,
       'first paint flashes the target row');
     // Manually drop the flash class to simulate the post-timeout state,
@@ -431,7 +431,7 @@ test('favourites view: ?focus applies once — re-render after flash does not re
         { id: 's2', name: 'Two',   art: '', note: '' },
       ];
     });
-    const rows = root.querySelectorAll('.favorites-row');
+    const rows = root.querySelectorAll('.station-row--crud');
     for (const r of rows) {
       assert.equal(r.classList.contains('is-focused'), false,
         `subsequent renders must not re-apply the flash (${r.dataset.favId})`);

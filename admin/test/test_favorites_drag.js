@@ -93,8 +93,8 @@ function stubRowRects(rows) {
   }
 }
 
-function findRows(root) { return root.querySelectorAll('.favorites-row'); }
-function findDragHandle(row) { return row.querySelector('.favorites-row__drag'); }
+function findRows(root) { return root.querySelectorAll('.station-row--crud'); }
+function findDragHandle(row) { return row.querySelector('.station-row__drag'); }
 
 function dispatch(el, type, init) {
   const evt = Object.assign({
