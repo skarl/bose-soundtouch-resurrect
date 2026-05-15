@@ -12,7 +12,7 @@
 //
 // Lifecycle, per drag:
 //
-//   pointerdown on .favorites-row__drag
+//   pointerdown on .station-row__drag
 //     → setPointerCapture(pointerId)
 //     → snapshot fromIdx + a ghost (semi-transparent fixed clone)
 //     → mount a drop indicator (a thin <div>) into the list container
@@ -125,8 +125,8 @@ function placeIndicator(listEl, indicator, rows, gap) {
 
 // installFavoriteDrag — wire one drag handle. Called per row.
 //
-//   handle      — the .favorites-row__drag span
-//   row         — the .favorites-row element (used as source + rect)
+//   handle      — the .station-row__drag span
+//   row         — the .station-row--crud element (used as source + rect)
 //   listEl      — the .favorites-list container (parent of all rows)
 //   getList     — () → current favourites array (pulled from store at
 //                  pointerdown so a mid-flight reconcile doesn't strand
@@ -161,7 +161,7 @@ export function installFavoriteDrag({
     // Re-read on every move — the DOM is the source of truth for which
     // rows are currently rendered (replaceChildren during a render
     // would otherwise leave the cache pointing at detached nodes).
-    return Array.from(listEl.querySelectorAll('.favorites-row'));
+    return Array.from(listEl.querySelectorAll('.station-row--crud'));
   }
 
   function teardown() {

@@ -864,7 +864,7 @@ main {
 
 /* Brief flash on the Favourites tab when arriving via
    `#/favorites?focus=<id>` (long-press from the Now-Playing grid). */
-.favorites-row.is-focused {
+.station-row--crud.is-focused {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   animation: favorites-focus-flash 1400ms ease-out;
@@ -876,7 +876,7 @@ main {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .favorites-row.is-focused { animation: none; }
+  .station-row--crud.is-focused { animation: none; }
 }
 
 /* STANDBY / asleep state */
@@ -1305,32 +1305,30 @@ main {
   gap: 0.25rem;
 }
 
-/* Favourites row — [drag-handle stub] [body] [pencil] [trash]. The
- * body is a flex-1 button so the row can be tapped to play without
- * stealing pencil/trash click targets. Pencil expands the row in
- * place: the form is appended as a sibling under the row controls and
- * `.is-expanded` lifts the row's background so the form reads as
- * "part of this entry". */
-.favorites-row {
+/* Favourites CRUD row — reuses the .station-row pill skin (#134) and
+ * flips the layout to a 4-slot grid: drag-handle, art+body, pencil,
+ * trash. The shared .station-row base rules give us art sizing, name
+ * typography, and the meta-line treatment for free; the modifier
+ * overrides the flex layout to grid + drops the bottom border so the
+ * row reads as a pill in the list, not a list-item with a divider. */
+.station-row--crud {
   display: grid;
-  grid-template-columns: auto 1fr auto auto;
+  grid-template-columns: auto auto 1fr auto auto;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
+  border-bottom: 0;
   border-radius: 6px;
-  background: transparent;
-  transition: background 120ms ease;
+  width: 100%;
 }
-.favorites-row.is-expanded {
+.station-row--crud.is-expanded {
   background: var(--surface-hi);
-  /* Make the form span the full row when expanded. */
-  grid-template-columns: auto 1fr auto auto;
 }
-.favorites-row.is-expanded .favorites-row__edit {
+.station-row--crud.is-expanded .station-row__edit {
   grid-column: 1 / -1;
 }
 
-.favorites-row__drag {
+.station-row__drag {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1343,11 +1341,11 @@ main {
   touch-action: none;
   user-select: none;
 }
-.favorites-row__drag:active { cursor: grabbing; }
+.station-row__drag:active { cursor: grabbing; }
 
 /* Source row while a drag is in flight — fade it so the ghost reads
  * as "this is where the row currently lives". */
-.favorites-row.is-dragging {
+.station-row--crud.is-dragging {
   opacity: 0.4;
 }
 
@@ -1378,61 +1376,8 @@ main {
   overflow: hidden;
 }
 
-.favorites-row__body {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 6px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-  min-width: 0;
-  border-radius: 4px;
-  transition: background 120ms ease;
-}
-.favorites-row__body:hover,
-.favorites-row__body:focus-visible {
-  background: var(--surface-hi);
-}
-.favorites-row__body:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-.favorites-row__body.is-disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
-.favorites-row__text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-.favorites-row__name {
-  font-weight: 500;
-  font-size: 13.5px;
-  line-height: 1.2;
-  color: var(--fg);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-.favorites-row__note {
-  font-size: 11.5px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.favorites-row__edit-btn,
-.favorites-row__delete-btn {
+.station-row__crud-edit,
+.station-row__crud-delete {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1446,20 +1391,21 @@ main {
   border-radius: 4px;
   transition: color 120ms ease, background 120ms ease;
 }
-.favorites-row__edit-btn:hover,
-.favorites-row__edit-btn:focus-visible,
-.favorites-row__delete-btn:hover,
-.favorites-row__delete-btn:focus-visible {
+.station-row__crud-edit:hover,
+.station-row__crud-edit:focus-visible,
+.station-row__crud-delete:hover,
+.station-row__crud-delete:focus-visible {
   color: var(--fg);
   background: var(--surface-hi);
 }
-.favorites-row__delete-btn:hover,
-.favorites-row__delete-btn:focus-visible {
+.station-row__crud-delete:hover,
+.station-row__crud-delete:focus-visible {
   color: var(--danger, #c0392b);
 }
 
-/* Inline edit form. Three single-line inputs + Save / Cancel. */
-.favorites-row__edit {
+/* Inline edit form, expanded under a CRUD row when the pencil is
+ * tapped. Three single-line inputs + Save / Cancel. */
+.station-row__edit {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1467,16 +1413,16 @@ main {
   margin-top: 6px;
   border-top: 1px solid var(--border);
 }
-.favorites-edit__field {
+.station-row__edit-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.favorites-edit__label {
+.station-row__edit-label {
   font-size: 11.5px;
   color: var(--muted);
 }
-.favorites-edit__input {
+.station-row__edit-input {
   font: inherit;
   padding: 6px 8px;
   border: 1px solid var(--border);
@@ -1484,17 +1430,17 @@ main {
   background: var(--surface);
   color: var(--fg);
 }
-.favorites-edit__input:focus-visible {
+.station-row__edit-input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
-.favorites-edit__actions {
+.station-row__edit-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
   margin-top: 4px;
 }
-.favorites-edit__btn {
+.station-row__edit-btn {
   font: inherit;
   padding: 6px 12px;
   border: 1px solid var(--border);
@@ -1503,7 +1449,7 @@ main {
   color: var(--fg);
   cursor: pointer;
 }
-.favorites-edit__btn--save {
+.station-row__edit-btn--save {
   background: var(--accent);
   color: var(--accent-fg, white);
   border-color: var(--accent);

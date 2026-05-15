@@ -38,13 +38,15 @@ function mountFavorites(root) {
 
 // Helpers — find row + its inline controls.
 
-function findRows(root) { return root.querySelectorAll('.favorites-row'); }
+function findRows(root) { return root.querySelectorAll('.station-row--crud'); }
 function findRow(root, idx) { return findRows(root)[idx] || null; }
-function findEditBtn(row)   { return row.querySelector('.favorites-row__edit-btn'); }
-function findDeleteBtn(row) { return row.querySelector('.favorites-row__delete-btn'); }
-function findDragHandle(row){ return row.querySelector('.favorites-row__drag'); }
-function findBody(row)      { return row.querySelector('.favorites-row__body'); }
-function findEditForm(row)  { return row.querySelector('.favorites-row__edit'); }
+function findEditBtn(row)   { return row.querySelector('.station-row__crud-edit'); }
+function findDeleteBtn(row) { return row.querySelector('.station-row__crud-delete'); }
+function findDragHandle(row){ return row.querySelector('.station-row__drag'); }
+// The row root itself is the play button (#134); the body is a layout
+// span. Tests click the row to fire play.
+function findBody(row)      { return row; }
+function findEditForm(row)  { return row.querySelector('.station-row__edit'); }
 function findToastAction()  { return doc.querySelector('.toast--action .toast__action'); }
 function findToastText()    { return doc.querySelector('.toast--action .toast__text'); }
 
@@ -84,11 +86,11 @@ test('favorites tab: each row renders drag-handle | body | pencil | trash', asyn
       assert.ok(findDeleteBtn(row),  'trash present');
     }
     // Body text reflects the entry.
-    const firstName = rows[0].querySelector('.favorites-row__name');
+    const firstName = rows[0].querySelector('.station-row__name');
     assert.equal(firstName && firstName.textContent, 'Radio One');
-    // Notes surface in the body.
-    const secondNote = rows[1].querySelector('.favorites-row__note');
-    assert.equal(secondNote && secondNote.textContent, 'live mix');
+    // Notes surface on the meta line — the shared station-row contract.
+    const secondMeta = rows[1].querySelector('.station-row__meta');
+    assert.equal(secondMeta && secondMeta.textContent, 'live mix');
   } finally {
     destroy();
   }
@@ -120,13 +122,13 @@ test('favorites tab: pencil expands row; Save commits + POSTs + collapses', asyn
     assert.ok(form, 'edit form appears after pencil click');
     assert.equal(row.classList.contains('is-expanded'), true, 'row marked as expanded');
 
-    const inputs = form.querySelectorAll('.favorites-edit__input');
+    const inputs = form.querySelectorAll('.station-row__edit-input');
     assert.equal(inputs.length, 3, 'three inputs (name, art, note)');
     setInputValue(inputs[0], 'New Name');
     setInputValue(inputs[1], 'http://art');
     setInputValue(inputs[2], 'edited note');
 
-    const saveBtn = form.querySelector('.favorites-edit__btn--save');
+    const saveBtn = form.querySelector('.station-row__edit-btn--save');
     click(saveBtn);
 
     // Optimistic mutation lands synchronously.
@@ -166,9 +168,9 @@ test('favorites tab: pencil → Cancel collapses without writing', async () => {
     click(findEditBtn(row));
     const form = findEditForm(row);
     assert.ok(form);
-    const inputs = form.querySelectorAll('.favorites-edit__input');
+    const inputs = form.querySelectorAll('.station-row__edit-input');
     setInputValue(inputs[0], 'Mutated');
-    const cancelBtn = form.querySelector('.favorites-edit__btn--cancel');
+    const cancelBtn = form.querySelector('.station-row__edit-btn--cancel');
     click(cancelBtn);
     assert.equal(findEditForm(findRow(root, 0)), null, 'form collapsed after Cancel');
     assert.equal(store.state.speaker.favorites[0].name, 'Radio One', 'state untouched');
@@ -313,9 +315,9 @@ test('favorites tab: edit Save + POST failure → state reverts, toast surfaces'
   try {
     click(findEditBtn(findRow(root, 0)));
     const form = findEditForm(findRow(root, 0));
-    const inputs = form.querySelectorAll('.favorites-edit__input');
+    const inputs = form.querySelectorAll('.station-row__edit-input');
     setInputValue(inputs[0], 'Mutated');
-    click(form.querySelector('.favorites-edit__btn--save'));
+    click(form.querySelector('.station-row__edit-btn--save'));
     // Optimistic edit lands first.
     assert.equal(store.state.speaker.favorites[0].name, 'Mutated');
     await new Promise((r) => setTimeout(r, 10));
