@@ -2442,6 +2442,7 @@ select.settings-input {
   border-top: 1px solid var(--border);
   background: var(--surface);
   animation: shell-mini-in 180ms ease-out;
+  min-width: 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
