@@ -265,9 +265,17 @@ main {
 }
 
 .page-title {
-  font-size: 1.5rem;
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 14px;
   margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1;
 }
 
 /* --- browse view ------------------------------------------------- */
@@ -1324,7 +1332,11 @@ main {
 .favorites-list {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
 }
 
 /* Favourites CRUD row — reuses the .station-row pill skin (#134) and
@@ -1339,9 +1351,12 @@ main {
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border-bottom: 0;
-  border-radius: 6px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
   width: 100%;
+}
+.favorites-list .station-row--crud:last-child {
+  border-bottom: 0;
 }
 .station-row--crud.is-expanded {
   background: var(--surface-hi);
