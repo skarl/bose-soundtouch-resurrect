@@ -194,6 +194,11 @@ export function installFavoriteDrag({
   function onPointerDown(evt) {
     if (evt && evt.button !== undefined && evt.button !== 0) return;
     if (active) return;
+    // aria-disabled on the handle is the kill-switch for the filter
+    // tab (#135) — drag against a filtered subset is semantically
+    // ambiguous, so the view marks the handle and we bail before any
+    // ghost / indicator gets mounted.
+    if (handle.getAttribute && handle.getAttribute('aria-disabled') === 'true') return;
     const list = typeof getList === 'function' ? getList() : null;
     const idx  = typeof getFromIdx === 'function' ? getFromIdx() : -1;
     if (!Array.isArray(list) || list.length < 2) return;

@@ -25,7 +25,7 @@
 // second tab that mutated the list flows back into this one.
 
 import { html, mount, defineView } from '../dom.js';
-import { stationArt } from '../components.js';
+import { stationArt, pillInput } from '../components.js';
 import { reconcileField } from '../speaker-state.js';
 import { isPlayableSid } from '../tunein-sid.js';
 import { icon } from '../icons.js';
@@ -35,18 +35,53 @@ import {
   indexOfFavorite,
   withFavoriteRemoved,
   replaceFavorites,
+  filterFavorites,
 } from '../favorites.js';
 import { installFavoriteDrag } from './favorites-drag.js';
 
 const UNDO_DWELL_MS = 5000;
+const FILTER_DEBOUNCE_MS = 150;
 
-function buildEmptyState() {
+// buildEmptyState — two shapes share one shell.
+//   { kind: 'none' }                — no favourites at all (broadened wording
+//                                     since both stations and shows can be
+//                                     hearted now).
+//   { kind: 'no-match', query, onClear } — non-empty filter matched zero rows;
+//                                     surfaces the user's query verbatim plus
+//                                     a "Clear filter" link wired to onClear.
+function buildEmptyState(spec = { kind: 'none' }) {
   const wrap = document.createElement('section');
   wrap.className = 'favorites-empty';
   const head = document.createElement('h2');
-  head.textContent = 'No favourites yet';
   const body = document.createElement('p');
-  body.textContent = 'Tap the heart on a station to add it here.';
+  if (spec && spec.kind === 'no-match') {
+    head.textContent = 'No matches';
+    const lead = document.createElement('span');
+    lead.textContent = 'No favourites match ';
+    const code = document.createElement('code');
+    code.textContent = String(spec.query || '');
+    const tail = document.createElement('span');
+    tail.textContent = '.';
+    body.appendChild(lead);
+    body.appendChild(code);
+    body.appendChild(tail);
+    wrap.appendChild(head);
+    wrap.appendChild(body);
+    const clearLine = document.createElement('p');
+    const clearLink = document.createElement('button');
+    clearLink.type = 'button';
+    clearLink.className = 'favorites-empty__clear';
+    clearLink.textContent = 'Clear filter';
+    clearLink.addEventListener('click', (evt) => {
+      if (evt && typeof evt.preventDefault === 'function') evt.preventDefault();
+      if (typeof spec.onClear === 'function') spec.onClear();
+    });
+    clearLine.appendChild(clearLink);
+    wrap.appendChild(clearLine);
+    return wrap;
+  }
+  head.textContent = 'No favourites yet';
+  body.textContent = 'Tap the heart on a station or show to add it here.';
   wrap.appendChild(head);
   wrap.appendChild(body);
   return wrap;
@@ -178,7 +213,7 @@ function buildIconButton({ glyph, label, className, onClick }) {
 // Returns { row, handle }; the caller hangs the row on the list and
 // wires drag on the handle (drag plumbing needs the listEl + live
 // store, both of which are owned at the buildList level).
-function buildRow({ entry, store, onActivity }) {
+function buildRow({ entry, store, onActivity, dragDisabled }) {
   const row = document.createElement('button');
   row.type = 'button';
   row.className = 'station-row station-row--crud';
@@ -191,6 +226,11 @@ function buildRow({ entry, store, onActivity }) {
   const handle = document.createElement('span');
   handle.className = 'station-row__drag';
   handle.setAttribute('aria-hidden', 'true');
+  // Reorder against a filter-narrowed subset is semantically ambiguous
+  // (gap N of the visible list doesn't map cleanly onto gap N of the
+  // underlying full list). Mark the handle aria-disabled so the install
+  // hook bails out and the CSS can fade it.
+  if (dragDisabled) handle.setAttribute('aria-disabled', 'true');
   handle.appendChild(icon('drag-handle', 16));
   // A tap on the handle that doesn't escalate to a drag would otherwise
   // bubble to the row and fire /play. Block it.
@@ -318,14 +358,14 @@ function buildRow({ entry, store, onActivity }) {
   return { row, handle };
 }
 
-function buildList({ entries, store, onActivity, onCleanup }) {
+function buildList({ entries, store, onActivity, onCleanup, dragDisabled }) {
   const list = document.createElement('div');
   list.className = 'favorites-list';
   list.setAttribute('role', 'list');
   const built = [];
   for (const entry of entries) {
     if (!entry || typeof entry.id !== 'string') continue;
-    const { row, handle } = buildRow({ entry, store, onActivity });
+    const { row, handle } = buildRow({ entry, store, onActivity, dragDisabled });
     list.appendChild(row);
     built.push({ entry, row, handle });
   }
@@ -392,6 +432,24 @@ export default defineView({
       </section>
     `);
     const body = root.querySelector('.favorites-body');
+    const titleBar = root.querySelector('.page-title-bar');
+
+    // Filter is local view state, not store state — it's a UI concern,
+    // not speaker state. Closure-scoped so the speaker subscription's
+    // re-render reads the latest needle.
+    let filterQuery = '';
+    const filter = pillInput({
+      placeholder:  'Filter favourites',
+      ariaLabel:    'Filter favourites',
+      initialValue: '',
+      debounceMs:   FILTER_DEBOUNCE_MS,
+      onInput: (value) => {
+        filterQuery = typeof value === 'string' ? value : '';
+        render();
+      },
+    });
+    filter.wrap.classList.add('favorites-filter');
+    if (titleBar) titleBar.appendChild(filter.wrap);
 
     // Activity hook: tracks the most recent action-toast so any other
     // user-initiated action collapses it early. An in-flight Undo toast
@@ -411,23 +469,40 @@ export default defineView({
       ? ctx.query.focus
       : '';
 
+    function clearFilter() {
+      filterQuery = '';
+      filter.setValue('');
+      render();
+    }
+
     function render() {
       const list = (store.state.speaker && store.state.speaker.favorites) || null;
-      // null = unfetched. Show the empty state immediately so a slow
-      // GET doesn't leave the body blank; reconcile-on-mount will land
-      // shortly and re-render with the real list.
+      // null = unfetched. Show the zero-favourites empty state immediately
+      // so a slow GET doesn't leave the body blank; reconcile-on-mount
+      // will land shortly and re-render with the real list.
       const entries = Array.isArray(list) ? list : [];
       if (!body) return;
       if (entries.length === 0) {
-        body.replaceChildren(buildEmptyState());
-      } else {
-        body.replaceChildren(buildList({
-          entries, store, onActivity,
-          onCleanup: env.onCleanup,
+        body.replaceChildren(buildEmptyState({ kind: 'none' }));
+        return;
+      }
+      const visible = filterFavorites(entries, filterQuery);
+      const dragDisabled = visible !== entries;
+      if (visible.length === 0) {
+        body.replaceChildren(buildEmptyState({
+          kind: 'no-match',
+          query: filterQuery,
+          onClear: clearFilter,
         }));
-        if (pendingFocusId && applyFocus(body, pendingFocusId)) {
-          pendingFocusId = '';
-        }
+        return;
+      }
+      body.replaceChildren(buildList({
+        entries: visible, store, onActivity,
+        onCleanup: env.onCleanup,
+        dragDisabled,
+      }));
+      if (pendingFocusId && applyFocus(body, pendingFocusId)) {
+        pendingFocusId = '';
       }
     }
 

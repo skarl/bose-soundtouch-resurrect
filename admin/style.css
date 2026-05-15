@@ -1299,6 +1299,28 @@ main {
 .favorites-empty p {
   margin: 0;
 }
+.favorites-empty__clear {
+  margin-top: 0.75rem;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent, #4a90e2);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* Filter input mounted in .page-title-bar — caps the width on wide
+ * viewports so the title still gets a useful share of the row. The
+ * .page-title-bar media query already stacks → row at 480 px. */
+.favorites-filter {
+  flex: 1 1 auto;
+}
+@media (min-width: 480px) {
+  .favorites-filter {
+    flex: 0 1 320px;
+  }
+}
 .favorites-list {
   display: flex;
   flex-direction: column;
@@ -1342,6 +1364,15 @@ main {
   user-select: none;
 }
 .station-row__drag:active { cursor: grabbing; }
+
+/* When the favourites filter is active the drag handle is no-op (#135).
+ * Fade + block pointer interaction so the affordance reads as inactive
+ * without being yanked from the layout. */
+.station-row__drag[aria-disabled="true"] {
+  opacity: 0.25;
+  cursor: default;
+  pointer-events: none;
+}
 
 /* Source row while a drag is in flight — fade it so the ghost reads
  * as "this is where the row currently lives". */
