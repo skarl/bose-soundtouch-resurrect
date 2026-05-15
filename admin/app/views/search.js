@@ -31,7 +31,7 @@
 
 import { html, mount, defineView } from '../dom.js';
 import { tuneinSearch, tuneinBrowse } from '../api.js';
-import { stationRow } from '../components.js';
+import { stationRow, pillInput } from '../components.js';
 import { icon } from '../icons.js';
 import { classifyOutline, normaliseRow } from '../tunein-outline.js';
 import { canonicaliseBrowseUrl, extractDrillKey } from '../tunein-url.js';
@@ -361,37 +361,17 @@ export default defineView({
       : '';
 
     // --- input wrapper: leading glyph + input + clear-X + pending dot --
-    const wrap = document.createElement('div');
-    wrap.className = 'search-input-wrap';
-
-    const leading = document.createElement('span');
-    leading.className = 'search-input-icon';
-    leading.appendChild(icon('search', 14));
-
-    const input = document.createElement('input');
-    input.type = 'search';
-    input.className = 'search-input';
-    input.placeholder = SEARCH_PLACEHOLDER;
-    input.autocomplete = 'off';
-    input.spellcheck = false;
-    input.setAttribute('aria-label', 'Search stations');
-    input.value = initialQ;
-
-    const clearBtn = document.createElement('button');
-    clearBtn.type = 'button';
-    clearBtn.className = 'search-clear';
-    clearBtn.setAttribute('aria-label', 'Clear search');
-    clearBtn.appendChild(icon('x', 12));
-    clearBtn.hidden = !initialQ;
+    const { wrap, input } = pillInput({
+      placeholder:  SEARCH_PLACEHOLDER,
+      ariaLabel:    'Search stations',
+      initialValue: initialQ,
+      onInput:      (value) => handleInput(value),
+    });
 
     const pending = document.createElement('span');
     pending.className = 'search-pending';
     pending.setAttribute('aria-hidden', 'true');
     pending.hidden = true;
-
-    wrap.appendChild(leading);
-    wrap.appendChild(input);
-    wrap.appendChild(clearBtn);
     wrap.appendChild(pending);
 
     // --- "Include podcasts" toggle (default ON; sessionStorage) -------
@@ -568,7 +548,6 @@ export default defineView({
       const q = value.trim();
       writeHash(q);
       clearDebounce();
-      clearBtn.hidden = q.length === 0;
       if (!q) {
         inFlightToken++;
         pending.hidden = true;
@@ -661,13 +640,6 @@ export default defineView({
           popularEl.appendChild(p2);
         });
     }
-
-    input.addEventListener('input', (ev) => handleInput(ev.target.value));
-    clearBtn.addEventListener('click', () => {
-      input.value = '';
-      handleInput('');
-      input.focus();
-    });
 
     // Toggle change re-runs the active search with the new filter.
     toggleInput.addEventListener('change', () => {

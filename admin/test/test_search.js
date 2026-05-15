@@ -271,22 +271,23 @@ test('search: placeholder hints at TuneIn + 3 example queries', () => {
   assert.match(SEARCH_PLACEHOLDER, /ffh/);
 });
 
-// --- search input wrap: pill-shape + leading icon (CSS contract) ---
+// --- pill input wrap: pill-shape + leading icon (CSS contract) -----
 //
-// The polish pass moved the search input into a bordered wrapper so the
-// magnifier glyph sits inside the field. The contract is the visible
-// .search-input-wrap class with a 38px pill-style row.
-test('search css: .search-input-wrap exists and the input is borderless', async () => {
+// The pill-shaped input shell is shared between search and other
+// callers (favourites filter, future browse-text-filter). Contract:
+// the visible .pill-input-wrap class with a 38px pill-style row,
+// borderless inner input.
+test('pill css: .pill-input-wrap exists and the input is borderless', async () => {
   const fs = await import('node:fs');
   const path = await import('node:path');
   const css = fs.readFileSync(path.resolve('admin/style.css'), 'utf8');
-  const wrapRule = css.match(/^\.search-input-wrap\s*\{([^}]+)\}/m);
-  assert.ok(wrapRule, 'found .search-input-wrap rule');
+  const wrapRule = css.match(/^\.pill-input-wrap\s*\{([^}]+)\}/m);
+  assert.ok(wrapRule, 'found .pill-input-wrap rule');
   assert.match(wrapRule[1], /\bheight:\s*38px\b/);
   assert.match(wrapRule[1], /\bborder:\s*1px solid\b/);
 
-  const inputRule = css.match(/^\.search-input\s*\{([^}]+)\}/m);
-  assert.ok(inputRule, 'found .search-input rule');
+  const inputRule = css.match(/^\.pill-input\s*\{([^}]+)\}/m);
+  assert.ok(inputRule, 'found .pill-input rule');
   assert.match(inputRule[1], /\bborder:\s*0\b/);
 });
 
