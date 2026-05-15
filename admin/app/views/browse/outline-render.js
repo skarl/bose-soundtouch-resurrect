@@ -37,7 +37,7 @@ import {
   renderLiveShowCard,
   renderTopicsCard,
 } from './show-landing.js';
-import { stringifyCrumbs } from './crumb-parts.js';
+import { stringifyCrumbs, filtersOf, joinFilters } from './crumb-parts.js';
 import { trailingAffordance } from '../../components.js';
 
 // The crumb-token prefix that child links should embed in `from=...`.
@@ -100,31 +100,6 @@ export function drillHashFor(parts, crumbs) {
   const fromStr  = stringifyCrumbs(fromList);
   if (fromStr) qs.set('from', fromStr);
   return `#/browse?${qs.toString()}`;
-}
-
-// Resolve a parts object's filter list to the wire string `l109,g22`.
-// Prefers `parts.filters: string[]` (the canonical multi-value form);
-// falls back to the legacy `parts.filter: string`. Empty → ''.
-function joinFilters(parts) {
-  if (Array.isArray(parts.filters)) {
-    const cleaned = parts.filters.filter((s) => typeof s === 'string' && s !== '');
-    return cleaned.join(',');
-  }
-  if (typeof parts.filter === 'string' && parts.filter !== '') return parts.filter;
-  return '';
-}
-
-// Return the canonical filter list for parts (always an array). See
-// joinFilters; this is the same source-of-truth read but in array form.
-function filtersOfParts(parts) {
-  if (!parts) return [];
-  if (Array.isArray(parts.filters)) {
-    return parts.filters.filter((s) => typeof s === 'string' && s !== '');
-  }
-  if (typeof parts.filter === 'string' && parts.filter !== '') {
-    return parts.filter.split(',').map((s) => s.trim()).filter(Boolean);
-  }
-  return [];
 }
 
 export function pluralize(n) {
@@ -457,7 +432,7 @@ function crumbTokenForParts(parts) {
     ? parts.id
     : (typeof parts.c === 'string' && parts.c !== '' ? parts.c : '');
   if (!anchor) return null;
-  const filters = filtersOfParts(parts);
+  const filters = filtersOf(parts);
   if (filters.length > 0) {
     return `${anchor}:${filters.join('+')}`;
   }
@@ -533,7 +508,7 @@ export function primeLabelForChip(parts, label) {
   if (!parts || typeof label !== 'string') return;
   const text = label.trim();
   if (!text) return;
-  const filters = filtersOfParts(parts);
+  const filters = filtersOf(parts);
   if (filters.length > 0) {
     const newFilter = filters[filters.length - 1];
     cache.set(`tunein.label.${newFilter}`, text, TTL_LABEL);
@@ -615,9 +590,9 @@ export function renderPivotChips(pivots) {
 // noise on the wire).
 function mergeFiltersFromCurrent(chipParts) {
   if (!_currentParts) return chipParts;
-  const current = filtersOfParts(_currentParts);
+  const current = filtersOf(_currentParts);
   if (current.length === 0) return chipParts;
-  const chipFilters = filtersOfParts(chipParts);
+  const chipFilters = filtersOf(chipParts);
   const seen = new Set();
   const merged = [];
   for (const f of current.concat(chipFilters)) {
