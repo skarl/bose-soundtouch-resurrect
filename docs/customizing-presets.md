@@ -95,7 +95,7 @@ for that station. Skip it or use a different station.
 ```bash
 SPEAKER_IP=<your-speaker-ip>
 SCP="scp -O -oHostKeyAlgorithms=+ssh-rsa -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -oConnectTimeout=10"
-$SCP s* root@$SPEAKER_IP:/mnt/nv/resolver/bmx/tunein/v1/playback/station/
+$SCP s[0-9]* root@$SPEAKER_IP:/mnt/nv/resolver/bmx/tunein/v1/playback/station/
 ```
 
 Then assign one of your stations to a preset slot. Two ways:

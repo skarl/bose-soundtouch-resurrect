@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.7.2] - 2026-05-15
+
+### Fixed
+
+- **`deploy.sh` no longer wipes `resolver/stations.json`.** The
+  cleanup step before `build.py` used `rm -f s*`, which matched
+  `stations.json`, `stations.example.json`, and `shepherd-resolver.xml`
+  alongside the intended per-station output files. Narrowed both the
+  cleanup and the matching SCP upload globs in
+  `scripts/deploy.sh` and `scripts/refresh-streams.sh` to `s[0-9]*` —
+  the same pattern `deploy.sh:59` already uses to count the produced
+  station files, and `verify.sh:50` uses to detect them on the
+  speaker. Also narrowed the same glob in the docs' manual SCP / `ls`
+  examples (`resolver/build.py` docstring, `docs/installation.md`,
+  `docs/customizing-presets.md`) and corrected `README.md` Quick-start
+  step 4 to say copy-then-edit `stations.example.json` instead of
+  editing it in place. Reported externally against the 0.5.0 tag
+  (#141).
+
 ## [v0.7.1] - 2026-05-15
 
 ### Added

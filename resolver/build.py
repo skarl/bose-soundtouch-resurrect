@@ -12,7 +12,7 @@ The script writes one file per station ID into the current directory.
 The filename matches the TuneIn ID exactly (e.g. ./s12345). After this,
 scp the files to your speaker:
 
-    scp -O -oHostKeyAlgorithms=+ssh-rsa s* \\
+    scp -O -oHostKeyAlgorithms=+ssh-rsa s[0-9]* \\
         root@<speaker-ip>:/mnt/nv/resolver/bmx/tunein/v1/playback/station/
 
 See ../docs/customizing-presets.md for how to find a station's ID.

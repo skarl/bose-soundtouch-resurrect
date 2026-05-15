@@ -66,7 +66,7 @@ cd resolver/
 cp stations.example.json stations.json
 # Edit stations.json — see customizing-presets.md for how to find IDs.
 python3 build.py
-ls s*    # one file per station ID, e.g. s12345, s23456, ...
+ls s[0-9]*    # one file per station ID, e.g. s12345, s23456, ...
 cd ..
 ```
 
@@ -102,7 +102,7 @@ $SSH root@$SPEAKER_IP '
 '
 
 # Per-station resolver files
-$SCP resolver/s* root@$SPEAKER_IP:/mnt/nv/resolver/bmx/tunein/v1/playback/station/
+$SCP resolver/s[0-9]* root@$SPEAKER_IP:/mnt/nv/resolver/bmx/tunein/v1/playback/station/
 
 # Daemon config so busybox httpd auto-starts at boot
 $SCP resolver/shepherd-resolver.xml \
