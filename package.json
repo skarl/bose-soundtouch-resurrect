@@ -2,7 +2,7 @@
   "name": "bose-soundtouch-resurrect",
   "private": true,
   "type": "module",
-  "version": "0.8",
+  "version": "0.8.1",
   "scripts": {
     "test": "node --test admin/test/*.js"
   },
