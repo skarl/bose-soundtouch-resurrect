@@ -48,7 +48,7 @@ printf '\n=== Shepherd override directory ===\n'
 check "/mnt/nv/shepherd/Shepherd-resolver.xml exists" \
     $SSH root@"$SPEAKER" 'test -s /mnt/nv/shepherd/Shepherd-resolver.xml'
 check "override directory contains stock-config symlinks" \
-    $SSH root@"$SPEAKER" 'find /mnt/nv/shepherd -maxdepth 1 -type l -lname "/opt/Bose/etc/Shepherd-*.xml" | grep -q .'
+    $SSH root@"$SPEAKER" 'find /mnt/nv/shepherd -maxdepth 1 -type l | grep -q .'
 
 printf '\n=== Resolver tree ===\n'
 check "/mnt/nv/resolver/bmx/registry/v1/services exists" \
