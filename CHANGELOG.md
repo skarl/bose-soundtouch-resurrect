@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.8] - 2026-05-16
+
+Onboarding hardening release. Closes a class of bug where the documented install path was non-reproducible because it required invisible manual sysadmin state on the maintainer's NV flash to work — every fresh user (especially on a different SoundTouch model) was walking off a cliff. Discovered when external contributor David reported a boot hang at ~90% on his ST 20 (discussion #121) that we couldn't reproduce on the maintainer's ST 10. Validated end-to-end on the test speaker after a clean shepherd-state reset: `scripts/verify.sh` reported 30 OK / 0 failed across resolver, admin SPA, CGIs, WebSocket, and speaker-proxy probes.
+
+### Fixed
+
+- **`scripts/deploy.sh` populates `/mnt/nv/shepherd/` with symlinks to every stock `Shepherd-*.xml`.** The firmware's process supervisor (**shepherdd**) reads daemon configs from `/mnt/nv/shepherd/` *instead of* `/opt/Bose/etc/` when that directory exists. Until this release our deploy created the directory and dropped only our resolver config into it — silently stopping every stock daemon (BoseApp, WebServer, the per-**variant** daemon, etc.) from being supervised on any fresh speaker. The deploy step is now a variant-agnostic loop: links every `/opt/Bose/etc/Shepherd-*.xml` into the override directory before pushing our own `Shepherd-resolver.xml`. Works identically on ST 10, ST 20, ST 30. See [ADR-0004](docs/adr/0004-shepherd-override-replaces-not-merges.md). Closes #144.
+- **`resolver/build.py` exits 0 on partial success** so a single failed station no longer aborts deploy under `set -eu`. Returns 0 iff at least one station file was written, non-zero only when zero succeeded. Always prints a `built N of M station(s); K failed` summary line. The abort gate moves up the stack to `deploy.sh`'s existing `STATION_COUNT > 0` check, which is the correct place to express "we have something to push." Closes #145.
+- **`scripts/uninstall.sh` fully reverses what deploy writes**, including the entire Shepherd override directory (`rm -rf /mnt/nv/shepherd` — the directory itself, never just its contents; the trailing `/*` form leaves an empty directory which is the same brick state in a different costume). The banner now also explicitly lists `httpd.conf` and `cgi-bin/lib/` (already transitively removed by `rm -rf /mnt/nv/resolver`). Closes #146.
+- **`scripts/verify.sh` shepherd-symlink probe uses busybox-compatible `-type l`.** busybox 1.19.4 on the SoundTouch firmware doesn't support `find -lname`. Without this fix the otherwise-correct deploy reported `[FAIL] override directory contains stock-config symlinks` against a valid install.
+
+### Added
+
+- **`scripts/capture-state.sh <speaker-ip>`** — diagnostic capture for compatibility investigations. One-paste-back bundle: `/info` (model + **variant** + firmware), Shepherd override directory listing, stock Shepherd configs listing, shepherdd pids, NV-flash root, mounts, Shepherd-config mtimes, dmesg tail, `/var/log/messages` tail. Output to a timestamped local folder à la `scripts/backup-presets.sh`. `docs/troubleshooting.md` now points at it as the first step for filing a compat issue. Closes #147.
+- **[ADR-0004 — shepherd-override-replaces-not-merges](docs/adr/0004-shepherd-override-replaces-not-merges.md)** — documents the architectural decision behind the symlink-population step, the symlinks-vs-copies tradeoff, and the explicit "never leave the override directory present-but-empty" rule with the recovery procedure if you do.
+- **CONTEXT.md glossary additions** — Shepherdd, Shepherd config, Shepherd override directory, Variant, Stock daemon. Plus disambiguation of Override XML (SDK URL redirect, separate concern from the Shepherd override directory). Plus two new relationships covering the boot supervision flow.
+- **Pre-release validation procedure in `MAINTAINING.md`** — documented shepherd-state-only reset workflow as the regression gate before any release that touches `/mnt/nv/`. Explicit WARNING about the `/mnt/nv/shepherd/*` (contents-only) footgun and recovery path if you trip on it.
+
+### Changed
+
+- **README compat table** reclassifies the SoundTouch mobile app from end-of-life to **partial**. WiFi onboarding and local control over LAN still work; only cloud-routed features (catalogue browsing, account, firmware updates) broke with the 2026-05-06 shutdown. Re-onboarding a freshly factory-reset speaker via the app is a viable recovery path. Closes #148.
+- **`docs/compatibility.md` adopts a three-state rubric**: **Tested** (maintainer ran end-to-end on this model + firmware), **Confirmed** (external contributor reported success), **Inferred** (community evidence, no independent confirmation). One row per known model, each citing the evidence for its state. ST 10 = Tested, ST 20 / ST 30 = Inferred. Includes pointer to `scripts/capture-state.sh` for contributor onboarding. Closes #150.
+
+### Documented
+
+- **Pre-release shepherd-state-only reset executed against the test speaker on 2026-05-16.** Reset → factory-app confirmation → `scripts/deploy.sh` → 19 supervised daemons (18 stock + our resolver httpd) → `admin/deploy.sh` → `scripts/verify.sh` returned 30 OK / 0 failed. Empirically confirms the slice 1–4 fixes close the bug class that bit discussion #121. Closes #149.
+
 ## [v0.7.2] - 2026-05-15
 
 ### Fixed

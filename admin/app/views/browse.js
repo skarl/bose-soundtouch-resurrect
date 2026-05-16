@@ -18,7 +18,6 @@
 //      so the language-tree rewrite (§ 7.3) happens at the row → href
 //      seam, not at fetch time.
 //
-// See admin/PLAN.md § View specs / browse and docs/tunein-api.md.
 
 import { html, mount, defineView } from '../dom.js';
 import { tuneinBrowse } from '../api.js';

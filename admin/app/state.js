@@ -1,6 +1,5 @@
 // Split observable store. Top-level keys: speaker, caches, ws, ui.
 // Mutators subscribe to one key and receive (state, changedTopLevelKey).
-// See admin/PLAN.md § State management.
 
 const TOP_LEVEL_KEYS = ['speaker', 'caches', 'ws', 'ui'];
 

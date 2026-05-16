@@ -6,6 +6,13 @@ these.
 
 For the rest of this doc, `SPEAKER_IP` stands for your speaker's LAN IP.
 
+**Filing a compatibility issue?** Run
+`scripts/capture-state.sh $SPEAKER_IP` first — it bundles `/info`, the
+Shepherd override directory listing, stock Shepherd config listing,
+shepherdd pids, `/mnt/nv/` listing, mount info, Shepherd-config mtimes,
+dmesg tail, and `/var/log/messages` tail into a timestamped folder.
+Scrub LAN IPs / MACs / fritz.box hostnames before pasting.
+
 ## Nothing plays after pressing a preset
 
 Symptoms: pressing a preset, `/now_playing` shows source `STANDBY` or

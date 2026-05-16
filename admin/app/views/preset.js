@@ -6,7 +6,6 @@
 // On station pick the existing presetsAssign() POST is called; success
 // closes the modal via history.back().
 //
-// See admin/PLAN.md § Routing (#/preset/N).
 
 import { defineView, mountChild } from '../dom.js';
 import { store } from '../state.js';

@@ -1,7 +1,6 @@
 // REST transport for /cgi-bin/api/v1/* — read (GET) + write (POST).
 // Thin wrappers around fetch(). XML parsing has moved to ./speaker-xml.js;
 // this file imports the parsers that the GET fetchers consume internally.
-// See admin/PLAN.md § REST API.
 //
 // Surface:
 //   tunein*              — TuneIn forwarder (search / browse / station / probe)

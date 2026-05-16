@@ -19,15 +19,17 @@ directly from the radio station's CDN — no external host involved.
 | 6 preset buttons → TuneIn radio stations    | ✅ working         |
 | Spotify Connect, AUX, Bluetooth             | ✅ unchanged       |
 | Browser admin on any LAN device             | ✅ full UI         |
-| Bose SoundTouch mobile app                  | ❌ end-of-life — see [docs/compatibility.md](docs/compatibility.md) |
+| Bose SoundTouch mobile app                  | ⚠ partial — WiFi onboarding + local controls work over LAN; cloud-routed catalogue browsing, firmware updates, and account features broke with the 2026-05-06 shutdown. See [docs/compatibility.md](docs/compatibility.md) |
 | Stereo pair / multi-room                    | ⚠ partial — single-speaker test rig only |
 | Firmware updates                            | ❌ frozen forever  |
 
 ## The browser admin
 
 Open `http://<speaker>:8181/` from any browser on the same LAN. The
-admin SPA is the everyday interface — the SoundTouch mobile app is
-no longer viable post-cloud-shutdown.
+admin SPA is the everyday interface post-cloud-shutdown — the
+SoundTouch mobile app still handles WiFi onboarding (useful after a
+factory reset) but its catalogue browsing and account features went
+away with the cloud.
 
 - **Now playing** — compact card with album art, transport, dynamic
   source switcher, a 3×2 grid of art-style preset cards, and a 3×3
@@ -148,9 +150,11 @@ out so you know what to expect:
   button sequence.
 - **Multi-room view is parked.** State, parsers, and actions all
   ship; the picker UI awaits a multi-speaker test rig.
-- **Bose mobile app remains end-of-life.** Pairing and per-app
-  features depend on the cloud services that went away. The browser
-  admin is now the supported interface.
+- **Bose mobile app is partial.** WiFi onboarding and local
+  controls still work over LAN — re-onboarding a freshly factory-reset
+  speaker via the app is a viable recovery path. Catalogue browsing,
+  account features, and firmware-update prompts went away with the
+  cloud. The browser admin is the everyday interface.
 
 If you specifically want the SoundTouch mobile app's catalogue
 back, run an external SoundCork-style emulator alongside this

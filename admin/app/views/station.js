@@ -16,7 +16,6 @@
 //      - gated/dark: replace assign buttons with a friendly message +
 //        a "More like this" link to #/browse.
 //
-// See admin/PLAN.md § View specs / station detail.
 
 import { html, mount, defineView } from '../dom.js';
 import { tuneinStation, presetsList } from '../api.js';

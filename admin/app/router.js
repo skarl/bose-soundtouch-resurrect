@@ -1,7 +1,6 @@
 // Hash router. Reads location.hash, matches against registered routes,
 // invokes the matched view's `init(root, store, ctx)` and stashes the
 // destroy function it returns so the next dispatch can unmount cleanly.
-// See admin/PLAN.md § Routing.
 
 function parseHash(hash) {
   // strip leading "#" then split off query string

@@ -7,7 +7,6 @@
 // action lists that step() emits. Speaker-button-press toasts live in
 // speaker-button-watcher.js.
 //
-// See admin/PLAN.md § Live updates and § State management.
 
 import { reconcile, dispatch as speakerDispatch } from './speaker-state.js';
 import { showToast } from './toast.js';

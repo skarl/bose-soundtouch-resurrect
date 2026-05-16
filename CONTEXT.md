@@ -15,8 +15,27 @@ The on-speaker static-file + CGI responder that replaces the four Bose cloud ser
 _Avoid_: server, mock, emulator (used elsewhere for off-speaker variants).
 
 **Override XML**:
-`/mnt/nv/OverrideSdkPrivateCfg.xml` — the file that redirects the firmware's four cloud URLs to `http://127.0.0.1:8181`. Read by BoseApp at boot.
+`/mnt/nv/OverrideSdkPrivateCfg.xml` — the file that redirects the firmware's four cloud URLs to `http://127.0.0.1:8181`. Read by BoseApp at boot. Distinct from the **Shepherd override directory** below — both use "override" but they sit at different layers (SDK URL redirection vs. daemon supervision).
 _Avoid_: config, redirect.
+
+**Shepherdd**:
+The firmware's process supervisor. Reads **Shepherd config** files at boot and supervises (re-spawns, kills, reports on) each declared daemon. Owns the lifecycle of every userspace process on the speaker that matters — BoseApp, WebServer, APServer, Bluetooth, the per-**variant** daemon, our **Resolver** httpd, etc.
+
+**Shepherd config**:
+An XML file under `/opt/Bose/etc/Shepherd-<name>.xml` declaring one or more daemons for **shepherdd** to supervise. Five stock configs ship with the firmware: `Shepherd-core.xml`, `Shepherd-hsp.xml`, `Shepherd-noncore.xml`, `Shepherd-product.xml`, and the per-**variant** `Shepherd-<variant>.xml` (e.g. `Shepherd-rhino.xml` on ST 10). Our `resolver/shepherd-resolver.xml` is a sixth, project-owned config.
+_Avoid_: shepherd XML (the file name is `Shepherd-`, capital S).
+
+**Shepherd override directory**:
+`/mnt/nv/shepherd/` — when this directory exists, **shepherdd** reads **Shepherd config** files from here *instead of* `/opt/Bose/etc/`. The mechanism is replacement, not merging: any stock config not present in the override directory is **not loaded**. Stock speakers ship without this directory; our deploy creates it to drop `Shepherd-resolver.xml`, and **must** also populate it with links to every stock config that needs to keep being supervised. See `docs/adr/0004-shepherd-override-replaces-not-merges.md`.
+_Avoid_: shepherd dir, override shepherd (ambiguous with [[Override XML]]).
+
+**Variant**:
+The firmware's per-model codename, reported in `/info` under `<variant>`. Known values: `rhino` (ST 10), `spotty` (ST 20), `mojo` (ST 30). `Bose_Lisa/<fw>` in the User-Agent is the shared SDK build-tree name (all models report Lisa), not a variant. The variant determines which stock per-model **Shepherd config** is loaded.
+_Avoid_: codename, model (those are looser; use variant when speaking precisely about what the firmware reports).
+
+**Stock daemon**:
+A daemon supervised by a stock **Shepherd config** — i.e. Bose-shipped userspace process (BoseApp, WebServer, APServer, Bluetooth, the per-**variant** daemon, etc.). Distinct from our **Resolver** httpd, which is the only project-owned supervised daemon.
+_Avoid_: Bose daemon (true but circular), system daemon (too generic).
 
 **Preset**:
 One of the six physical preset buttons on the speaker, each holding a station reference. Firmware-owned; mutates via `/storePreset` (proxied by the presets CGI).
@@ -82,6 +101,8 @@ The list of all known speaker fields — single source of truth for what gets sy
 
 ## Relationships
 
+- A **Speaker** runs **Shepherdd** at boot. Shepherdd loads either `/opt/Bose/etc/Shepherd-*.xml` (default) or `/mnt/nv/shepherd/Shepherd-*.xml` (if the **Shepherd override directory** exists), and supervises every declared **Stock daemon** plus our **Resolver** httpd.
+- The per-**Variant** stock **Shepherd config** is what wires up the model-specific daemon (`rhino`, `spotty`, `mojo`). If our deploy creates the **Shepherd override directory** without linking the per-variant stock config into it, that daemon does not start — and BoseApp / WebServer fail to come up, the speaker hangs around 90% boot.
 - A **Preset** points to a **Station** by its **TuneIn ID**.
 - A **Favourite** references a **Station** or show by its **TuneIn ID** and is disjoint from any **Preset** — the same id can be both.
 - The **Resolver** maps a **TuneIn ID** to a **Stream URL**; the **Speaker** then streams audio from that URL directly. **Preset**, **Favourite**, preview, and inline-play all route through this single mapping.

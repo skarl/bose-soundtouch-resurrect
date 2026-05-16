@@ -16,8 +16,9 @@
 #      <preset><ContentItem ...><itemName>...</itemName></ContentItem></preset>
 #      shape (name XML-escaped).
 #   3. Returns the now-current /presets list as `data`.
-# No rollback on /storePreset failure — see admin/PLAN.md
-# § REST API → presets for the failure-mode rationale.
+# No rollback on /storePreset failure: a failed /storePreset leaves
+# the speaker's preset list unchanged; the CGI returns the current
+# list as `data` so the caller sees ground truth and can retry.
 #
 # Envelope + CSRF guard live in admin/cgi-bin/lib/playback.sh, shared
 # with /play and /preview.

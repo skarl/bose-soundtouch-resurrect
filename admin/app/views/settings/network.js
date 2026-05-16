@@ -1,7 +1,7 @@
 // Network — read-only.
 // Displays the speaker's active interface (SSID, IP, hostname, MAC,
 // signal). Wi-Fi reconfiguration is intentionally out of scope
-// (admin/PLAN.md § Out of scope; SECURITY.md § LAN trust model).
+// (see SECURITY.md § LAN trust model).
 //
 // The speaker reports a coarse 5-bucket signal label, not a numeric
 // dBm. We render both the label (so screen readers / search are happy)

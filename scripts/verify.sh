@@ -41,6 +41,15 @@ check "TCP 8181 is listening" \
 check "shepherdd has /bin/httpd in pids" \
     $SSH root@"$SPEAKER" 'grep -q "/bin/httpd" /mnt/nv/shepherd/pids'
 
+printf '\n=== Shepherd override directory ===\n'
+# Per ADR-0004: deploy populates this directory with symlinks to every
+# stock /opt/Bose/etc/Shepherd-*.xml so the firmware's daemons keep
+# being supervised after shepherdd switches its load path here.
+check "/mnt/nv/shepherd/Shepherd-resolver.xml exists" \
+    $SSH root@"$SPEAKER" 'test -s /mnt/nv/shepherd/Shepherd-resolver.xml'
+check "override directory contains stock-config symlinks" \
+    $SSH root@"$SPEAKER" 'find /mnt/nv/shepherd -maxdepth 1 -type l | grep -q .'
+
 printf '\n=== Resolver tree ===\n'
 check "/mnt/nv/resolver/bmx/registry/v1/services exists" \
     $SSH root@"$SPEAKER" 'test -s /mnt/nv/resolver/bmx/registry/v1/services'
