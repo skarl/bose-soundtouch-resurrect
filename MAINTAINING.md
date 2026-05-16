@@ -75,6 +75,93 @@ directory.
 3. Add them to the "Restrict who can push" list under branch
    protection.
 
+## Pre-release validation: shepherd-state-only reset
+
+Before any release that touches `scripts/deploy.sh`,
+`scripts/uninstall.sh`, `resolver/`, or anything else that writes to
+the speaker's `/mnt/nv/`, run this procedure on the test speaker to
+validate the documented install path against a known-clean
+override-directory state.
+
+This catches the bug class that motivated 0.8: invisible manual state
+on the maintainer's NV flash making the documented path
+non-reproducible for fresh users. See
+[`docs/adr/0004-shepherd-override-replaces-not-merges.md`](docs/adr/0004-shepherd-override-replaces-not-merges.md)
+for the full background.
+
+**Scope: shallow.** This procedure resets only the state our deploy
+and uninstall scripts manage — the resolver tree, the Shepherd
+override directory, the Override XML. It does NOT factory-reset the
+speaker, re-enable SSH via USB stick, or re-onboard via the
+SoundTouch app. The deeper full-factory-reset gate that exercises
+those paths is a future fold.
+
+### Procedure
+
+1. **Capture user data.** Back up the speaker's presets before tearing
+   anything down:
+   ```sh
+   ./scripts/backup-presets.sh <speaker-ip>
+   ```
+
+2. **Wipe the project-managed state on the speaker:**
+   ```sh
+   ./scripts/ssh-speaker.sh <speaker-ip> '
+     rm -rf /mnt/nv/shepherd/* /mnt/nv/resolver/* \
+            /mnt/nv/OverrideSdkPrivateCfg.xml*
+     sync; reboot
+   '
+   ```
+   Wait ~60s for the reboot to complete.
+
+3. **Confirm clean factory-app boot.** Verify the speaker comes up
+   normally without our resolver — this is the control:
+   ```sh
+   ./scripts/ssh-speaker.sh <speaker-ip> 'curl -s http://localhost:8090/info | head -1'
+   ```
+   Should return parseable XML with the speaker's model and variant.
+
+4. **Deploy from the release branch:**
+   ```sh
+   ./scripts/deploy.sh <speaker-ip>
+   ```
+
+5. **Verify** — every probe must pass. Capture the output for the
+   release PR body:
+   ```sh
+   ./scripts/verify.sh <speaker-ip>
+   ```
+
+6. **Smoke a preset.** Press a hardware preset on the speaker;
+   confirm playback starts.
+
+7. **Uninstall.** Confirm the override directory is removed (or
+   empty) after the speaker reboots:
+   ```sh
+   ./scripts/uninstall.sh <speaker-ip>
+   ./scripts/ssh-speaker.sh <speaker-ip> 'ls -la /mnt/nv/shepherd/ 2>&1 | head'
+   ```
+
+8. **Re-confirm clean boot post-uninstall.** Same probe as step 3.
+
+9. **Re-deploy** to leave the test speaker in a working state for
+   normal use:
+   ```sh
+   ./scripts/deploy.sh <speaker-ip>
+   ```
+
+### What to capture
+
+- `scripts/verify.sh` output from step 5 — paste into the release
+  PR body.
+- Anomalies surfaced by any step — file as follow-up issues and
+  decide whether each gates the release.
+
+### What to do if any step fails
+
+The plan is wrong, not just the step. Re-grill the milestone before
+shipping. The release does not ship until step 5 passes cleanly.
+
 ## Releasing
 
 There's no formal release machinery yet — this project ships small
