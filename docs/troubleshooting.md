@@ -13,6 +13,53 @@ shepherdd pids, `/mnt/nv/` listing, mount info, Shepherd-config mtimes,
 dmesg tail, and `/var/log/messages` tail into a timestamped folder.
 Scrub LAN IPs / MACs / fritz.box hostnames before pasting.
 
+## If the speaker won't boot at all (no SSH, no WiFi, no LAN)
+
+Symptoms: the speaker no longer joins WiFi, isn't reachable over LAN,
+SSH connects refuse or time out, and the standard Bose factory reset
+(hold `Preset 1` + `Vol −` until the speaker beeps) does nothing —
+userland isn't running far enough to register the button event.
+
+The most common cause of this state in this project is a speaker that
+got the pre-0.8 `deploy.sh` (#144): it dropped only our resolver
+config into `/mnt/nv/shepherd/` without the stock variant files
+alongside, which made `shepherdd` stop supervising BoseApp, WebServer,
+NetManager, and everything else that brings the speaker up at boot.
+v0.8 fixed that path; this section is here for anyone whose speaker
+is already in the broken state.
+
+USB-stick `Update.stu` re-flash doesn't help (the bug is in
+`/mnt/nv/`, not the firmware image), and the USB-cable-to-laptop SSH
+trick doesn't help either (userland is too broken to expose the
+USB-network gadget).
+
+External contributor [@dimmu311](https://github.com/dimmu311) found a
+two-stage button-press sequence in [#143](https://github.com/skarl/bose-soundtouch-resurrect/issues/143)
+that hits the bootloader / early-boot button handler at the right
+moment to trigger a deeper reset than the userland one. Verbatim:
+
+1. AC unplug.
+2. Press and hold `1` + `Vol −`.
+3. AC plug back in.
+4. After a few seconds the LEDs sweep left to right:
+   **orange, blue, white, orange**.
+5. Release the buttons. Be careful at this moment — timing matters.
+6. The LEDs briefly all go off.
+7. The second LED comes up blue. Press and hold `1` + `Vol −` again.
+8. After about 15 seconds the first LED lights blue and all others
+   are off. Release.
+
+The speaker's setup-mode hotspot is now active — re-onboard via the
+SoundTouch app as you would with a new speaker.
+
+This procedure is documented for the **SoundTouch 10** specifically.
+Other models in the line very likely have a working bootloader-level
+reset combo too, but the exact buttons and LED-state cues may
+differ; see [compatibility.md](compatibility.md) for the
+model-supported matrix and current evidence per model. If you
+recover an ST 20 / ST 30 / other model with a different combo,
+please file a report so the next person can find it.
+
 ## Nothing plays after pressing a preset
 
 Symptoms: pressing a preset, `/now_playing` shows source `STANDBY` or
