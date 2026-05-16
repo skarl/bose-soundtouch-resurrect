@@ -104,15 +104,25 @@ those paths is a future fold.
    ./scripts/backup-presets.sh <speaker-ip>
    ```
 
-2. **Wipe the project-managed state on the speaker:**
+2. **Wipe the project-managed state on the speaker.** Remove the
+   directories themselves, not just their contents — leaving an empty
+   `/mnt/nv/shepherd/` traps shepherdd in "empty override" mode and
+   hangs the speaker at boot (BoseApp / WebServer never start, LED
+   flickers forever, no SSH recovery):
    ```sh
    ./scripts/ssh-speaker.sh <speaker-ip> '
-     rm -rf /mnt/nv/shepherd/* /mnt/nv/resolver/* \
+     rm -rf /mnt/nv/shepherd /mnt/nv/resolver \
             /mnt/nv/OverrideSdkPrivateCfg.xml*
      sync; reboot
    '
    ```
    Wait ~60s for the reboot to complete.
+
+   > **WARNING.** Do NOT use `/mnt/nv/shepherd/*` (trailing `/*`) — that
+   > empties the directory but leaves the directory itself, which is
+   > exactly the bricking state. If you do this, the only recovery is
+   > USB-stick firmware re-flash with `Update.stu` (factory-reset button
+   > combos won't register because userland never comes up).
 
 3. **Confirm clean factory-app boot.** Verify the speaker comes up
    normally without our resolver — this is the control:

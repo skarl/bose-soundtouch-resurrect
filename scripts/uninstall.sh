@@ -24,11 +24,10 @@ echo "This will remove:"
 echo "  /mnt/nv/resolver/                              (resolver tree,"
 echo "                                                  including httpd.conf"
 echo "                                                  and cgi-bin/lib/)"
-echo "  /mnt/nv/shepherd/Shepherd-resolver.xml         (auto-start config)"
-echo "  /mnt/nv/shepherd/Shepherd-*.xml symlinks       (stock-config links"
-echo "                                                  populated by deploy)"
-echo "  /mnt/nv/shepherd/                              (only if empty after"
-echo "                                                  the cleanup above)"
+echo "  /mnt/nv/shepherd/                              (entire override dir:"
+echo "                                                  every Shepherd-*.xml"
+echo "                                                  symlink and our own"
+echo "                                                  Shepherd-resolver.xml)"
 echo "  /mnt/nv/OverrideSdkPrivateCfg.xml              (URL override)"
 echo "and reboot the speaker."
 echo
@@ -39,16 +38,16 @@ case "$ans" in
     *) echo "Aborted."; exit 0 ;;
 esac
 
-# Reverse what deploy.sh writes. The symlink removal predicate ("is a
-# symlink AND target lives under /opt/Bose/etc/") guards against
-# deleting something a future tool or operator added to the override
-# directory. The directory itself is rmdir'd only when empty —
-# never rm -rf on a shared dir. See ADR-0004.
+# Reverse what deploy.sh writes. The override directory must be
+# removed entirely, not just its contents: shepherdd reads from
+# /mnt/nv/shepherd/ exclusively when it exists, so an empty directory
+# hangs the speaker at boot (no Shepherd-*.xml found → no Stock daemons
+# supervised → BoseApp / WebServer never start, LED stuck flickering).
+# Stock speakers don't have this dir; the only reason for it to exist
+# is our deploy populated it. See ADR-0004.
 $SSH root@"$SPEAKER" '
     rm -rf /mnt/nv/resolver
-    rm -f  /mnt/nv/shepherd/Shepherd-resolver.xml
-    find /mnt/nv/shepherd -maxdepth 1 -type l -lname "/opt/Bose/etc/Shepherd-*.xml" -delete 2>/dev/null
-    rmdir /mnt/nv/shepherd 2>/dev/null || true
+    rm -rf /mnt/nv/shepherd
     rm -f  /mnt/nv/OverrideSdkPrivateCfg.xml
     sync
     reboot

@@ -119,9 +119,21 @@ the same way as the rest.
   path couldn't be validated against a known-clean override-directory
   state without losing the maintainer's working state. With the
   symlink step in code, the override directory is reproducible: wipe
-  it (`rm -rf /mnt/nv/shepherd/* /mnt/nv/resolver/* /mnt/nv/OverrideSdkPrivateCfg.xml*`),
+  it (`rm -rf /mnt/nv/shepherd /mnt/nv/resolver /mnt/nv/OverrideSdkPrivateCfg.xml*`),
   run `scripts/deploy.sh`, verify. A deeper full-factory-reset gate
   that also exercises the SSH-enable procedure remains a future fold.
+
+- **Never leave the override directory present-but-empty.** Removing
+  only the *contents* of `/mnt/nv/shepherd/` (`rm -rf /mnt/nv/shepherd/*`)
+  produces an empty-but-existing directory — and shepherdd reads from
+  it exclusively, finds zero Shepherd-*.xml files, supervises zero
+  daemons. BoseApp / WebServer never start, ports 8090 / 8080 stay
+  dead, LED flickers forever, no SSH recovery (NetManager isn't
+  supervised either). Only escape is USB-stick firmware re-flash
+  (`Update.stu`). Both `scripts/uninstall.sh` and the validation
+  procedure remove the directory itself for exactly this reason. Any
+  future tool that touches the override dir must follow the same
+  rule.
 
 - **A persistent class of bug is closed.** Any feature that requires
   state in `/mnt/nv/shepherd/` or `/mnt/nv/` more broadly must now
