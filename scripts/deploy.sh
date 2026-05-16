@@ -67,9 +67,37 @@ say "Looking up speaker MAC for the heartbeat sink"
 # <networkInfo type="SMSC"> blocks each with their own <macAddress>; we use
 # deviceID because it's the one the resolver heartbeat sink path is keyed
 # under.
-MAC=$($SSH root@"$SPEAKER" 'curl -s http://localhost:8090/info' \
+#
+# Brick-class fallback: port 8090 is served by BoseApp, which is exactly the
+# stock daemon that doesn't come up on a speaker whose Shepherd override
+# directory is missing its stock-config symlinks (the failure mode this
+# release recovers from — see docs/adr/0004-shepherd-override-replaces-not-merges.md).
+# On such a speaker SSH still works, so we can recover the same MAC kernel-side
+# from the device tree, which u-boot populates from the SCM module's OTP at
+# boot independent of any userspace daemon.
+#
+# Verified on the maintainer's ST 10 (variant rhino): /proc/device-tree/ocp/
+# macaddr/mac-address is the SCM MAC (matches deviceID), populated by u-boot
+# regardless of BoseApp state. /sys/class/net/*/address on ST 10 only exposes
+# the SMSC + USB MACs (different from deviceID), so the device-tree path is
+# the only kernel-side source that yields the deviceID-matching value.
+MAC=$($SSH root@"$SPEAKER" 'curl -s --max-time 3 http://localhost:8090/info 2>/dev/null' \
       | sed -n 's|.*<info deviceID="\([0-9A-Fa-f]\{12\}\)".*|\1|p')
-[ -n "$MAC" ] || fail "couldn't read speaker MAC from /info (deviceID attribute)"
+if [ -z "$MAC" ]; then
+  echo "  port 8090 returned nothing (likely brick-class state) — falling back to kernel-side MAC lookup"
+  # od outputs " 34 15 13 9a bd 77\n"; strip whitespace and uppercase to
+  # match the deviceID format (12 uppercase hex chars, no separators) so
+  # the heartbeat sink path key below still matches.
+  MAC=$($SSH root@"$SPEAKER" 'od -An -tx1 /proc/device-tree/ocp/macaddr/mac-address 2>/dev/null' \
+        | tr -d ' \n' | tr 'a-f' 'A-F')
+  # Sanity-check the kernel-side value: must be exactly 12 hex chars.
+  case "$MAC" in
+    [0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F]) ;;
+    *) MAC= ;;
+  esac
+fi
+[ -n "$MAC" ] || fail "couldn't read speaker MAC: port 8090 dead AND /proc/device-tree/ocp/macaddr/mac-address unreadable.
+       Try: ssh root@$SPEAKER 'od -An -tx1 /proc/device-tree/ocp/macaddr/mac-address'"
 echo "Speaker MAC: $MAC"
 
 say "Creating directories on the speaker"

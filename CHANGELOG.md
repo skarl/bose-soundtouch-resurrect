@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.8.1] - 2026-05-16
+
+Recovery resilience release. Closes three gaps that surfaced once v0.8 went out: users whose speakers were already in the v0.8-fixed brick state still had no easy way out, the install guide didn't tell new users how to deploy the browser admin, and there was no documented path for a speaker that won't boot at all.
+
+### Fixed
+
+- **`scripts/deploy.sh` recovers brick-class speakers in one shot.** The MAC lookup at the top of the deploy used to query port 8090 — which is exactly the port that's dead when `shepherdd` isn't supervising `BoseApp`, the failure mode v0.8 closes for fresh installs. Users whose speakers were already in that state from the pre-0.8 deploy couldn't run `deploy.sh` to recover. The lookup now falls back to `/proc/device-tree/ocp/macaddr/mac-address` over the same SSH connection — u-boot populates that node from the SCM module's OTP at boot, independent of any userspace daemon. A running speaker takes the unchanged `/info` path; the fallback only fires when `/info` returns nothing. Format is identical (12 uppercase hex characters, no separators) so the resolver heartbeat sink path key still matches. Closes #152.
+
+### Documentation
+
+- **Install guide covers both layers explicitly.** `docs/installation.md` now leads with the two-layer model — mandatory **Resolver** plus the recommended **Browser admin SPA** — and a new "Step 1b" documents `admin/deploy.sh` alongside `scripts/deploy.sh`. The "Verify" section notes that `scripts/verify.sh` auto-skips admin probes when the SPA isn't deployed, so a resolver-only install is a valid passing state. README Quick-start updated to match (no longer implies the admin appears automatically). Closes #154.
+- **Troubleshooting guide for the "won't boot at all" failure mode.** New top-of-file section in `docs/troubleshooting.md` for SoundTouch 10 speakers that don't respond to SSH, WiFi, or LAN and don't accept the standard Bose factory reset. Documents the two-stage button-press sequence (`Preset 1` + `Vol −` held during power-on, release on the orange/blue/white/orange LED sweep, hold again for ~15s once the second LED goes blue) that [@dimmu311](https://github.com/dimmu311) found in [#143](https://github.com/skarl/bose-soundtouch-resurrect/issues/143). Reaches the bootloader-level reset handler when userland-dependent recovery paths can't. Closes #153.
+
 ## [v0.8] - 2026-05-16
 
 Onboarding hardening release. Closes a class of bug where the documented install path was non-reproducible because it required invisible manual sysadmin state on the maintainer's NV flash to work — every fresh user (especially on a different SoundTouch model) was walking off a cliff. Discovered when external contributor David reported a boot hang at ~90% on his ST 20 (discussion #121) that we couldn't reproduce on the maintainer's ST 10. Validated end-to-end on the test speaker after a clean shepherd-state reset: `scripts/verify.sh` reported 30 OK / 0 failed across resolver, admin SPA, CGIs, WebSocket, and speaker-proxy probes.
