@@ -29,8 +29,8 @@ IDEAS.md
 *.bak-*
 .claude/
 
-# Claude Design handoff bundle for the admin UI — kept locally next to
-# admin/PLAN.md as a styling reference, never committed.
+# Local design-mockup handoff bundles for the admin UI — kept locally
+# as a styling reference, never committed.
 admin/design-mockup/
 
 # --- Editor / OS junk ------------------------------------------------

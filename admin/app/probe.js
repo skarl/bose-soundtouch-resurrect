@@ -5,7 +5,6 @@
 //   assignToPreset(probe, slot, opts)        → Promise<envelope>
 //   buildBosePayload(probe, name, url?)      → BoseJson
 //
-// See admin/PLAN.md § State management and § REST API.
 
 import { tuneinProbe as _tuneinProbe } from './api.js';
 import { storePreset as _storePreset } from './actions/index.js';

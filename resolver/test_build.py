@@ -7,8 +7,6 @@ a red CI build, not a silent runtime bug.
 
 Run locally:
     python -m unittest discover resolver/
-
-See admin/PLAN.md § Testing strategy.
 """
 import json
 import os

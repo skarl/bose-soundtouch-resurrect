@@ -1,5 +1,5 @@
 // Blocking error overlay for the "speaker on port 8090 is unreachable"
-// failure mode (admin/PLAN.md § Failure modes row 4). The SPA's status
+// failure mode. The SPA's status
 // pill / toasts already surface transient errors; this overlay is the
 // loud signal that the speaker itself is unavailable and the user should
 // stop interacting with stale state behind it.

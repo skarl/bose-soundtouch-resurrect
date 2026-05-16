@@ -6,7 +6,6 @@
 # {ok, data} envelope, no CGI-side classification. The browser parses
 # the response (see admin/app/reshape.js).
 #
-# See admin/PLAN.md § REST API → tunein.
 #
 # Routes:
 #   GET /tunein/search?q=...&type=station   → Search.ashx

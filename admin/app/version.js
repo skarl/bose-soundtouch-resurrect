@@ -9,10 +9,6 @@
 //
 // We never auto-reload — a stale tab is annoying, but yanking it from
 // under a user mid-action is worse.
-//
-// See admin/PLAN.md § Build, deploy, uninstall → Cache busting + version
-// drift, and the "Stale tab after redeploy" row in the failure-modes
-// table.
 
 const META_SELECTOR = 'meta[name="admin-version"]';
 const BANNER_ID = 'version-drift-banner';

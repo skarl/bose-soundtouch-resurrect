@@ -7,7 +7,6 @@
 // Run locally:
 //   node --test admin/test
 //
-// See admin/PLAN.md § Testing strategy.
 
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';

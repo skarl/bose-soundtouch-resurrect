@@ -17,7 +17,6 @@
 // resolver/test_build.py assert that against shared fixtures and CI
 // fails if drift is introduced.
 //
-// See admin/PLAN.md § REST API → tunein and § Testing strategy.
 
 const NOT_COMPATIBLE = 'notcompatible';
 const NO_STREAM = 'nostream';

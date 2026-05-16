@@ -19,7 +19,7 @@
 // playable rows; they sink into a small "Not playable in your region"
 // section at the bottom of results.
 //
-// Render strategy (see admin/PLAN.md § Render strategy):
+// Render strategy:
 //   mount() builds the static frame once and returns a `caches` updater
 //   that repaints the recently-viewed strip on cache changes.
 //
@@ -27,7 +27,7 @@
 // history.replaceState so back/forward isn't spammed. Entry with
 // ?q=... pre-fills and fires.
 //
-// See admin/PLAN.md § View specs / search and docs/tunein-api.md.
+// TuneIn shape reference: docs/tunein-api.md.
 
 import { html, mount, defineView } from '../dom.js';
 import { tuneinSearch, tuneinBrowse } from '../api.js';

@@ -13,7 +13,6 @@
 # the response body.
 #
 # busybox-shell only. No bash-isms. Must pass shellcheck --severity=warning.
-# See admin/PLAN.md § REST API → speaker.
 
 set -u
 
