@@ -110,15 +110,28 @@ def make_bose(sid: str, name: str, tunein: dict) -> dict | None:
     }
 
 
-def main() -> int:
-    stations = load_stations()
-    rc = 0
+def _write_station(sid: str, bose: dict) -> str:
+    path = os.path.join(OUT_DIR, sid)
+    with open(path, "w") as f:
+        json.dump(bose, f, separators=(",", ":"))
+    return path
+
+
+def main(stations=None, _fetch=fetch_tunein, _writer=_write_station) -> int:
+    # Exit 0 iff at least one station file was written. Partial success
+    # is success for our purposes — deploy.sh's STATION_COUNT > 0 guard
+    # is the real abort gate, and aborting on a single fetch error
+    # silently kills the whole flow under `set -eu` (discussion #121).
+    if stations is None:
+        stations = load_stations()
+    succeeded = 0
+    failed = 0
     for sid, name in stations:
         try:
-            tunein = fetch_tunein(sid)
+            tunein = _fetch(sid)
         except Exception as e:
             print(f"FAIL  {sid:8s} {name}: fetch error {e}", file=sys.stderr)
-            rc = 1
+            failed += 1
             continue
         bose = make_bose(sid, name, tunein)
         if bose is None:
@@ -129,14 +142,18 @@ def main() -> int:
                 "URLs)",
                 file=sys.stderr,
             )
-            rc = 2
+            failed += 1
             continue
-        path = os.path.join(OUT_DIR, sid)
-        with open(path, "w") as f:
-            json.dump(bose, f, separators=(",", ":"))
+        path = _writer(sid, bose)
         n = len(bose["audio"]["streams"])
         print(f"OK    {sid:8s} {name:24s}  {n} stream(s)  →  {path}")
-    return rc
+        succeeded += 1
+    total = succeeded + failed
+    print(
+        f"\nbuilt {succeeded} of {total} station(s); {failed} failed",
+        file=sys.stderr,
+    )
+    return 0 if succeeded > 0 else 1
 
 
 if __name__ == "__main__":

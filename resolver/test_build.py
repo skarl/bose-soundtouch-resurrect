@@ -14,7 +14,7 @@ import json
 import os
 import unittest
 
-from build import make_bose
+from build import main, make_bose
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -54,6 +54,59 @@ class ReshapeContract(unittest.TestCase):
                 expected = _read_json(os.path.join(FIXTURES_DIR, f"{sid}.bose.json"))
                 actual = make_bose(sid, name, tunein)
                 self.assertEqual(actual, expected)
+
+
+class ExitCodeBehavior(unittest.TestCase):
+    """Partial success is success — main() exits 0 iff at least one
+    station file was written. Regression guard for discussion #121:
+    a single fetch error used to abort the entire deploy under
+    `set -eu`."""
+
+    @classmethod
+    def setUpClass(cls):
+        manifest = _read_json(os.path.join(FIXTURES_DIR, "manifest.json"))
+        # Any playable fixture works — we just need a valid TuneIn-shape
+        # payload so make_bose returns a real dict.
+        playable = next(e for e in manifest if e["case"] == "playable")
+        cls.ok_tunein = _read_json(
+            os.path.join(FIXTURES_DIR, f"{playable['sid']}.tunein.json")
+        )
+
+    def _run(self, stations, fetch_results):
+        """Stub fetch to return the queued result (dict or raised exception)
+        for each sid, and a no-op writer. Returns main()'s exit code."""
+
+        def fetch(sid):
+            outcome = fetch_results[sid]
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+        def writer(_sid, _bose):
+            return "/dev/null"  # don't touch disk in tests
+
+        return main(stations=stations, _fetch=fetch, _writer=writer)
+
+    def test_all_succeed_exits_zero(self):
+        rc = self._run(
+            [("s1", "A"), ("s2", "B")],
+            {"s1": self.ok_tunein, "s2": self.ok_tunein},
+        )
+        self.assertEqual(rc, 0)
+
+    def test_partial_succeed_exits_zero(self):
+        rc = self._run(
+            [("s1", "A"), ("s2", "B")],
+            {"s1": self.ok_tunein, "s2": RuntimeError("network down")},
+        )
+        self.assertEqual(rc, 0)
+
+    def test_all_fail_exits_nonzero(self):
+        rc = self._run(
+            [("s1", "A"), ("s2", "B")],
+            {"s1": RuntimeError("network down"), "s2": RuntimeError("network down")},
+        )
+        self.assertNotEqual(rc, 0)
 
 
 if __name__ == "__main__":
