@@ -35,11 +35,12 @@ file can live — and creating it switches shepherdd's load source for
 
 Until 0.8, our `deploy.sh` created `/mnt/nv/shepherd/` and dropped only
 our own `Shepherd-resolver.xml` into it. On the maintainer's ST 10
-("Bo") this somehow worked — verified install, all stock daemons
-supervised, ports 8090/8080 live. On an external contributor's ST 20,
-the same documented path produced a speaker stuck at ~90% boot, with
-ports 8090/8080 dead. SSH to Bo revealed that Bo's override directory
-contained five **manually-created symlinks** to the stock configs:
+this somehow worked — verified install, all stock daemons supervised,
+ports 8090/8080 live. On an external contributor's ST 20, the same
+documented path produced a speaker stuck at ~90% boot, with ports
+8090/8080 dead. SSH to the maintainer's speaker revealed that its
+override directory contained five **manually-created symlinks** to
+the stock configs:
 
 ```
 Shepherd-core.xml      -> /opt/Bose/etc/Shepherd-core.xml
@@ -51,10 +52,10 @@ Shepherd-resolver.xml  (our file)
 ```
 
 These were set up in early development, never committed to git, and
-silently kept Bo working while the documented install path was broken
-for every fresh install on any model. The bug was invisible to the
-maintainer because Bo's flash retains the manual state across reboots
-and across project iterations.
+silently kept the maintainer's speaker working while the documented
+install path was broken for every fresh install on any model. The
+bug was invisible to the maintainer because the speaker's flash
+retains the manual state across reboots and across project iterations.
 
 ## Decision
 
@@ -79,7 +80,7 @@ done
 
 We use symlinks rather than copies because:
 
-- Bo's verified-working state uses symlinks. Copies are unverified.
+- The maintainer's verified-working state uses symlinks. Copies are unverified.
 - Symlinks survive any (now theoretical) future firmware Shepherd-config
   change. Bose's update servers are dead, but if a community-archived
   firmware ever lands, no stale-snapshot risk.
@@ -98,8 +99,8 @@ the same way as the rest.
 
 - **The documented install path becomes reproducible.** Any fresh
   speaker — any model — that follows `scripts/deploy.sh` produces the
-  same override-directory shape Bo has had since May 9 2026. The
-  manual sysadmin step is captured in code.
+  same override-directory shape the maintainer's speaker has had
+  since May 2026. The manual sysadmin step is captured in code.
 
 - **Uninstall must reverse the operation cleanly.** A subsequent fresh
   install starting from "speaker that has been uninstalled" must
@@ -144,6 +145,6 @@ the same way as the rest.
   trouble — for example, if a future Bose-released firmware patch
   rewrites `/opt/Bose/etc/Shepherd-*.xml` in a way we want to ignore —
   switching the `ln -sf` to `cp` is a one-line change. We chose
-  symlinks for fidelity to Bo's verified state and the smaller
-  long-term drift surface, but no part of the rest of the system
-  depends on the symlink shape.
+  symlinks for fidelity to the maintainer's verified state and the
+  smaller long-term drift surface, but no part of the rest of the
+  system depends on the symlink shape.

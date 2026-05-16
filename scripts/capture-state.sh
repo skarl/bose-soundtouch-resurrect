@@ -104,7 +104,7 @@ capture "softwareupdate-recovery.txt" "grep -B1 -A2 SoftwareUpdate /opt/Bose/etc
 # Mtimes on every Shepherd-*.xml under both load paths. Stock configs
 # have firmware-build mtimes (years ago); manually-edited ones are
 # recent. This is how the 0.8 symlink-bug investigation found that
-# Bo's override directory was hand-curated.
+# the maintainer's override directory was hand-curated.
 capture "mtimes.txt"                 "find /opt/Bose/etc /mnt/nv/shepherd -name 'Shepherd-*.xml' -printf '%T@ %p\n' 2>/dev/null"
 
 # Kernel ring — boot-stage anomalies (failed mounts, OOM, hardware errors).
