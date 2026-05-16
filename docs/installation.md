@@ -1,8 +1,19 @@
 # Installation
 
-Deploy the on-speaker resolver. Once installed, the speaker is fully
-self-sufficient — preset buttons resolve their stations through a tiny
-HTTP server running on the speaker itself.
+The install has two layers, both served by the speaker's own busybox
+httpd:
+
+1. **Resolver** (mandatory) — the tiny static-file responder that
+   replaces the four Bose-hosted services the speaker expects to talk
+   to. Without it the preset buttons stay silent.
+2. **Browser admin SPA** (recommended) — the everyday post-cloud-shutdown
+   interface for search, browse, favourites, and assigning stations to
+   preset slots. Reachable at `http://<speaker-ip>:8181/` from any LAN
+   browser. Skip this layer if you only want hardware preset playback
+   and you're happy editing `resolver/stations.json` by hand.
+
+The resolver goes on first (it provides the httpd the admin SPA is
+served from); the admin SPA layers on top.
 
 **Prerequisite:** SSH must be enabled on the speaker. If you haven't
 done that, follow [opening-up-your-speaker.md](opening-up-your-speaker.md)
@@ -50,10 +61,35 @@ the daemon config, and writing the override XML.
 ./scripts/deploy.sh "$SPEAKER_IP"
 ```
 
-This is the path of least resistance. Skip to Step 4 to verify.
+This is the path of least resistance for the resolver. To also install
+the browser admin, continue with Step 1b. To verify a resolver-only
+install, skip to Step 4.
 
-If you'd rather do it by hand (to understand each step, or if `deploy.sh`
-fails partway), continue with Step 2.
+If you'd rather do the resolver by hand (to understand each step, or if
+`deploy.sh` fails partway), continue with Step 2.
+
+## Step 1b — Deploy the browser admin (recommended)
+
+With the resolver in place, the speaker's busybox httpd is now serving
+`http://<speaker-ip>:8181/`. Layer the admin SPA on top:
+
+```bash
+./admin/deploy.sh "$SPEAKER_IP"
+```
+
+The script sanity-checks SSH access and resolver presence, pushes the
+admin shell (`index.html`, `style.css`, the `app/` ES modules, the
+self-hosted Geist fonts), pushes the `cgi-bin/api/v1/` shell CGIs,
+substitutes the build version into the HTML, and verifies the response.
+It does **not** reboot the speaker and does **not** touch the resolver
+files.
+
+Once it's done, open `http://<speaker-ip>:8181/` in any browser on the
+same LAN. See [README.md § The browser admin](../README.md#the-browser-admin)
+for what's in the UI.
+
+To remove the admin later without touching the resolver, run
+`./admin/uninstall.sh "$SPEAKER_IP"`.
 
 ## Step 2 — Build the per-station resolver files
 
@@ -130,7 +166,7 @@ Wait ~75 seconds for the speaker to come back.
 
 ## Step 4 — Verify
 
-The repo includes a verifier:
+The repo includes a verifier that covers both layers:
 
 ```bash
 ./scripts/verify.sh "$SPEAKER_IP"
@@ -138,7 +174,9 @@ The repo includes a verifier:
 
 It checks: SSH works, the resolver httpd is listening, all expected
 files are in `/mnt/nv/resolver/`, the override XML is in place, and
-`/now_playing` reports a sane state.
+`/now_playing` reports a sane state. If the admin SPA is deployed it
+additionally probes the admin shell and CGIs; if it isn't, those probes
+auto-skip cleanly — a resolver-only install is a valid passing state.
 
 To test playback by hand, press preset 1:
 
@@ -189,7 +227,12 @@ $SSH root@$SPEAKER_IP '
 This puts the speaker back to its factory configuration, where it
 attempts to reach the (offline) Bose cloud and effectively becomes
 silent for preset playback. AUX, Bluetooth, and Spotify Connect will
-still work; preset buttons won't.
+still work; preset buttons won't. The `rm -rf /mnt/nv/resolver`
+removes the admin SPA too, since it lives under the same tree — no
+separate admin uninstall is needed when rolling all the way back.
+
+To drop only the admin layer and keep the resolver, use
+`./admin/uninstall.sh "$SPEAKER_IP"` instead.
 
 To also disable SSH, see [opening-up-your-speaker.md](opening-up-your-speaker.md)
 § "Reverting".

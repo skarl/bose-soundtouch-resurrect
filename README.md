@@ -111,18 +111,20 @@ Five steps. Each one links to the full doc.
 2. **Open up your speaker** (one-time, enables SSH) —
    [docs/opening-up-your-speaker.md](docs/opening-up-your-speaker.md).
    Format USB stick FAT32, drop a marker file, plug in, boot.
-3. **Install the resolver** —
-   [docs/installation.md](docs/installation.md). Pushes static files
-   to `/mnt/nv/resolver/`, drops a daemon config that binds
-   `0.0.0.0:8181` (loopback for the SDK; LAN-reachable for the admin
-   SPA), points the speaker at `127.0.0.1:8181`, reboots.
+3. **Install the resolver and the browser admin** —
+   [docs/installation.md](docs/installation.md). Two layers, both
+   served by the speaker's busybox httpd: `scripts/deploy.sh` pushes
+   the resolver tree and reboots; `admin/deploy.sh` then layers the
+   browser admin on top. The admin SPA is optional — skip it if you
+   only want hardware preset playback.
 4. **Customise your presets** —
    [docs/customizing-presets.md](docs/customizing-presets.md). Either
-   copy `resolver/stations.example.json` to `resolver/stations.json`,
-   edit it, and run `build.py`, or use the browser admin: search →
-   assign to slot.
-5. **Verify** with `scripts/verify.sh <speaker-ip>` and press a
-   preset button on the speaker.
+   open the browser admin (search → assign to slot), or copy
+   `resolver/stations.example.json` to `resolver/stations.json`, edit
+   it, and run `build.py`.
+5. **Verify** with `scripts/verify.sh <speaker-ip>` (covers both
+   layers; admin probes auto-skip if you didn't install it) and press
+   a preset button on the speaker.
 
 ## The recurring chore
 
