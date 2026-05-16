@@ -78,6 +78,18 @@ $SSH root@"$SPEAKER" '
   mkdir -p /mnt/nv/resolver/bmx/registry/v1
   mkdir -p /mnt/nv/resolver/marge/streaming
   mkdir -p /mnt/nv/resolver/v1/scmudc
+  mkdir -p /mnt/nv/shepherd
+'
+
+say "Linking stock Shepherd configs into the override directory"
+# When /mnt/nv/shepherd/ exists, shepherdd reads from there *instead
+# of* /opt/Bose/etc/ — link every stock config in or its daemons
+# (BoseApp, WebServer, the per-variant daemon, etc.) stop being
+# supervised. See docs/adr/0004-shepherd-override-replaces-not-merges.md.
+$SSH root@"$SPEAKER" '
+  for stock in /opt/Bose/etc/Shepherd-*.xml; do
+    ln -sf "$stock" "/mnt/nv/shepherd/$(basename "$stock")"
+  done
 '
 
 say "Pushing static templates"
