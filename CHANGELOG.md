@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.8.2] - 2026-05-17
+
+External-feedback release. Closes a class of bug where speakers that were factory-reset after the 2026-05-06 cloud shutdown can't play TuneIn at all — every preview toasts "Speaker rejected the stream" because the anonymous-account TuneIn token Bose's cloud used to issue at original onboarding has been wiped along with the rest of `/mnt/nv`, and nothing re-issues it now that the cloud is dark. Reproduced end-to-end on the maintainer's test speaker after stripping its pre-shutdown token; reported in the wild by [@dimmu311](https://github.com/dimmu311) in [#156](https://github.com/skarl/bose-soundtouch-resurrect/issues/156) and independently confirmed by [@qaroq](https://github.com/qaroq) in a comment on the same issue. The maintainer's speaker still carries its original pre-shutdown token, which is why this was never reproduced in-house until now.
+
 ### Fixed
 
 - **`scripts/deploy.sh` synthesises a TUNEIN token block in `Sources.xml` when one is missing.** Bose's cloud was the only thing that ever issued the anonymous-account TuneIn token persisted at `/mnt/nv/BoseApp-Persistence/1/Sources.xml`; since the 2026-05-06 shutdown a factory reset wipes that token and nothing re-issues it. Without the block, BoseApp omits TUNEIN from `/sources` and `/select source="TUNEIN"` returns HTTP 500 `UNKNOWN_SOURCE_ERROR` — which the admin surfaces as 502 `SELECT_REJECTED` on every preview ("Speaker rejected the stream"). Deploy now generates a fresh UUID on the laptop, base64-wraps it in `{"serial": "…"}`, and splices the resulting `<source>` block into the Speaker's `Sources.xml` immediately before `</sources>` using a busybox-safe read-loop. Idempotent: re-running on a Speaker that already carries a TUNEIN block (synthesised or original) is a strict no-op — byte-for-byte unchanged file, unchanged mtime. Other `<source>` blocks (AMAZON, SPOTIFY, AUX, INTERNET_RADIO, LOCAL_INTERNET_RADIO, RADIOPLAYER) survive byte-for-byte. BoseApp does not validate the token against anything external. Closes #157, completes the fix for #156.
