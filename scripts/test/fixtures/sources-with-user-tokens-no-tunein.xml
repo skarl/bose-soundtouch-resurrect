@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<sources>
+    <source secret='{&quot;AmazonSecret&quot;:{&quot;refresh_token&quot;:&quot;FAKE_AMAZON_TOKEN_FOR_TEST_FIXTURE_DO_NOT_USE&quot;,&quot;site_id&quot;:&quot;0000000000&quot;}}' secretType="token">
+        <sourceKey type="AMAZON" account="test@example.invalid" />
+    </source>
+    <source displayName="AUX IN" secret="" secretType="">
+        <sourceKey type="AUX" account="AUX" />
+    </source>
+    <source secret="" secretType="token">
+        <sourceKey type="INTERNET_RADIO" account="" />
+    </source>
+    <source secret="eyJzZXJpYWwiOiAiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAwIn0=" secretType="token">
+        <sourceKey type="LOCAL_INTERNET_RADIO" account="" />
+    </source>
+    <source secret="00000000-0000-0000-0000-000000000000" secretType="token">
+        <sourceKey type="RADIOPLAYER" account="" />
+    </source>
+    <source displayName="test@example.invalid" secret="FAKE_SPOTIFY_TOKEN_FOR_TEST_FIXTURE" secretType="token_version_3">
+        <sourceKey type="SPOTIFY" account="testaccount" />
+    </source>
+</sources>
