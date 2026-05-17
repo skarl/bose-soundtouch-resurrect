@@ -78,6 +78,36 @@ check "port 8090 /info returns XML" \
 check "port 8090 /now_playing returns XML" \
     $SSH root@"$SPEAKER" 'curl -s http://localhost:8090/now_playing | grep -q "<nowPlaying"'
 
+printf '\n=== TUNEIN source registered (exercises Sources.xml token) ===\n'
+# When BoseApp lacks a TUNEIN token block in
+# /mnt/nv/BoseApp-Persistence/1/Sources.xml, /sources omits TUNEIN
+# entirely and /select source="TUNEIN" returns HTTP 500
+# UNKNOWN_SOURCE_ERROR — the failure mode the deploy step's synthesis
+# now defends against. See issue #157 / docs/troubleshooting.md.
+#
+# We POST a no-op TUNEIN ContentItem (the canonical "TuneIn" root, the
+# same shape the admin shell sends on a cold open). A healthy Speaker
+# returns HTTP 200; an unregistered TUNEIN source returns HTTP 500
+# with <error value="1005" name="UNKNOWN_SOURCE_ERROR">.
+#
+# Never interrupt active playback: snapshot /now_playing first and skip
+# if the Speaker is streaming anything other than STANDBY. The probe is
+# diagnostic, not part of the happy-path install gate.
+np_xml=$($SSH root@"$SPEAKER" 'curl -s --max-time 5 http://localhost:8090/now_playing' 2>/dev/null || true)
+np_source=$(printf '%s' "$np_xml" | sed -n 's|.*<nowPlaying[^>]*source="\([^"]*\)".*|\1|p' | head -1)
+if [ -n "$np_source" ] && [ "$np_source" != "STANDBY" ]; then
+    printf '  [SKIP] Speaker is currently streaming (source=%s); not interrupting playback\n' "$np_source"
+else
+    check "POST /select with TUNEIN ContentItem returns HTTP 200" \
+        sh -c 'code=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/xml" \
+            --max-time 10 \
+            -d "<ContentItem source=\"TUNEIN\" type=\"rdir\" location=\"/\" sourceAccount=\"\" isPresetable=\"true\"><itemName>TuneIn</itemName></ContentItem>" \
+            "http://'"$SPEAKER"':8090/select"); \
+            [ "$code" = "200" ]'
+fi
+
 printf '\n=== Admin SPA (skipped if not deployed) ===\n'
 # Probe via the speaker (matches the existing wget/curl-through-ssh
 # pattern). The admin is optional: skip cleanly if index.html isn't
