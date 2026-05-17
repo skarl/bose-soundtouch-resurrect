@@ -60,6 +60,40 @@ matrix. If you recover an ST 20, ST 30, or other model with a
 different combination, please open an issue so the next person can
 find it.
 
+## "Speaker rejected the stream" / every preview 502s
+
+Symptoms: tapping any station in the admin SPA toasts "Speaker rejected
+the stream"; the admin's `/preview` CGI returns 502 `SELECT_REJECTED`;
+`/sources` on the Speaker omits `TUNEIN` entirely;
+`/select source="TUNEIN"` returns
+`HTTP 500 <error value="1005" name="UNKNOWN_SOURCE_ERROR">`.
+
+Root cause: BoseApp persists per-source authentication tokens in
+`/mnt/nv/BoseApp-Persistence/1/Sources.xml`, and Bose's cloud was the
+only thing that ever issued the anonymous-account TuneIn token. Since
+the 2026-05-06 shutdown a factory reset wipes the token and nothing
+re-issues it. Without a TUNEIN `<source>` block in that file, BoseApp
+refuses to register TUNEIN as a known source at boot — every downstream
+selection then fails closed.
+
+**Self-diagnose** in one line:
+
+```bash
+ssh root@$SPEAKER_IP 'grep -c "<sourceKey type=\"TUNEIN\"" /mnt/nv/BoseApp-Persistence/1/Sources.xml'
+```
+
+Expect `1`. `0` (or `grep: No such file`) confirms this failure mode.
+
+**Fix:** re-run `scripts/deploy.sh`. As of v0.8.2 the deploy synthesises
+a TUNEIN token block on the Speaker iff one is missing — idempotent, so
+running it against a Speaker that still carries a real pre-shutdown
+token is a strict no-op. BoseApp does not validate the token against
+anything external; a synthetic UUID is accepted on the next boot.
+
+Only TUNEIN is synthesised. RADIOPLAYER's upstream is dead at the
+network layer and `LOCAL_INTERNET_RADIO` has no admin surface — re-
+issuing those would be ceremony with no user-visible value.
+
 ## Nothing plays after pressing a preset
 
 Symptoms: pressing a preset, `/now_playing` shows source `STANDBY` or

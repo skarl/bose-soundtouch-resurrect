@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<sources>
+    <source displayName="AUX IN" secret="" secretType="">
+        <sourceKey type="AUX" account="AUX" />
+    </source>
+    <source secret="eyJzZXJpYWwiOiAiYTIwMzNmY2ItMmJkYy00NmZlLTllOTAtNTJiYmRmNmI5NWVlIn0=" secretType="token">
+        <sourceKey type="TUNEIN" account="" />
+    </source>
+</sources>

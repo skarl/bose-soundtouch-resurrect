@@ -140,6 +140,47 @@ say "Pushing shepherd-resolver.xml (auto-start at boot)"
 $SCP "$ROOT/resolver/shepherd-resolver.xml" \
      root@"$SPEAKER":/mnt/nv/shepherd/Shepherd-resolver.xml
 
+say "Ensuring a TUNEIN token block in Sources.xml"
+# Bose's cloud was the only thing that ever issued the anonymous-account
+# TuneIn token persisted at /mnt/nv/BoseApp-Persistence/1/Sources.xml.
+# Without that block, BoseApp refuses to register TUNEIN as a known
+# source: /sources omits it entirely and /select source="TUNEIN" returns
+# HTTP 500 UNKNOWN_SOURCE_ERROR, which the admin surfaces as
+# 502 SELECT_REJECTED on every preview. Since the 2026-05-06 shutdown a
+# factory reset wipes the token and nothing re-issues it.
+#
+# Idempotent: re-running deploy on a Speaker that already has a TUNEIN
+# block (synthesised or original) is a strict no-op — byte-for-byte
+# identical Sources.xml, unchanged mtime. The synthesis script enforces
+# that contract; see scripts/synthesize-tunein-token.sh + the unit
+# tests in scripts/test/. Issue #157.
+#
+# BoseApp does not validate this token against anything external — a
+# fresh UUID base64-wrapped in {"serial":"…"} is accepted on next boot.
+TUNEIN_UUID=$(uuidgen | tr 'A-Z' 'a-z')
+case "$TUNEIN_UUID" in
+    [0-9a-f]*-*-*-*-*) ;;
+    *) fail "uuidgen produced unexpected output: $TUNEIN_UUID" ;;
+esac
+# base64-encode {"serial": "<uuid>"} on the laptop side. macOS and Linux
+# both ship `base64`; behaviour for short inputs is identical, no line
+# wrapping concerns at this length. Mirrors the wire shape Bose emitted
+# pre-shutdown (verified on the maintainer's pre-shutdown test Speaker).
+TUNEIN_SECRET=$(printf '{"serial": "%s"}' "$TUNEIN_UUID" | base64 | tr -d '\n')
+$SSH root@"$SPEAKER" "cat > /tmp/tunein-block.xml" <<EOF
+    <source secret="$TUNEIN_SECRET" secretType="token">
+        <sourceKey type="TUNEIN" account="" />
+    </source>
+EOF
+$SCP "$ROOT/scripts/synthesize-tunein-token.sh" \
+     root@"$SPEAKER":/tmp/synthesize-tunein-token.sh
+$SSH root@"$SPEAKER" '
+  sh /tmp/synthesize-tunein-token.sh \
+     /mnt/nv/BoseApp-Persistence/1/Sources.xml \
+     /tmp/tunein-block.xml \
+  && rm -f /tmp/synthesize-tunein-token.sh /tmp/tunein-block.xml
+' || fail "TUNEIN-token synthesis failed; see speaker output above."
+
 say "Writing OverrideSdkPrivateCfg.xml (point speaker at itself)"
 $SSH root@"$SPEAKER" "cat > /mnt/nv/OverrideSdkPrivateCfg.xml" <<'EOF'
 <?xml version="1.0" encoding="utf-8"?>
