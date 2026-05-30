@@ -164,10 +164,14 @@ this project (or instead of it). They're complementary, not exclusive.
 
 ```
 /mnt/nv/
-├── OverrideSdkPrivateCfg.xml         four URLs all → http://127.0.0.1:8181
+├── OverrideSdkPrivateCfg.xml         service URLs → paths under http://127.0.0.1:8181
+│                                     (margeServerUrl, bmxRegistryUrl, swUpdateUrl,
+│                                      statsServerUrl + a few non-URL config flags)
 ├── remote_services                   SSH persistence marker
+├── BoseApp-Persistence/1/Sources.xml  TUNEIN token block synthesised here (0.8.2)
 ├── shepherd/
-│   ├── Shepherd-{core,noncore,product,...}.xml   symlinks to /opt/Bose/etc/
+│   ├── Shepherd-*.xml                symlinks to /opt/Bose/etc/ (the model's full
+│   │                                 stock set — inventory varies by variant)
 │   └── Shepherd-resolver.xml         starts /bin/httpd at boot
 └── resolver/
     ├── bmx/registry/v1/services      static JSON
@@ -176,6 +180,12 @@ this project (or instead of it). They're complementary, not exclusive.
     ├── marge/streaming/sourceproviders   static XML
     └── v1/scmudc/<your-MAC>          static (heartbeat sink)
 ```
+
+Note `OverrideSdkPrivateCfg.xml` carries more than four elements — see
+`scripts/deploy.sh` for the exact set; the mapping is *service URL →
+path*, not all to the bare host. The `Sources.xml` token block is added
+by 0.8.2's deploy when a speaker's anonymous TuneIn token was wiped by a
+factory reset (issue #156).
 
 ## Refresh cycle
 
@@ -222,7 +232,7 @@ Architecture in three layers:
    `speaker` (wildcard proxy to `localhost:8090` with a same-origin
    CSRF guard), `refresh-all` (bulk re-probe + atomic resolver
    rewrite). All busybox-shell, all linted by shellcheck. Mutating
-   endpoints use POST — busybox httpd v1.19.4 (2017) returns 501 for
+   endpoints use POST — the busybox httpd on the speaker returns 501 for
    PUT before the CGI runs.
 3. **WebSocket client** — connects to the speaker's port 8080 with the
    `gabbo` subprotocol. Reconnect with exponential backoff + full
@@ -235,7 +245,7 @@ Mono) live under `/mnt/nv/resolver/fonts/` and are referenced by
 relative URL — the LAN can be cut off from the public internet and
 the admin still loads. No CDN, no Google Fonts, no `unpkg`.
 
-User-facing surface as of 0.7.1:
+User-facing surface as of 0.8.2:
 
 - Now-playing — transport, volume, source picker, preset row,
   long-press to assign, 3×3 favourites preview grid below the preset

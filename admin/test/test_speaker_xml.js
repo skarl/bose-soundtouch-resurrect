@@ -148,7 +148,7 @@ test('parseInfoEl: extracts deviceID, name, type, and SCM firmwareVersion', asyn
   assert.equal(info.type, 'SoundTouch 10');
   assert.equal(
     info.firmwareVersion,
-    '27.0.6.29798 epdbuild hepdswbld04 (Sep 20 2016 12:19:09)',
+    '27.0.6.46330.5043500 epdbuild.trunk.hepdswbld04.2022-08-04T11:20:29',
   );
 });
 

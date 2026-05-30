@@ -115,15 +115,26 @@ because the static-file approach was sufficient and the
 
 `shepherdd` is the speaker's PID 1-equivalent process supervisor. It
 launches Bose's own daemons (`BoseApp`, `WebServer`, `APServer`, etc.)
-from a set of XML configs at `/opt/Bose/etc/Shepherd-*.xml`.
-shepherdd's command line passes
-`--recovery /mnt/nv/shepherd`, meaning it scans that directory at
-startup and honours any `Shepherd-*.xml` it finds — including ours.
+from a set of XML configs. By default it reads them from
+`/opt/Bose/etc/Shepherd-*.xml`. **But if the directory
+`/mnt/nv/shepherd/` exists, shepherdd reads from there _instead of_
+`/opt/Bose/etc/` — replacement, not merge.** Any stock config not also
+present in the override directory simply stops being supervised.
 
-Earlier development notes in this project incorrectly claimed that
-shepherdd ignored `Shepherd-resolver.xml`; that turned out to be a
-deployment-order mistake (the file wasn't on disk at the boot in
-question). On a clean reboot, the daemon starts reliably.
+This is the single most brick-prone fact in the project. Dropping our
+`Shepherd-resolver.xml` into `/mnt/nv/shepherd/` is the only way to get
+it auto-started — but creating that directory switches shepherdd's load
+source for *every* config, so the deploy must also link every stock
+`Shepherd-*.xml` back in, or `BoseApp`/`WebServer`/`NetManager` stop
+launching and the speaker hangs at boot. That's exactly the bug 0.8
+(#144) fixed, and the mechanism is documented in full in
+[ADR-0004](adr/0004-shepherd-override-replaces-not-merges.md).
+
+(An earlier version of this page claimed shepherdd *merged* the two
+directories via a `--recovery` flag. That was wrong — no such flag
+exists, and the merge model is the opposite of how it behaves. The
+real cause of the project's early "resolver didn't auto-start" notes
+was the missing stock-config symlinks, not deployment order.)
 
 ## Limits of the v1 design
 
@@ -143,8 +154,8 @@ Acknowledged trade-offs:
 
 ## Where it's going
 
-The browser admin landed in 0.4 and has grown through 0.7.1 — it now
-covers transport, presets, full TuneIn browse + search, station
+The browser admin landed in 0.4 and has grown through the 0.8.x line —
+it now covers transport, presets, full TuneIn browse + search, station
 detail, an admin-owned favourites list, and a settings page. The
 `build.py` + scp + curl-storePreset workflow is no longer the
 day-to-day path; the admin's `refresh-all` CGI does the on-speaker

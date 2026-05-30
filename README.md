@@ -85,19 +85,34 @@ For the longer story see [docs/architecture.md](docs/architecture.md).
 
 ## Compatibility
 
-Confirmed on **Bose SoundTouch 10, firmware 27.0.6**.
+Confirmed on **Bose SoundTouch 10** (`rhino`), firmware
+27.0.6.46330.5043500. That is the **only** model the project is
+validated on.
 
-Likely to work on other ST-family models that share the same Linux /
-shepherdd architecture (ST 20, ST 30, similar Wave variants), but
-unverified. See [docs/compatibility.md](docs/compatibility.md) for
-the full list and how to confirm yours.
+Other ST-family models share the same Linux / `shepherdd`
+architecture, but "same architecture" has **not** meant "works":
+the **SoundTouch 20 currently boot-loops after `deploy.sh`**
+([#160](https://github.com/skarl/bose-soundtouch-resurrect/issues/160)),
+and the **SoundTouch Portable** can't reach the admin on the LAN
+without an SSH tunnel
+([#159](https://github.com/skarl/bose-soundtouch-resurrect/discussions/159)).
+Before running this on anything other than an ST 10, read
+[docs/compatibility.md](docs/compatibility.md) — it has the per-model
+state and the known hazards.
 
 ## Prerequisites
 
 - A SoundTouch speaker that's been online recently enough to have
   stored preset stations locally (the speaker's port-8090 API
   exposes them).
-- A laptop with `python3`, `ssh`, and `scp`.
+- A laptop with `python3`, `ssh`, `scp`, and `uuidgen`. On most Linux
+  distros `uuidgen` ships in the `uuid-runtime` package and is **not**
+  installed by default — `sudo apt-get install uuid-runtime` (or your
+  distro's equivalent) if `deploy.sh` fails on a missing `uuidgen`. It
+  is built in on macOS.
+- If `deploy.sh` crashes while decoding station names (a Python
+  `UnicodeEncodeError` on a non-UTF-8 locale), export
+  `PYTHONIOENCODING=utf-8` before running it.
 - A **micro-USB OTG adapter** (~€3) and a small **FAT32 USB stick** —
   needed once to enable SSH on the speaker.
 - Speaker and laptop on the same LAN.

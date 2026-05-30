@@ -96,6 +96,17 @@ speaker, re-enable SSH via USB stick, or re-onboard via the
 SoundTouch app. The deeper full-factory-reset gate that exercises
 those paths is a future fold.
 
+**Scope: one model.** This gate runs on the maintainer's SoundTouch 10
+(`rhino`) only. **Passing it does not establish that any other model
+works** — that is precisely the gap issue #160 fell through (a real
+ST 20 boot-loops on the same deploy path that passes this gate on the
+ST 10; see [ADR-0004's Update](docs/adr/0004-shepherd-override-replaces-not-merges.md)).
+Do not let a green run here become an "all variants" claim in the
+docs, the CHANGELOG, or an ADR. A model is only safe once it has been
+validated on that hardware — by the maintainer or via a confirmed
+contributor report. Until then it is **Inferred** (or, if a failure is
+reported, **Broken**) in `docs/compatibility.md`.
+
 ### Procedure
 
 1. **Capture user data.** Back up the speaker's presets before tearing

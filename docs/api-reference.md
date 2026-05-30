@@ -1,7 +1,8 @@
 # SoundTouch local API reference
 
-The speaker firmware exposes 102 endpoints on **TCP 8090**, plain HTTP,
-LAN-local. They don't depend on any cloud service — they're served by
+The speaker firmware exposes ~102 endpoints on **TCP 8090** (the exact
+count varies by model and firmware — 102 on the maintainer's
+SoundTouch 10), plain HTTP, LAN-local. They don't depend on any cloud service — they're served by
 the firmware itself. Useful for automation, scripting, and the admin
 SPA this project ships under `admin/`.
 
@@ -107,7 +108,7 @@ LAN IP.
 | `/powersaving`                    | Power-saving mode                                      |
 | `/systemtimeout`                  | Auto-standby timeout                                   |
 | `/userActivity`                   | Mark user activity (resets timeout)                    |
-| `/powerManagement`                | Battery / power state (irrelevant for ST10)            |
+| `/powerManagement`                | Battery / power state (no battery on the ST 10; relevant on the SoundTouch Portable) |
 
 ## Multi-room / stereo pair
 
@@ -218,6 +219,7 @@ inner element is the actual event:
 - `<bassUpdated>` / `<balanceUpdated>` / etc.
 - `<connectionStateUpdated>` — Wi-Fi state changed
 - `<presetsUpdated>` — preset stored / removed
+- `<recentsUpdated>` — recently-played history changed
 - `<zoneUpdated>` — multi-room zone changed
 
 Two events arrive **outside** the `<updates>` envelope (self-closing,
@@ -276,6 +278,9 @@ wscat -s gabbo -c ws://$SPEAKER:8080/
 websocat --protocol gabbo ws://$SPEAKER:8080/
 
 # Push a notification banner
+# NOTE: observed to return HTTP 500 CLIENT_XML_ERROR for every body shape
+# tried on 27.x firmware (see architecture.md § "What this deliberately
+# doesn't do"). Included for completeness — it is not known to work.
 curl -X POST -H 'Content-Type: application/xml' \
   -d '<notify><sourceName>resolver</sourceName><sourceAccount>system</sourceAccount><message>Hello</message></notify>' \
   http://$SPEAKER:8090/notification
