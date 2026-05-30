@@ -78,6 +78,26 @@ listed in `docs/compatibility.md`, please open a PR adding it. Include:
 - Whether all six steps in `docs/installation.md` worked unchanged.
 - Anything you had to adjust.
 
+## Writing docs: scope every claim to the model you observed
+
+Nearly every doc in this project was originally written from a single
+speaker — the maintainer's SoundTouch 10 (`rhino`) — and several claims
+generalised from it turned out to be wrong on other models (the ST 20
+boot-loops, #160; the Portable can't reach :8181 on the LAN, #159).
+So, when you write or edit docs:
+
+- **Say which model/firmware an observation came from.** "On the ST 10,
+  …" beats "The speaker …" for anything you haven't checked elsewhere.
+- **Don't promote one data point to "all models."** Phrases like "works
+  on any SoundTouch", "variant-agnostic by construction", or "the
+  standard layout" are exactly what bit us. If it's a guess, mark it
+  inferred/unverified.
+- **A passing test on the maintainer's bench validates the maintainer's
+  model, not the line.** See `MAINTAINING.md` § Pre-release validation.
+- **Keep `docs/compatibility.md` the single source of truth** for what's
+  Tested / Confirmed / Inferred / Broken, and link to it rather than
+  re-asserting model support inline.
+
 ## Scope
 
 In scope:

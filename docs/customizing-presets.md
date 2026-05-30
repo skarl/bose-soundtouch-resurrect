@@ -85,6 +85,12 @@ without these, some stations return a placeholder "not compatible"
 URL), reshapes the response into the JSON shape the speaker expects,
 and writes one file per station ID to the current directory.
 
+> **Note:** the locale is currently hardcoded to `lang=de-de` in
+> `resolver/build.py`. It works for most stations regardless of where
+> you are, but if a station you want resolves to "no compatible
+> streams", try editing that locale in `build.py` to your region
+> (e.g. `en-us`, `en-gb`).
+
 If a station has no compatible streams (geo-restricted to a region
 you're outside, or simply not available via that endpoint), you'll
 see `WARN sNNNNN ... no compatible streams` and no file is written

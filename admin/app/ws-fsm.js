@@ -24,7 +24,8 @@
 //   { type: 'userDisconnect' }        — caller invoked disconnect()
 //
 // Actions (data; the driver maps them to side effects):
-//   { type: 'startPolling' }
+//   { type: 'startPolling', ms } — (re)arm REST polling every ms; ms grows
+//                                   as failures accumulate (see pollInterval)
 //   { type: 'stopPolling' }
 //   { type: 'scheduleReconnect', ms } — schedule a timerFire after ms
 //   { type: 'cancelReconnect' }       — cancel a pending reconnect timer
@@ -37,6 +38,26 @@
 export function backoff(attempt) {
   const baseline = Math.min(30000, 500 * Math.pow(2, attempt));
   return Math.random() * baseline;
+}
+
+// Polling-fallback cadence as a function of consecutive socket failures.
+//
+// While the WebSocket is down, ws.js polls the speaker via REST so the UI
+// doesn't go stale — but each poll fans out into one request per FIELD
+// (~14 proxied calls). A transient drop should poll briskly and recover;
+// a *persistently* unreachable socket must NOT keep firing 14 requests
+// every 2s forever, or it storms a small embedded speaker into fd
+// exhaustion (the SSH-tunnel-without-port-8080 failure mode in discussion
+// #159). So the interval starts at 2s and backs off geometrically toward
+// a 30s cap as failures accumulate. consecutiveFails resets to 0 on the
+// next `hello`, so a recovered blip returns to 2s.
+//
+// fails: 1→2s, 2→4s, 3→8s, 4→16s, 5+→30s (cap).
+export const POLL_BASE_MS = 2000;
+export const POLL_CAP_MS = 30000;
+export function pollInterval(consecutiveFails) {
+  const n = Math.max(1, consecutiveFails);
+  return Math.min(POLL_CAP_MS, POLL_BASE_MS * Math.pow(2, n - 1));
 }
 
 export function initialState() {
@@ -65,7 +86,7 @@ export function step(state, event) {
       const next = clone(state, { mode, consecutiveFails, attempt: state.attempt + 1 });
       const actions = [];
       if (!state.hidden) {
-        actions.push({ type: 'startPolling' });
+        actions.push({ type: 'startPolling', ms: pollInterval(consecutiveFails) });
         actions.push({ type: 'scheduleReconnect', ms: backoff(state.attempt) });
       }
       return { state: next, actions };

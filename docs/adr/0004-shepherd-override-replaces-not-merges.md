@@ -1,19 +1,56 @@
 # Shepherd override directory replaces, not merges — deploy must link stock configs
 
-- **Status**: accepted
+- **Status**: accepted (core decision); **contested** (the "all
+  variants" generalisation — see the Update below)
 - **Date**: 2026-05-16
+- **Updated**: 2026-05-30 (0.8.3)
 - **Supersedes**: —
 - **Related**: `scripts/deploy.sh`, `scripts/uninstall.sh`,
   `resolver/shepherd-resolver.xml`, `CONTEXT.md` § Shepherdd / Shepherd
   config / Shepherd override directory / Variant / Stock daemon
+
+> ## Update (0.8.3) — the "all variants" claim is contested
+>
+> The core decision below — link every stock `Shepherd-*.xml` into the
+> override directory because the directory *replaces* rather than
+> *merges* — is correct and stands, verified on the ST 10. **But the
+> Consequences section over-reached.** It claimed the same loop handles
+> "all variants" with the compat matrix collapsing to one row. That is
+> falsified: issue
+> [#160](https://github.com/skarl/bose-soundtouch-resurrect/issues/160)
+> is a real SoundTouch 20 (`spotty`) that **boot-loops after
+> `scripts/deploy.sh`** on the very release this ADR shipped in — the
+> same boot-brick class as #143.
+>
+> Two reasons the generalisation didn't hold:
+> 1. **The stock config inventory is model-dependent.** The ST 10
+>    (`rhino`) ships `{core, hsp, noncore, product, rhino}`; the
+>    SoundTouch Portable (`taigan`, discussion #159) ships
+>    `{mojo, noncore, spotty, taigan}` — only `noncore` in common.
+>    There is no single "standard layout."
+> 2. **The `Shepherd-*.xml` glob has a blind spot.** Both
+>    `scripts/deploy.sh` and `scripts/capture-state.sh` only match
+>    `Shepherd-*.xml`; a boot-critical config named differently (e.g. a
+>    dash-less `Shepherd.xml`) would be silently missed, leaving a
+>    `recovery="reboot"` daemon unsupervised → a boot *loop*. We don't
+>    yet have a full `/opt/Bose/etc/` listing from a working ST 20 to
+>    confirm whether this is #160's cause.
+>
+> Also: the "external contributor's ST 20" cited as motivating evidence
+> below is **not** an ST 20 — David's `/info` (discussion #159) reports
+> a SoundTouch **Portable** (`taigan`). So no real ST 20 ever validated
+> this path; the first one (#160) failed. Treat the Consequences below
+> as ST-10-validated only until a non-ST-10 model passes the
+> regression gate.
 
 ## Context
 
 The speaker firmware runs **Shepherdd** as its process supervisor.
 Shepherdd loads **Shepherd config** files at boot and supervises every
 declared daemon — `BoseApp`, `WebServer`, `APServer`, `Bluetooth`, the
-per-**variant** daemon (`Rhino` on ST 10, `Spotty` on ST 20, `Mojo` on
-ST 30), and any third-party config layered on top, like our
+per-**variant** daemon (`rhino` on ST 10, `spotty` on ST 20, `taigan`
+on the SoundTouch Portable; `mojo` = ST 30 is inferred, unverified),
+and any third-party config layered on top, like our
 `Shepherd-resolver.xml`.
 
 Shepherdd has two possible load locations:
@@ -36,9 +73,11 @@ file can live — and creating it switches shepherdd's load source for
 Until 0.8, our `deploy.sh` created `/mnt/nv/shepherd/` and dropped only
 our own `Shepherd-resolver.xml` into it. On the maintainer's ST 10
 this somehow worked — verified install, all stock daemons supervised,
-ports 8090/8080 live. On an external contributor's ST 20, the same
-documented path produced a speaker stuck at ~90% boot, with ports
-8090/8080 dead. SSH to the maintainer's speaker revealed that its
+ports 8090/8080 live. On an external contributor's speaker (discussion
+#121 — at the time assumed to be an ST 20, later identified from its
+`/info` as a SoundTouch **Portable** / `taigan`), the same documented
+path produced a speaker stuck at ~90% boot, with ports 8090/8080 dead.
+SSH to the maintainer's speaker revealed that its
 override directory contained five **manually-created symlinks** to
 the stock configs:
 
@@ -95,12 +134,20 @@ an ST 10 or ST 20: whichever model the speaker is, its variant config
 is present at `/opt/Bose/etc/Shepherd-<variant>.xml` and gets linked
 the same way as the rest.
 
+> **Caveat (0.8.3):** this assumes every boot-critical config is named
+> `Shepherd-<something>.xml`. If a model ships a config the glob doesn't
+> match (a dash-less `Shepherd.xml`, or one in another location), it is
+> silently not linked — the failure mode suspected in #160. The glob is
+> not known to be sufficient beyond the ST 10.
+
 ## Consequences
 
-- **The documented install path becomes reproducible.** Any fresh
-  speaker — any model — that follows `scripts/deploy.sh` produces the
-  same override-directory shape the maintainer's speaker has had
-  since May 2026. The manual sysadmin step is captured in code.
+- **The documented install path becomes reproducible.** On the ST 10,
+  a fresh speaker that follows `scripts/deploy.sh` produces the same
+  override-directory shape the maintainer's speaker has had since May
+  2026 — the manual sysadmin step is captured in code. (Originally
+  stated as "any fresh speaker — any model"; see the Update at the top
+  — that has not held on the ST 20.)
 
 - **Uninstall must reverse the operation cleanly.** A subsequent fresh
   install starting from "speaker that has been uninstalled" must
@@ -110,19 +157,25 @@ the same way as the rest.
   directory — returning shepherdd to its default load path under
   `/opt/Bose/etc/`.
 
-- **One implementation, all variants.** The previous mental model
-  ("we tested on ST 10, hope ST 20 works") is replaced with: any model
-  whose firmware exposes the standard Shepherd config layout under
-  `/opt/Bose/etc/` is handled by the same loop, with no variant
-  branching in deploy.sh. The compat matrix collapses one row.
+- **One implementation, all variants. _[CONTESTED — see the Update at
+  the top.]_** This consequence claimed the previous mental model
+  ("we tested on ST 10, hope ST 20 works") was *replaced* by a loop
+  that handles any model, collapsing the compat matrix to one row. It
+  was not — #160 shows a real ST 20 still bricks on this path. The
+  honest statement is: there is no variant branching in `deploy.sh`,
+  the loop is validated on the ST 10 only, and "all variants" is a
+  hypothesis that the first ST 20 report disproved.
 
-- **A regression-test gate is now possible.** Until 0.8 the deploy
-  path couldn't be validated against a known-clean override-directory
-  state without losing the maintainer's working state. With the
-  symlink step in code, the override directory is reproducible: wipe
-  it (`rm -rf /mnt/nv/shepherd /mnt/nv/resolver /mnt/nv/OverrideSdkPrivateCfg.xml*`),
-  run `scripts/deploy.sh`, verify. A deeper full-factory-reset gate
-  that also exercises the SSH-enable procedure remains a future fold.
+- **A regression-test gate is now possible — but it is single-model.**
+  With the symlink step in code, the override directory is reproducible:
+  wipe it (`rm -rf /mnt/nv/shepherd /mnt/nv/resolver /mnt/nv/OverrideSdkPrivateCfg.xml*`),
+  run `scripts/deploy.sh`, verify. The catch: the procedure
+  (MAINTAINING.md) runs only on the maintainer's ST 10, so passing it
+  does **not** establish that other models work — exactly the gap #160
+  fell through. Any future "all variants" claim must be gated on at
+  least one independent non-ST-10 pass. A deeper full-factory-reset
+  gate that also exercises the SSH-enable procedure remains a future
+  fold.
 
 - **Never leave the override directory present-but-empty.** Removing
   only the *contents* of `/mnt/nv/shepherd/` (`rm -rf /mnt/nv/shepherd/*`)

@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.8.3] - 2026-05-30
+
+Diagnostics + documentation-honesty release. Two external reports —
+[#159](https://github.com/skarl/bose-soundtouch-resurrect/discussions/159)
+(a SoundTouch **Portable** whose admin is unreachable on the LAN) and
+[#160](https://github.com/skarl/bose-soundtouch-resurrect/issues/160)
+(a real SoundTouch **20** that boot-loops after `deploy.sh`) — exposed
+that much of the project's documentation generalised from the
+maintainer's single ST 10 and presented those guesses as fact. A
+three-part documentation audit drove a sweep to scope every model claim
+to the evidence behind it, and `scripts/capture-state.sh` was rebuilt
+into a real, paste-safe debug bundle so the next cross-model report
+arrives with the data we actually need.
+
+### Added
+
+- **`scripts/capture-state.sh` is a full read-only debug bundle.** Now captures, on top of the old `/info`/Shepherd/mtimes set: speaker health (memory, disk, load, kernel), the **full `/opt/Bose/etc/` listing** (closes the `Shepherd-*.xml` glob blind spot that hides a brick cause), every Shepherd config's contents, the live process list, port reachability (loopback vs LAN-IP), firewall/routing, the `/proc/net/tcp` + net-namespace view, and Sources.xml/`/sources` service state. Each probe sourced from a real investigation (#143/#156/#159/#160).
+- **Anonymisation on by default in `scripts/capture-state.sh`.** A local post-pass replaces MACs, LAN IPs, serial numbers, the account UUID and the speaker name with **deterministic pseudonyms** (`MAC_1`, `IP_1`, …) — the same real value always maps to the same placeholder, so cross-references (deviceID == SCM MAC; SCM/SMSC sharing an IP; the `/proc/net/tcp` hex form of an IP) survive while identities don't. The TuneIn account token is never captured at all. Pass `--raw` to opt out on your own bench. Safe to paste into a public issue.
+
+### Fixed
+
+- **The admin SPA no longer storms the speaker when its WebSocket can't connect.** The live-update WebSocket lives on port 8080; when it's persistently unreachable (e.g. an admin reached over an SSH tunnel that forwards 8181 but not 8080, discussion #159), the SPA falls back to REST polling — and each poll fans out into one request per FIELD (~14 proxied calls). It used to poll at a fixed 2s forever, which on a small embedded speaker exhausts file descriptors (`accept: Too many open files`) and can take the speaker down. The polling cadence now backs off geometrically with consecutive socket failures (2s → 4s → … → 30s cap) and snaps back to 2s the moment the WebSocket reconnects (`admin/app/ws-fsm.js` `pollInterval`). A transient drop still recovers briskly; a dead socket no longer hammers.
+
+### Documentation
+
+- **The SoundTouch 20 is now marked Broken, not "Inferred / safe".** `docs/compatibility.md`, `README.md`, and `CHANGELOG.md` no longer claim the deploy "works identically on ST 10 / 20 / 30" — #160 shows it bricks the ST 20. Added a fourth compatibility state (**Broken**), a SoundTouch Portable (`taigan`) row, marked `mojo`=ST 30 unverified, and corrected the long-standing mislabel of discussion #121/#159's contributor as an "ST 20" (his `/info` shows a Portable). `docs/troubleshooting.md` warns that re-running `deploy.sh` re-bricks an ST 20.
+- **[ADR-0004](docs/adr/0004-shepherd-override-replaces-not-merges.md) marked contested.** Its "one implementation, all variants" consequence is falsified by #160; the core replace-not-merge decision stands. Documents the model-dependent stock-config inventory and the `Shepherd-*.xml` glob blind spot.
+- **Fixed a wrong mechanism description in `docs/history.md`** that claimed shepherdd *merges* the override and stock directories via a non-existent `--recovery` flag — the opposite of the (brick-prone) replacement behaviour.
+- **Documented the SSH-tunnel admin path (#159)** — forward **both** 8181 and 8080; a single-port tunnel leaves the WebSocket unreachable and the SPA polling-storms the speaker into `Too many open files`.
+- **Documented the two host-side deploy prerequisites** (`uuidgen`/`uuid-runtime` and `PYTHONIOENCODING=utf-8`) that block or crash a Linux first-time install (#156), in `README.md`, `docs/installation.md`, and `docs/troubleshooting.md`.
+- **Regenerated the stale `admin/test/fixtures/api/info.xml`** (it claimed 2016 firmware, `variant=spotty` for an "ST 10", and only one `networkInfo` block) to match a real ST 10, and added a docs doctrine to `CONTRIBUTING.md`: scope every claim to the model it was observed on.
+
 ## [v0.8.2] - 2026-05-17
 
 External-feedback release. Closes a class of bug where speakers that were factory-reset after the 2026-05-06 cloud shutdown can't play TuneIn at all — every preview toasts "Speaker rejected the stream" because the anonymous-account TuneIn token Bose's cloud used to issue at original onboarding has been wiped along with the rest of `/mnt/nv`, and nothing re-issues it now that the cloud is dark. Reproduced end-to-end on the maintainer's test speaker after stripping its pre-shutdown token; reported in the wild by [@dimmu311](https://github.com/dimmu311) in [#156](https://github.com/skarl/bose-soundtouch-resurrect/issues/156) and independently confirmed by [@qaroq](https://github.com/qaroq) in a comment on the same issue. The maintainer's speaker still carries its original pre-shutdown token, which is why this was never reproduced in-house until now.
@@ -39,11 +71,11 @@ Recovery resilience release. Closes three gaps that surfaced once v0.8 went out:
 
 ## [v0.8] - 2026-05-16
 
-Onboarding hardening release. Closes a class of bug where the documented install path was non-reproducible because it required invisible manual sysadmin state on the maintainer's NV flash to work — every fresh user (especially on a different SoundTouch model) was walking off a cliff. Discovered when external contributor David reported a boot hang at ~90% on his ST 20 (discussion #121) that we couldn't reproduce on the maintainer's ST 10. Validated end-to-end on the test speaker after a clean shepherd-state reset: `scripts/verify.sh` reported 30 OK / 0 failed across resolver, admin SPA, CGIs, WebSocket, and speaker-proxy probes.
+Onboarding hardening release. Closes a class of bug where the documented install path was non-reproducible because it required invisible manual sysadmin state on the maintainer's NV flash to work — every fresh user (especially on a different SoundTouch model) was walking off a cliff. Discovered when external contributor David reported a boot hang at ~90% on his speaker (discussion #121) that we couldn't reproduce on the maintainer's ST 10. _[Correction (0.8.3): David's `/info` later showed a SoundTouch **Portable** (`taigan`), not an ST 20 — see #159. The first real ST 20 report, #160, arrived afterwards and **bricks**.]_ Validated end-to-end on the test speaker after a clean shepherd-state reset: `scripts/verify.sh` reported 30 OK / 0 failed across resolver, admin SPA, CGIs, WebSocket, and speaker-proxy probes.
 
 ### Fixed
 
-- **`scripts/deploy.sh` populates `/mnt/nv/shepherd/` with symlinks to every stock `Shepherd-*.xml`.** The firmware's process supervisor (**shepherdd**) reads daemon configs from `/mnt/nv/shepherd/` *instead of* `/opt/Bose/etc/` when that directory exists. Until this release our deploy created the directory and dropped only our resolver config into it — silently stopping every stock daemon (BoseApp, WebServer, the per-**variant** daemon, etc.) from being supervised on any fresh speaker. The deploy step is now a variant-agnostic loop: links every `/opt/Bose/etc/Shepherd-*.xml` into the override directory before pushing our own `Shepherd-resolver.xml`. Works identically on ST 10, ST 20, ST 30. See [ADR-0004](docs/adr/0004-shepherd-override-replaces-not-merges.md). Closes #144.
+- **`scripts/deploy.sh` populates `/mnt/nv/shepherd/` with symlinks to every stock `Shepherd-*.xml`.** The firmware's process supervisor (**shepherdd**) reads daemon configs from `/mnt/nv/shepherd/` *instead of* `/opt/Bose/etc/` when that directory exists. Until this release our deploy created the directory and dropped only our resolver config into it — silently stopping every stock daemon (BoseApp, WebServer, the per-**variant** daemon, etc.) from being supervised on any fresh speaker. The deploy step is now a variant-agnostic loop: links every `/opt/Bose/etc/Shepherd-*.xml` into the override directory before pushing our own `Shepherd-resolver.xml`. See [ADR-0004](docs/adr/0004-shepherd-override-replaces-not-merges.md). Closes #144. _[Correction (0.8.3): this originally claimed "works identically on ST 10, ST 20, ST 30." It does not — validated on the ST 10 only; the ST 20 boot-loops on this same path (#160). ADR-0004's "all variants" claim is now marked contested.]_
 - **`resolver/build.py` exits 0 on partial success** so a single failed station no longer aborts deploy under `set -eu`. Returns 0 iff at least one station file was written, non-zero only when zero succeeded. Always prints a `built N of M station(s); K failed` summary line. The abort gate moves up the stack to `deploy.sh`'s existing `STATION_COUNT > 0` check, which is the correct place to express "we have something to push." Closes #145.
 - **`scripts/uninstall.sh` fully reverses what deploy writes**, including the entire Shepherd override directory (`rm -rf /mnt/nv/shepherd` — the directory itself, never just its contents; the trailing `/*` form leaves an empty directory which is the same brick state in a different costume). The banner now also explicitly lists `httpd.conf` and `cgi-bin/lib/` (already transitively removed by `rm -rf /mnt/nv/resolver`). Closes #146.
 - **`scripts/verify.sh` shepherd-symlink probe uses busybox-compatible `-type l`.** busybox 1.19.4 on the SoundTouch firmware doesn't support `find -lname`. Without this fix the otherwise-correct deploy reported `[FAIL] override directory contains stock-config symlinks` against a valid install.
@@ -423,6 +455,11 @@ Calling these out so future maintainers don't re-derive them:
 - CI: GitHub Actions workflow running shellcheck on `scripts/` and a
   Python compile + error-path check on `resolver/build.py`.
 
+[v0.8.3]: https://github.com/skarl/bose-soundtouch-resurrect/releases/tag/v0.8.3
+[v0.8.2]: https://github.com/skarl/bose-soundtouch-resurrect/releases/tag/v0.8.2
+[v0.8.1]: https://github.com/skarl/bose-soundtouch-resurrect/releases/tag/v0.8.1
+[v0.8]: https://github.com/skarl/bose-soundtouch-resurrect/releases/tag/v0.8
+[v0.7.2]: https://github.com/skarl/bose-soundtouch-resurrect/releases/tag/v0.7.2
 [v0.7.1]: https://github.com/skarl/bose-soundtouch-resurrect/releases/tag/v0.7.1
 [v0.7.0]: https://github.com/skarl/bose-soundtouch-resurrect/releases/tag/v0.7.0
 [v0.1.0]: https://github.com/skarl/bose-soundtouch-resurrect/releases/tag/v0.1.0

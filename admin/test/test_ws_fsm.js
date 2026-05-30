@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 
-import { step, backoff, initialState } from '../app/ws-fsm.js';
+import { step, backoff, initialState, pollInterval, POLL_BASE_MS, POLL_CAP_MS } from '../app/ws-fsm.js';
 
 const RUNS = 1000;
 
@@ -140,6 +140,48 @@ test('polling -> connected on hello: counters reset, stopPolling + reconcile', (
   assert.equal(r.state.attempt, 0);
   assert.equal(r.state.consecutiveFails, 0);
   assert.deepEqual(actionTypes(r.actions), ['stopPolling', 'reconcile']);
+});
+
+// --- pollInterval backoff -------------------------------------------
+
+test('pollInterval: starts at base, doubles per fail, caps at POLL_CAP_MS', () => {
+  assert.equal(pollInterval(1), POLL_BASE_MS);       // 2000
+  assert.equal(pollInterval(2), POLL_BASE_MS * 2);   // 4000
+  assert.equal(pollInterval(3), POLL_BASE_MS * 4);   // 8000
+  assert.equal(pollInterval(4), POLL_BASE_MS * 8);   // 16000
+  assert.equal(pollInterval(5), POLL_CAP_MS);        // 32000 -> capped 30000
+  assert.equal(pollInterval(9), POLL_CAP_MS);        // stays capped
+});
+
+test('pollInterval: never below base, even for 0 / negative fails', () => {
+  assert.equal(pollInterval(0), POLL_BASE_MS);
+  assert.equal(pollInterval(-3), POLL_BASE_MS);
+});
+
+test('pollInterval is monotonically non-decreasing in fails', () => {
+  let prev = 0;
+  for (let f = 1; f <= 12; f++) {
+    const ms = pollInterval(f);
+    assert.ok(ms >= prev, `pollInterval(${f})=${ms} should be >= ${prev}`);
+    assert.ok(ms <= POLL_CAP_MS, `pollInterval(${f})=${ms} should be <= cap`);
+    prev = ms;
+  }
+});
+
+test('close carries a startPolling.ms that backs off across consecutive fails', () => {
+  // First close from connected: fails=1 -> base cadence.
+  const s1 = step({ mode: 'connected', attempt: 0, consecutiveFails: 0, hidden: false },
+                  { type: 'close' });
+  const poll1 = s1.actions.find((a) => a.type === 'startPolling');
+  assert.equal(poll1.ms, POLL_BASE_MS);
+
+  // Second close (no hello in between): fails=2 -> doubled cadence.
+  const s2 = step(s1.state, { type: 'timerFire' }).state; // -> connecting
+  const r2 = step(s2, { type: 'close' });
+  const poll2 = r2.actions.find((a) => a.type === 'startPolling');
+  assert.equal(r2.state.consecutiveFails, 2);
+  assert.equal(poll2.ms, pollInterval(2));
+  assert.ok(poll2.ms > poll1.ms, 'cadence backs off as failures accumulate');
 });
 
 test('close while hidden: no startPolling, no scheduleReconnect, but counters still advance', () => {

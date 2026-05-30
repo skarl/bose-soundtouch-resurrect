@@ -7,11 +7,15 @@ these.
 For the rest of this doc, `SPEAKER_IP` stands for your speaker's LAN IP.
 
 **Filing a compatibility issue?** Run
-`scripts/capture-state.sh $SPEAKER_IP` first — it bundles `/info`, the
-Shepherd override directory listing, stock Shepherd config listing,
-shepherdd pids, `/mnt/nv/` listing, mount info, Shepherd-config mtimes,
-dmesg tail, and `/var/log/messages` tail into a timestamped folder.
-Scrub LAN IPs / MACs / fritz.box hostnames before pasting.
+`scripts/capture-state.sh $SPEAKER_IP` first — it bundles `/info`,
+health (memory / disk / load), the full `/opt/Bose/etc/` listing, the
+Shepherd override directory + stock config contents, the live process
+list, port reachability, firewall/routing, and the dmesg / messages
+tails into a timestamped folder. It **anonymises MACs, LAN IPs, serial
+numbers, the account UUID and the speaker name by default** (and never
+captures the TuneIn token at all), so the bundle is safe to paste into
+a public issue. Pass `--raw` only when capturing your own bench
+speaker.
 
 ## If the speaker won't boot at all (no SSH, no WiFi, no LAN)
 
@@ -25,8 +29,18 @@ The most common cause is a speaker that ran the pre-0.8 `deploy.sh`
 config inside and no stock variant files alongside, which made
 `shepherdd` stop supervising `BoseApp`, `WebServer`, `NetManager`,
 and the other daemons that bring the speaker up at boot. The deploy
-path was fixed in v0.8; this section is for anyone whose speaker is
-still stuck in that state.
+path was fixed in v0.8 **for the SoundTouch 10**; this section is for
+anyone whose speaker is still stuck in that state.
+
+> **⚠ SoundTouch 20 (and untested models): do not just re-run
+> `deploy.sh`.** In
+> [#160](https://github.com/skarl/bose-soundtouch-resurrect/issues/160)
+> a real ST 20 boot-loops after `deploy.sh` even on 0.8.2 — and
+> re-running deploy after a hard reset re-bricks it. The 0.8 fix is
+> only validated on the ST 10. If you're on an ST 20 or any model not
+> marked **Tested** in [compatibility.md](compatibility.md), recover
+> with the button sequence below, then **stop** and capture state with
+> `scripts/capture-state.sh` rather than redeploying.
 
 USB-stick `Update.stu` re-flash does not help (the bug lives in
 `/mnt/nv/`, not in the firmware image), and the USB-cable-to-laptop
@@ -59,6 +73,58 @@ combo, but the exact buttons and LED cues may differ — see
 matrix. If you recover an ST 20, ST 30, or other model with a
 different combination, please open an issue so the next person can
 find it.
+
+## Admin unreachable on :8181 (but the resolver works)
+
+Symptoms: the resolver install succeeds, `verify.sh` is happy, and on
+the speaker `busybox httpd` is bound to `0.0.0.0:8181` with loopback
+(`curl http://127.0.0.1:8181/` on the speaker) returning the admin
+HTML — yet `http://<speaker-ip>:8181/` from a browser or `curl` on the
+LAN gets an instant connection refused, from every device including a
+phone on the same Wi-Fi.
+
+This is **not your router** (verified in
+[#159](https://github.com/skarl/bose-soundtouch-resurrect/discussions/159):
+the same ports are reachable when served from a PC/Pi on the same LAN).
+On at least the **SoundTouch Portable** (`taigan`), the speaker's own
+network path doesn't expose :8181 externally even though the socket is
+healthy — the maintainer reproduced LAN reachability on an ST 10 at the
+identical firmware, so it's hardware-specific to that unit, and the
+mechanism isn't yet understood. The four ports the firmware itself
+advertises (8080 / 8090 / 8091 / 8200) stay reachable; arbitrary
+Linux-side ports like 8181 don't.
+
+**Workaround — reach the admin over an SSH tunnel.** Forward **both**
+the admin port (8181) and the WebSocket port (8080):
+
+```bash
+ssh -oHostKeyAlgorithms=+ssh-rsa \
+    -L 8181:localhost:8181 \
+    -L 8080:localhost:8080 \
+    root@<speaker-ip>
+```
+
+Leave that running and open `http://localhost:8181/` in your browser.
+
+## Admin loads over an SSH tunnel but the speaker reboots
+
+Symptoms (continuing from the tunnel above): the admin loads and shows
+your presets for a few seconds, then floods "Speaker isn't responding"
+toasts; the SSH terminal prints `accept: Too many open files`; the
+speaker eventually hangs or reboots.
+
+Cause: you forwarded **only 8181**. The admin's live-update WebSocket
+lives on **port 8080**, so with 8080 untunnelled the socket can never
+connect, and the SPA falls back to *polling* the speaker every two
+seconds — each poll fanning out into ~14 proxied requests at once. On a
+small embedded box squeezed through a single tunnel that exhausts file
+descriptors (`Too many open files`), requests time out, and the speaker
+falls over.
+
+**Fix:** add the `-L 8080:localhost:8080` forward shown in the previous
+section. With the WebSocket connected the SPA stops polling and the
+hammering stops. (0.8.3 also hardens the SPA so a persistently
+unreachable WebSocket backs off instead of storming the speaker.)
 
 ## "Speaker rejected the stream" / every preview 502s
 
@@ -278,6 +344,19 @@ EOF
 
 (The exact XML the firmware expects on this endpoint isn't fully
 documented — patches confirming the right shape welcome.)
+
+## deploy.sh fails on the laptop (before it reaches the speaker)
+
+Two host-side prerequisites bite people whose laptop isn't macOS:
+
+- **`uuidgen: command not found`** (or deploy aborting at the TUNEIN
+  token step) — `uuidgen` isn't installed. On Debian/Ubuntu/Mint it's
+  in `uuid-runtime`: `sudo apt-get install uuid-runtime`.
+- **`UnicodeEncodeError` while building station files** — your shell
+  locale isn't UTF-8 and Python can't encode a non-ASCII station name.
+  Re-run with `PYTHONIOENCODING=utf-8 ./scripts/deploy.sh "$SPEAKER_IP"`.
+
+Both were reported in [#156](https://github.com/skarl/bose-soundtouch-resurrect/issues/156).
 
 ## Last-resort logs to capture
 

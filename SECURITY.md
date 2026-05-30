@@ -34,10 +34,11 @@ This is acceptable for a trusted home LAN. **Do not expose port 8090 or
 
 ## What we cannot patch
 
-- Vulnerabilities in the speaker's firmware itself. The firmware is
-  frozen; Bose stopped issuing updates with the 2026-05-06 cloud
-  shutdown. If a defect surfaces in the speaker's TLS stack, kernel,
-  or application code, this project has no way to ship a fix.
+- Vulnerabilities in the speaker's firmware itself. Bose ceased cloud
+  operation on 2026-05-06 and we have no evidence of any further
+  firmware updates, so in practice the firmware should be treated as
+  frozen. If a defect surfaces in the speaker's TLS stack, kernel, or
+  application code, this project has no way to ship a fix.
 - Any new vulnerability that the on-speaker resolver doesn't introduce
   but that's exposed by enabling SSH on the speaker.
 

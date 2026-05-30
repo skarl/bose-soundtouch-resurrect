@@ -19,6 +19,18 @@ served from); the admin SPA layers on top.
 done that, follow [opening-up-your-speaker.md](opening-up-your-speaker.md)
 first.
 
+**Laptop tools:** `python3`, `ssh`, `scp`, and `uuidgen`. On most Linux
+distros `uuidgen` is in the `uuid-runtime` package and is **not**
+installed by default — if `deploy.sh` aborts on a missing `uuidgen`,
+`sudo apt-get install uuid-runtime` (or your distro's equivalent). It
+is built in on macOS. If `deploy.sh` instead crashes with a Python
+`UnicodeEncodeError` while building station files (non-UTF-8 locale),
+prefix the command with `PYTHONIOENCODING=utf-8`:
+
+```bash
+PYTHONIOENCODING=utf-8 ./scripts/deploy.sh "$SPEAKER_IP"
+```
+
 For the rest of this doc, set:
 
 ```bash
@@ -101,7 +113,7 @@ public API and emits Bose-shaped JSON:
 cd resolver/
 cp stations.example.json stations.json
 # Edit stations.json — see customizing-presets.md for how to find IDs.
-python3 build.py
+python3 build.py        # prefix with PYTHONIOENCODING=utf-8 on non-UTF-8 locales
 ls s[0-9]*    # one file per station ID, e.g. s12345, s23456, ...
 cd ..
 ```
@@ -162,7 +174,10 @@ EOF
 $SSH root@$SPEAKER_IP reboot
 ```
 
-Wait ~75 seconds for the speaker to come back.
+Wait ~75 seconds for the speaker to come back (a post-deploy reboot
+runs longer than the 30–60 s cold boot in
+[opening-up-your-speaker.md](opening-up-your-speaker.md) — it does more
+work on the way up).
 
 ## Step 4 — Verify
 

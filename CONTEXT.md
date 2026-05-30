@@ -11,18 +11,18 @@ A Bose SoundTouch device — the audio appliance whose firmware this project kee
 _Avoid_: device, unit, box.
 
 **Resolver**:
-The on-speaker static-file + CGI responder that replaces the four Bose cloud services. Lives at `/mnt/nv/resolver/`, served by busybox httpd on port 8181.
+The on-speaker static-file + CGI responder that replaces the four Bose cloud services. Lives at `/mnt/nv/resolver/`, served by busybox httpd on port 8181. The *same* httpd process and port also serve the **Admin SPA** (one server, split by path prefix), so "the resolver" and "the admin" are co-tenants, not separate services.
 _Avoid_: server, mock, emulator (used elsewhere for off-speaker variants).
 
 **Override XML**:
-`/mnt/nv/OverrideSdkPrivateCfg.xml` — the file that redirects the firmware's four cloud URLs to `http://127.0.0.1:8181`. Read by BoseApp at boot. Distinct from the **Shepherd override directory** below — both use "override" but they sit at different layers (SDK URL redirection vs. daemon supervision).
+`/mnt/nv/OverrideSdkPrivateCfg.xml` — the file that redirects the firmware's cloud service URLs to paths under `http://127.0.0.1:8181` (e.g. `margeServerUrl`→`/marge`, `bmxRegistryUrl`→`/bmx/registry/v1/services`, `swUpdateUrl`→`/updates/soundtouch`, `statsServerUrl`→the bare root), plus a few non-URL config flags. Read by BoseApp at boot. Distinct from the **Shepherd override directory** below — both use "override" but they sit at different layers (SDK URL redirection vs. daemon supervision).
 _Avoid_: config, redirect.
 
 **Shepherdd**:
 The firmware's process supervisor. Reads **Shepherd config** files at boot and supervises (re-spawns, kills, reports on) each declared daemon. Owns the lifecycle of every userspace process on the speaker that matters — BoseApp, WebServer, APServer, Bluetooth, the per-**variant** daemon, our **Resolver** httpd, etc.
 
 **Shepherd config**:
-An XML file under `/opt/Bose/etc/Shepherd-<name>.xml` declaring one or more daemons for **shepherdd** to supervise. Five stock configs ship with the firmware: `Shepherd-core.xml`, `Shepherd-hsp.xml`, `Shepherd-noncore.xml`, `Shepherd-product.xml`, and the per-**variant** `Shepherd-<variant>.xml` (e.g. `Shepherd-rhino.xml` on ST 10). Our `resolver/shepherd-resolver.xml` is a sixth, project-owned config.
+An XML file under `/opt/Bose/etc/Shepherd-<name>.xml` declaring one or more daemons for **shepherdd** to supervise. The stock config set is **model-dependent**: the ST 10 (`rhino`) ships five — `Shepherd-core.xml`, `Shepherd-hsp.xml`, `Shepherd-noncore.xml`, `Shepherd-product.xml`, and the per-**variant** `Shepherd-rhino.xml` — but other models ship a different set (the SoundTouch Portable / `taigan` ships only `{mojo, noncore, spotty, taigan}`, with no core/hsp/product). Do **not** assume the ST 10's five-config layout generalises. Our `resolver/shepherd-resolver.xml` is a project-owned config layered on top.
 _Avoid_: shepherd XML (the file name is `Shepherd-`, capital S).
 
 **Shepherd override directory**:
@@ -30,7 +30,7 @@ _Avoid_: shepherd XML (the file name is `Shepherd-`, capital S).
 _Avoid_: shepherd dir, override shepherd (ambiguous with [[Override XML]]).
 
 **Variant**:
-The firmware's per-model codename, reported in `/info` under `<variant>`. Known values: `rhino` (ST 10), `spotty` (ST 20), `mojo` (ST 30). `Bose_Lisa/<fw>` in the User-Agent is the shared SDK build-tree name (all models report Lisa), not a variant. The variant determines which stock per-model **Shepherd config** is loaded.
+The firmware's per-model codename, reported in `/info` under `<variant>`. Known values include: `rhino` (ST 10, confirmed), `spotty` (ST 20, confirmed via #160), `taigan` (SoundTouch Portable, confirmed via #159), and `mojo` (ST 30, _inferred — never observed by this project_). The list is non-exhaustive. `Bose_Lisa/<fw>` in the User-Agent is the shared SDK build-tree name (all models report Lisa), not a variant. The variant selects the per-model **Shepherd config** — but, as noted above, the *whole* stock-config inventory differs by model, not just the per-variant file.
 _Avoid_: codename, model (those are looser; use variant when speaking precisely about what the firmware reports).
 
 **Stock daemon**:

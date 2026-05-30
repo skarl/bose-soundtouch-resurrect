@@ -26,9 +26,12 @@ not know the list exists.
 Reconcile for favourites runs on two triggers today:
 
 1. Boot, via `reconcile(store)` at SPA start.
-2. `visibilitychange → 'visible'`, via a listener mounted by the
-   favourites view (mirrored on the now-playing card so the
-   3×3 preview also refreshes when the tab regains focus).
+2. `visibilitychange → 'visible'`, via the single global visibility
+   handler in `admin/app/ws.js`, which dispatches a full
+   `reconcile(store)` — and `reconcile` covers *every* field in the
+   FIELDS registry, favourites included. (There is no favourites-specific
+   visibility listener; the refetch falls out of the registry-wide
+   reconcile.)
 
 This means two simultaneously open SPA clients converge on the next
 visibility transition — typically the next tab switch — rather than in
