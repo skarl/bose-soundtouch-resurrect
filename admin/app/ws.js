@@ -21,6 +21,7 @@ function makeDriver() {
     userInitiatedClose: false,
     reconnectTimer:     null,
     pollInterval:       null,
+    pollMs:             null,
     storeRef:           null,
     visibilityBound:    false,
     fsmState:           fsm.initialState(),
@@ -38,7 +39,7 @@ export const backoff = fsm.backoff;
 function runActions(actions) {
   for (const action of actions) {
     switch (action.type) {
-      case 'startPolling':       doStartPolling(); break;
+      case 'startPolling':       doStartPolling(action.ms); break;
       case 'stopPolling':        doStopPolling(); break;
       case 'scheduleReconnect':  doScheduleReconnect(action.ms); break;
       case 'cancelReconnect':    doCancelReconnect(); break;
@@ -70,17 +71,26 @@ function syncStoreMode() {
 
 // --- Polling fallback -----------------------------------------------
 
-function doStartPolling() {
-  if (drv.pollInterval != null) return;
+function doStartPolling(ms) {
+  const interval = typeof ms === 'number' && ms > 0 ? ms : fsm.POLL_BASE_MS;
+  // Re-arm only when the cadence actually changes. Each escalating `close`
+  // hands us a larger interval (see ws-fsm.pollInterval), so a persistently
+  // dead socket polls ever more slowly instead of pinning a fixed-2s,
+  // 14-requests-per-tick storm on the speaker. A cadence we're already
+  // running at is a no-op so we don't reset the timer phase every close.
+  if (drv.pollInterval != null && drv.pollMs === interval) return;
+  if (drv.pollInterval != null) clearInterval(drv.pollInterval);
+  drv.pollMs = interval;
   drv.pollInterval = setInterval(() => {
     if (drv.storeRef) reconcile(drv.storeRef);
-  }, 2000);
+  }, interval);
 }
 
 function doStopPolling() {
   if (drv.pollInterval == null) return;
   clearInterval(drv.pollInterval);
   drv.pollInterval = null;
+  drv.pollMs = null;
 }
 
 // --- Reconnect timer ------------------------------------------------
