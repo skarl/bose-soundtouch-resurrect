@@ -124,10 +124,15 @@ present in the override directory simply stops being supervised.
 This is the single most brick-prone fact in the project. Dropping our
 `Shepherd-resolver.xml` into `/mnt/nv/shepherd/` is the only way to get
 it auto-started — but creating that directory switches shepherdd's load
-source for *every* config, so the deploy must also link every stock
-`Shepherd-*.xml` back in, or `BoseApp`/`WebServer`/`NetManager` stop
-launching and the speaker hangs at boot. That's exactly the bug 0.8
-(#144) fixed, and the mechanism is documented in full in
+source for *every* config, so the deploy must also link the stock
+configs back in, or `BoseApp`/`WebServer`/`NetManager` stop launching
+and the speaker hangs at boot. 0.8 (#144) first addressed this by
+linking *every* `Shepherd-*.xml` — which then boot-looped a real
+SoundTouch 20 (#160), because a multi-product firmware image ships
+other products' configs that must not all run at once. 0.8.4 fixed it
+properly: the deploy reproduces the firmware's own *variant selection*
+(`Shepherd-{core,noncore,product,<variant>,hsp}.xml` that exist), not a
+blind glob. The full mechanism is in
 [ADR-0004](adr/0004-shepherd-override-replaces-not-merges.md).
 
 (An earlier version of this page claimed shepherdd *merged* the two

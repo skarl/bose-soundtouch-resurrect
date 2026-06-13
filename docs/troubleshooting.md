@@ -35,12 +35,16 @@ anyone whose speaker is still stuck in that state.
 > **⚠ SoundTouch 20 (and untested models): do not just re-run
 > `deploy.sh`.** In
 > [#160](https://github.com/skarl/bose-soundtouch-resurrect/issues/160)
-> a real ST 20 boot-loops after `deploy.sh` even on 0.8.2 — and
-> re-running deploy after a hard reset re-bricks it. The 0.8 fix is
-> only validated on the ST 10. If you're on an ST 20 or any model not
-> marked **Tested** in [compatibility.md](compatibility.md), recover
-> with the button sequence below, then **stop** and capture state with
-> `scripts/capture-state.sh` rather than redeploying.
+> a real ST 20 boot-looped after `deploy.sh` (0.8.2/0.8.3), and
+> re-running deploy after a hard reset re-bricked it. 0.8.4 fixes the
+> cause — the deploy linked every product's Shepherd config into the
+> override directory instead of the firmware's variant-specific subset —
+> but that fix has **not yet been validated on a live ST 20**, so the
+> model stays fenced off until the #160 reporter confirms a clean boot.
+> If you're on an ST 20 or any model not marked **Tested** in
+> [compatibility.md](compatibility.md), recover with the button sequence
+> below, then **stop** and capture state with `scripts/capture-state.sh`
+> rather than redeploying.
 
 USB-stick `Update.stu` re-flash does not help (the bug lives in
 `/mnt/nv/`, not in the firmware image), and the USB-cable-to-laptop

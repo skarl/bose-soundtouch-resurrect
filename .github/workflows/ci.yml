@@ -24,6 +24,28 @@ jobs:
         with:
           scandir: ./scripts
 
+  script-tests:
+    # Runs the POSIX-sh unit tests under scripts/test/ — the selector
+    # (select-shepherd-configs.sh, the #160 boot-loop fix) and the TUNEIN
+    # token synthesiser. These exercise the speaker-side scripts against
+    # fixture inventories off-speaker, so a regression (e.g. over-linking
+    # foreign-product Shepherd configs again) becomes a red build.
+    name: scripts/test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run every scripts/test/*.sh suite
+        run: |
+          set -e
+          fail=0
+          for t in scripts/test/test_*.sh; do
+            echo "=== $t ==="
+            sh "$t" || fail=1
+          done
+          [ "$fail" -eq 0 ] || { echo "one or more script test suites failed"; exit 1; }
+
   resolver-build:
     name: resolver/build.py
     runs-on: ubuntu-latest

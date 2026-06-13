@@ -48,6 +48,9 @@ say "Pre-flight checks"
 [ -f "$ROOT/resolver/shepherd-resolver.xml" ] \
   || fail "resolver/shepherd-resolver.xml missing — repo is incomplete?"
 
+[ -f "$ROOT/scripts/select-shepherd-configs.sh" ] \
+  || fail "scripts/select-shepherd-configs.sh missing — repo is incomplete?"
+
 # SSH reachability
 $SSH root@"$SPEAKER" 'true' \
   || fail "cannot SSH to root@$SPEAKER. Did you enable SSH?
@@ -101,24 +104,39 @@ fi
 echo "Speaker MAC: $MAC"
 
 say "Creating directories on the speaker"
+# Note: /mnt/nv/shepherd (the Shepherd override directory) is deliberately
+# NOT created here. It is created by select-shepherd-configs.sh below, and
+# only after that script's brick guard confirms this product is recognised
+# — an override dir that exists but lacks the stock daemon set bricks the
+# speaker with no SSH recovery (ADR-0004). Creating it lazily keeps a
+# failed/aborted deploy from leaving a brick-class empty override dir.
 $SSH root@"$SPEAKER" '
   mkdir -p /mnt/nv/resolver/bmx/tunein/v1/playback/station
   mkdir -p /mnt/nv/resolver/bmx/registry/v1
   mkdir -p /mnt/nv/resolver/marge/streaming
   mkdir -p /mnt/nv/resolver/v1/scmudc
-  mkdir -p /mnt/nv/shepherd
 '
 
-say "Linking stock Shepherd configs into the override directory"
-# When /mnt/nv/shepherd/ exists, shepherdd reads from there *instead
-# of* /opt/Bose/etc/ — link every stock config in or its daemons
-# (BoseApp, WebServer, the per-variant daemon, etc.) stop being
-# supervised. See docs/adr/0004-shepherd-override-replaces-not-merges.md.
+say "Selecting stock Shepherd configs for the override directory"
+# When /mnt/nv/shepherd/ exists, the firmware's init script
+# (/etc/init.d/SoundTouch) stops assembling /var/run/shepherd and uses our
+# directory verbatim — replacement, not merge. So we must reproduce the
+# stock config *selection* it would have done: a variant-specific subset
+# ({core,noncore,product,<variant>,hsp} that exist, + the bardeen_linus
+# bonded substitution), NOT every Shepherd-*.xml. Linking them all
+# over-links on a multi-product firmware image (the ST 20 ships 10 configs
+# for 7 products) and the speaker boot-loops — issue #160. The selector
+# carries a brick guard (it refuses to populate the dir for an unrecognised
+# product) so a failure here aborts the deploy BEFORE the reboot, leaving
+# the speaker stock and recoverable.
+# See docs/adr/0004-shepherd-override-replaces-not-merges.md.
+$SCP "$ROOT/scripts/select-shepherd-configs.sh" \
+     root@"$SPEAKER":/tmp/select-shepherd-configs.sh
 $SSH root@"$SPEAKER" '
-  for stock in /opt/Bose/etc/Shepherd-*.xml; do
-    ln -sf "$stock" "/mnt/nv/shepherd/$(basename "$stock")"
-  done
-'
+  sh /tmp/select-shepherd-configs.sh /opt/Bose/etc /mnt/nv/shepherd \
+  && rm -f /tmp/select-shepherd-configs.sh
+' || fail "Shepherd config selection failed (see speaker output above).
+       The speaker has NOT been rebooted and remains on its stock config."
 
 say "Pushing static templates"
 $SCP "$ROOT/resolver/responses/services.json" \

@@ -1,47 +1,68 @@
 # Shepherd override directory replaces, not merges — deploy must link stock configs
 
-- **Status**: accepted (core decision); **contested** (the "all
-  variants" generalisation — see the Update below)
+- **Status**: accepted. (The 0.8.3 "contested" mark is **resolved** as of
+  0.8.4 — see the Update below; the "link every config" implementation
+  was wrong and is replaced by the firmware's own variant selection.)
 - **Date**: 2026-05-16
-- **Updated**: 2026-05-30 (0.8.3)
+- **Updated**: 2026-06-13 (0.8.4 — root cause found, selection rule
+  reproduced in code); 2026-05-30 (0.8.3 — generalisation contested)
 - **Supersedes**: —
-- **Related**: `scripts/deploy.sh`, `scripts/uninstall.sh`,
-  `resolver/shepherd-resolver.xml`, `CONTEXT.md` § Shepherdd / Shepherd
-  config / Shepherd override directory / Variant / Stock daemon
+- **Related**: `scripts/deploy.sh`, `scripts/select-shepherd-configs.sh`,
+  `scripts/uninstall.sh`, `resolver/shepherd-resolver.xml`, `CONTEXT.md`
+  § Shepherdd / Shepherd config / Shepherd override directory / Variant /
+  Stock daemon
 
-> ## Update (0.8.3) — the "all variants" claim is contested
+> ## Update (0.8.4) — resolved: the override dir must reproduce the
+> firmware's *variant selection*, not link every config
 >
-> The core decision below — link every stock `Shepherd-*.xml` into the
-> override directory because the directory *replaces* rather than
-> *merges* — is correct and stands, verified on the ST 10. **But the
-> Consequences section over-reached.** It claimed the same loop handles
-> "all variants" with the compat matrix collapsing to one row. That is
-> falsified: issue
-> [#160](https://github.com/skarl/bose-soundtouch-resurrect/issues/160)
-> is a real SoundTouch 20 (`spotty`) that **boot-loops after
-> `scripts/deploy.sh`** on the very release this ADR shipped in — the
-> same boot-brick class as #143.
+> The replace-not-merge core decision stands. The **implementation** in
+> the Decision section below — "link every stock `Shepherd-*.xml`" — was
+> wrong, and is the cause of
+> [#160](https://github.com/skarl/bose-soundtouch-resurrect/issues/160).
+> A full capture from a working, hard-reset ST 20 (`spotty`) plus the
+> firmware's own init script settled it:
 >
-> Two reasons the generalisation didn't hold:
-> 1. **The stock config inventory is model-dependent.** The ST 10
->    (`rhino`) ships `{core, hsp, noncore, product, rhino}`; the
->    SoundTouch Portable (`taigan`, discussion #159) ships
->    `{mojo, noncore, spotty, taigan}` — only `noncore` in common.
->    There is no single "standard layout."
-> 2. **The `Shepherd-*.xml` glob has a blind spot.** Both
->    `scripts/deploy.sh` and `scripts/capture-state.sh` only match
->    `Shepherd-*.xml`; a boot-critical config named differently (e.g. a
->    dash-less `Shepherd.xml`) would be silently missed, leaving a
->    `recovery="reboot"` daemon unsupervised → a boot *loop*. We don't
->    yet have a full `/opt/Bose/etc/` listing from a working ST 20 to
->    confirm whether this is #160's cause.
+> 1. **The firmware does not load every `Shepherd-*.xml`.**
+>    `/etc/init.d/SoundTouch` assembles its run directory from a
+>    **variant-specific subset**:
+>    ```sh
+>    read variant </proc/variant            # e.g. rhino, spotty
+>    for i in core noncore product $variant hsp; do
+>        cfg=/opt/Bose/etc/Shepherd-$i.xml
+>        [ -e "$cfg" ] && ln -s "$cfg" "$rundir"
+>    done
+>    # + a Bardeen-Linus bonded substitution gated on a persistence marker
+>    ```
+>    This loop runs **only when `/mnt/nv/shepherd` does not exist**
+>    (`override=false`). Creating the override directory is exactly what
+>    makes the firmware skip selection and use our directory verbatim —
+>    so we must reproduce the selection ourselves.
+> 2. **The image inventory is model-dependent.** The ST 10 (`rhino`)
+>    ships a single-product `/opt/Bose/etc` = `{core, hsp, noncore,
+>    product, rhino}`; the ST 20 (`spotty`) ships a **multi-product**
+>    image = `{bardeen, bardeen_linus, binky, burns, ginger, mojo,
+>    noncore, noncore_linus, rhino, spotty}` (10 configs, 7 products).
+>    On the ST 10 "link everything" accidentally equalled the selected
+>    subset, so it worked. On the ST 20 it linked eight foreign-product
+>    configs — each declaring its own `recovery="reboot"`
+>    BoseApp/APServer/WebServer/NetManager — and shepherdd boot-looped.
+>    Confirmed against the working ST 20's `ps` (stock supervises only
+>    the `spotty` + `noncore` daemon set) and the init script above.
+>
+> The 0.8.3 "dash-less `Shepherd.xml` glob blind spot" hypothesis was
+> **wrong**: the ST 20 ships no such file, and the real fault is
+> over-linking, not under-matching.
+>
+> Fixed in 0.8.4: `scripts/deploy.sh` delegates to
+> `scripts/select-shepherd-configs.sh`, which reproduces the loop above
+> (with a brick guard), unit-tested against both inventories in
+> `scripts/test/test_select_shepherd_configs.sh`. Verified on the live
+> ST 10 (identical to its working state); the live-ST-20 reboot pass
+> runs through the #160 reporter.
 >
 > Also: the "external contributor's ST 20" cited as motivating evidence
 > below is **not** an ST 20 — David's `/info` (discussion #159) reports
-> a SoundTouch **Portable** (`taigan`). So no real ST 20 ever validated
-> this path; the first one (#160) failed. Treat the Consequences below
-> as ST-10-validated only until a non-ST-10 model passes the
-> regression gate.
+> a SoundTouch **Portable** (`taigan`). The first real ST 20 was #160.
 
 ## Context
 
@@ -99,21 +120,41 @@ retains the manual state across reboots and across project iterations.
 ## Decision
 
 **The deploy script populates `/mnt/nv/shepherd/` with symlinks to
-every `/opt/Bose/etc/Shepherd-*.xml` stock config in addition to
-dropping `Shepherd-resolver.xml`.** The uninstall script reverses the
-operation: removes every symlink we created, removes
-`Shepherd-resolver.xml`, and `rmdir`s the directory if (and only if)
-it ends up empty.
+exactly the stock configs the firmware's own init script would select
+for this product** — the variant-specific subset `Shepherd-{core,
+noncore, product, <variant>, hsp}.xml` (whichever exist) — in addition
+to dropping `Shepherd-resolver.xml`. It does **not** link every
+`Shepherd-*.xml` (see the 0.8.4 Update; that over-links on multi-product
+images and boot-loops the speaker). The uninstall script removes the
+entire override directory so shepherdd falls back to its stock load path.
 
-Concretely the relevant deploy step becomes:
+Concretely the selection (factored into
+`scripts/select-shepherd-configs.sh`, run on the speaker) is:
 
 ```sh
-mkdir -p /mnt/nv/shepherd
-for stock in /opt/Bose/etc/Shepherd-*.xml; do
-  ln -sf "$stock" "/mnt/nv/shepherd/$(basename "$stock")"
+# variant from /proc/variant (or "eddie" on /opt/Bose/bin products),
+# mirroring /etc/init.d/SoundTouch
+for i in core noncore product "$variant" hsp; do
+  cfg=/opt/Bose/etc/Shepherd-$i.xml
+  [ -e "$cfg" ] && ln -sf "$cfg" "/mnt/nv/shepherd/Shepherd-$i.xml"
 done
 # our own resolver config is then scp'd in alongside
 ```
+
+The firmware additionally applies a Bardeen-Linus *bonded* substitution
+(swap the bardeen configs for their `_linus` variants when a persistence
+marker exists). We **deliberately do not reproduce it**: it isn't
+variant-gated, so on a non-bardeen speaker that happened to carry the
+marker it would link a foreign-product config — re-creating the #160
+boot-loop class — and this project supports no bardeen-family device to
+validate it against. If such a report ever lands, add it then, gated on
+the variant and validated against that device's capture.
+
+A **brick guard** precedes this: if `Shepherd-$variant.xml` is absent
+from `/opt/Bose/etc` the product is unrecognised, so the script refuses
+to create the override directory at all and the deploy aborts before the
+reboot — far better than assembling a guessed (possibly brick-class)
+override dir.
 
 ### Symlinks, not copies
 
@@ -126,19 +167,28 @@ We use symlinks rather than copies because:
 - Less NV flash usage; less drift surface.
 - The shell idiom is `ln -sf` — idempotent, safe to re-run.
 
-### Why no per-variant detection
+### Why variant selection, matching the firmware (0.8.4)
 
-The loop links *every* `Shepherd-*.xml` under `/opt/Bose/etc/`,
-including the per-variant one. We don't need to know whether we're on
-an ST 10 or ST 20: whichever model the speaker is, its variant config
-is present at `/opt/Bose/etc/Shepherd-<variant>.xml` and gets linked
-the same way as the rest.
+We must select the *same* subset the firmware would, because the
+override directory replaces — not merges with — the stock load path.
+The firmware (`/etc/init.d/SoundTouch`) selects by variant; a
+multi-product image (the ST 20) carries other products' configs that
+must **not** be loaded together (each declares its own
+`recovery="reboot"` BoseApp/APServer/WebServer, and running several at
+once boot-loops the speaker — #160). So `select-shepherd-configs.sh`
+reads the variant (`/proc/variant`) and links only
+`Shepherd-{core,noncore,product,<variant>,hsp}.xml` that exist —
+byte-identical to the firmware's own selection on the models we support
+(the bonded substitution is the one firmware step we don't reproduce;
+see the Decision above for why).
 
-> **Caveat (0.8.3):** this assumes every boot-critical config is named
-> `Shepherd-<something>.xml`. If a model ships a config the glob doesn't
-> match (a dash-less `Shepherd.xml`, or one in another location), it is
-> silently not linked — the failure mode suspected in #160. The glob is
-> not known to be sufficient beyond the ST 10.
+> **Earlier reasoning, now retracted (was "Why no per-variant
+> detection"):** 0.8 claimed we could link every `Shepherd-*.xml` and
+> ignore the model, since the variant config "gets linked the same way
+> as the rest." That held only because the ST 10 image is single-product.
+> It is false on multi-product images and is the direct cause of #160.
+> The 0.8.3 "dash-less `Shepherd.xml` glob blind spot" caveat was also
+> wrong: the fault is over-linking, not under-matching.
 
 ## Consequences
 
@@ -152,19 +202,26 @@ the same way as the rest.
 - **Uninstall must reverse the operation cleanly.** A subsequent fresh
   install starting from "speaker that has been uninstalled" must
   produce the same state as "speaker that never had us deployed." The
-  uninstall script enumerates and removes every symlink it created,
-  removes `Shepherd-resolver.xml`, and `rmdir`s the empty override
-  directory — returning shepherdd to its default load path under
-  `/opt/Bose/etc/`.
+  uninstall script removes the **entire** override directory
+  (`rm -rf /mnt/nv/shepherd`, symlinks + our `Shepherd-resolver.xml`
+  together) — returning shepherdd to its default load path under
+  `/opt/Bose/etc/`. It deliberately removes the directory itself, not
+  just its contents: an empty-but-present override dir is its own brick
+  (see the "never leave the override directory present-but-empty"
+  consequence below).
 
-- **One implementation, all variants. _[CONTESTED — see the Update at
-  the top.]_** This consequence claimed the previous mental model
-  ("we tested on ST 10, hope ST 20 works") was *replaced* by a loop
-  that handles any model, collapsing the compat matrix to one row. It
-  was not — #160 shows a real ST 20 still bricks on this path. The
-  honest statement is: there is no variant branching in `deploy.sh`,
-  the loop is validated on the ST 10 only, and "all variants" is a
-  hypothesis that the first ST 20 report disproved.
+- **One implementation, all variants — by reproducing the firmware's
+  selection, not by ignoring the variant. _[RESOLVED in 0.8.4 — see the
+  Update at the top.]_** The 0.8 claim ("link everything, it works on
+  any model") was disproved by #160: it bricks multi-product images.
+  The implementation that *does* generalise is the opposite — read the
+  variant and link the same subset the firmware would. That logic is
+  verified on the live ST 10 (byte-identical to its working state) and
+  unit-tested against the captured ST 10 and ST 20 inventories. It is
+  still **not** validated by a live ST 20 reboot (the project has no
+  ST 20); per the honesty doctrine, the ST 20 stays Broken in
+  `docs/compatibility.md` until the #160 reporter confirms a clean
+  deploy-and-recover.
 
 - **A regression-test gate is now possible — but it is single-model.**
   With the symlink step in code, the override directory is reproducible:
