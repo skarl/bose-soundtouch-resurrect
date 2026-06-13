@@ -11,8 +11,9 @@
 #     OOM/reboot pressure shows up here and nowhere else.
 #   Install footprint:   OverrideSdkPrivateCfg.xml, shepherd-resolver
 #     config, the resolver file tree.
-#   Boot / Shepherd:     the *full* /opt/Bose/etc listing (catches
-#     configs our Shepherd-*.xml glob misses), the contents of every
+#   Boot / Shepherd:     the *full* /opt/Bose/etc listing (reveals the
+#     model's whole Shepherd inventory, incl. multi-product configs the
+#     variant selector deliberately excludes), the contents of every
 #     stock Shepherd config (per-variant daemon set + recovery= attrs),
 #     override dir, pids, mtimes.
 #   Runtime / network:   process list, bound listeners, loopback-vs-
@@ -153,10 +154,12 @@ capture "resolver-tree.txt"          "find /mnt/nv/resolver -type f 2>/dev/null 
 
 # --- Boot / Shepherd ------------------------------------------------
 
-# FULL /opt/Bose/etc listing — NOT the Shepherd-*.xml glob. This is the
-# blind spot deploy and the old capture both shared: a boot-critical
-# config our glob doesn't match (e.g. a dash-less Shepherd.xml) only
-# shows up here. Central to the #160 ST 20 boot loop.
+# FULL /opt/Bose/etc listing — the whole Shepherd inventory, not a
+# focused glob. This is what cracked #160: it revealed the ST 20 ships a
+# multi-product image (10 Shepherd configs for 7 products) where the old
+# deploy's "link every Shepherd-*.xml" over-linked and boot-looped. The
+# firmware loads only the variant subset; this listing shows the full set
+# so the selector's exclusions can be checked against reality.
 capture "etc-listing.txt"            "ls -la /opt/Bose/etc/ 2>/dev/null"
 
 # Stock Shepherd config listing — focused view; the full picture is in

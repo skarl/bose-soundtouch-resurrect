@@ -34,14 +34,17 @@ from strongest evidence to weakest:
 We used to claim the 0.8 deploy path was "variant-agnostic by
 construction" — that every model was handled by the same
 `Shepherd-*.xml` linking loop regardless of hardware. **That claim was
-wrong.** Issue [#160](https://github.com/skarl/bose-soundtouch-resurrect/issues/160)
-is a real SoundTouch 20 (`spotty`) that boot-loops after
-`scripts/deploy.sh` on the same release the loop was supposed to fix.
-The override-replacement mechanism is sound on the ST 10, but the
-generalisation to every model is not established — the stock Shepherd
-config inventory is itself model-dependent (see
+wrong**, and [#160](https://github.com/skarl/bose-soundtouch-resurrect/issues/160)
+(a real SoundTouch 20, `spotty`) proved it by boot-looping after
+`scripts/deploy.sh`. 0.8.4 found the cause: the ST 20's firmware image
+carries Shepherd configs for **seven products**, and the old loop linked
+all of them, whereas the firmware loads only a variant-specific subset.
+`scripts/deploy.sh` now reproduces the firmware's own selection (see
 [adr/0004-shepherd-override-replaces-not-merges.md](adr/0004-shepherd-override-replaces-not-merges.md)).
-So an Inferred row may brick your speaker; only **Tested** carries a
+That fix is verified on the ST 10 and unit-tested against the ST 20's
+captured inventory, **but has not yet been run on a live ST 20** — so
+the ST 20 stays Broken below until the #160 reporter confirms it. An
+Inferred row may still brick your speaker; only **Tested** carries a
 real safety guarantee.
 
 ## Model rows
@@ -49,7 +52,7 @@ real safety guarantee.
 | Model               | Variant  | Firmware              | State    |
 | ------------------- | -------- | --------------------- | -------- |
 | SoundTouch 10       | `rhino`  | 27.0.6.46330.5043500  | Tested   |
-| SoundTouch 20       | `spotty` | 27.0.6.46330.5043500  | **Broken** (#160) |
+| SoundTouch 20       | `spotty` | 27.0.6.46330.5043500  | **Broken** (#160 — fix in 0.8.4, awaiting live validation) |
 | SoundTouch 30       | `mojo`   | —                     | Inferred (unverified) |
 | SoundTouch Portable | `taigan` | 27.0.6.46330.5043500  | Partial (#159) |
 
@@ -69,9 +72,10 @@ known-clean override-directory state — i.e. with
 `/mnt/nv/OverrideSdkPrivateCfg.xml*` wiped — so the "Tested" claim
 rests on the documented install path, not on accumulated manual state.
 
-### SoundTouch 20 — `spotty` — Broken (#160)
+### SoundTouch 20 — `spotty` — Broken (#160, fix in 0.8.4 awaiting validation)
 
-**Do not run `scripts/deploy.sh` against a SoundTouch 20 yet.** In
+**Do not run `scripts/deploy.sh` against a SoundTouch 20 until this row
+says Tested.** In
 [#160](https://github.com/skarl/bose-soundtouch-resurrect/issues/160) an
 external contributor reported a real ST 20 (`spotty`, moduleType `sm2`,
 firmware 27.0.6.46330.5043500) that **boot-loops after deploy** — no
@@ -79,24 +83,37 @@ SSH, no telnet, hard reset required — and it recurs on every redeploy.
 This is the same boot-brick class as
 [#143](https://github.com/skarl/bose-soundtouch-resurrect/issues/143).
 
-This was supposed to be fixed: 0.8 (#144) made `scripts/deploy.sh` link
-every stock `Shepherd-*.xml` into `/mnt/nv/shepherd/`, on the theory
-that the same loop handles every model. But that fix was only ever
-validated on the maintainer's ST 10, and #160 is direct evidence it
-does **not** hold on a real ST 20. The investigation is open — we need
-a full `/opt/Bose/etc/` listing from a working ST 20 to know whether
-its stock-config layout defeats the `Shepherd-*.xml` glob. Until then,
-the ST 20 is fenced off.
+**Root cause (0.8.4).** A full capture from a working, hard-reset ST 20
+showed its `/opt/Bose/etc/` is a **multi-product firmware image** — 10
+`Shepherd-*.xml` configs for seven different Bose products. The
+firmware's own init script (`/etc/init.d/SoundTouch`) loads only a
+variant-specific subset (`{core,noncore,product,spotty,hsp}` of those
+that exist → in practice just `spotty` + `noncore`), but the 0.8 deploy
+linked **all 10** into the override directory. shepherdd then supervised
+eight foreign products' `recovery="reboot"` daemons at once → boot loop.
+It worked on the ST 10 only because that model's image is single-product,
+so linking everything happened to equal the selected subset.
+
+**Fix (0.8.4).** `scripts/deploy.sh` now reproduces the firmware's
+selection via `scripts/select-shepherd-configs.sh`, linking only the
+variant subset (with a brick guard). Verified byte-identical to the
+working state on the live ST 10 and unit-tested against the captured
+ST 20 inventory. **Still fenced off** here because no live ST 20 has
+completed a deploy-and-recover — that validation runs through the #160
+reporter (the project owns no ST 20). The state flips to Tested once
+they confirm a clean boot.
 
 ### SoundTouch 30 — `mojo` — Inferred (unverified)
 
 No ST 30 has ever been reported to this project — no `/info`, no
 install, nothing. Even the `mojo` = ST 30 variant mapping is an
-inference, not a confirmed fact. Given the ST 20 (#160) bricked on the
-same "variant-agnostic" deploy path, treat the ST 30 as equally
-unproven: it may work, it may brick. If you have one, capture its
-`/info` and `/opt/Bose/etc/` listing with `scripts/capture-state.sh`
-and file a report **before** deploying.
+inference, not a confirmed fact. 0.8.4 makes the deploy reproduce the
+firmware's own variant selection (so the #160 over-link can't recur) and
+adds a brick guard that aborts before touching the override directory if
+the speaker's variant config is unrecognised — which lowers the risk on
+an unknown model but does **not** make it Tested. Treat the ST 30 as
+unproven: capture its `/info` and `/opt/Bose/etc/` listing with
+`scripts/capture-state.sh` and file a report **before** deploying.
 
 ### SoundTouch Portable — `taigan` — Partial (#159)
 

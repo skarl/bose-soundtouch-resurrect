@@ -91,10 +91,12 @@ validated on.
 
 Other ST-family models share the same Linux / `shepherdd`
 architecture, but "same architecture" has **not** meant "works":
-the **SoundTouch 20 currently boot-loops after `deploy.sh`**
-([#160](https://github.com/skarl/bose-soundtouch-resurrect/issues/160)),
-and the **SoundTouch Portable** can't reach the admin on the LAN
-without an SSH tunnel
+the **SoundTouch 20 boot-looped after `deploy.sh`**
+([#160](https://github.com/skarl/bose-soundtouch-resurrect/issues/160))
+— root-caused and fixed in 0.8.4, but **not yet re-validated on a live
+ST 20**, so it stays fenced off until the reporter confirms — and the
+**SoundTouch Portable** can't reach the admin on the LAN without an SSH
+tunnel
 ([#159](https://github.com/skarl/bose-soundtouch-resurrect/discussions/159)).
 Before running this on anything other than an ST 10, read
 [docs/compatibility.md](docs/compatibility.md) — it has the per-model

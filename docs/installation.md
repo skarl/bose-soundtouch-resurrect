@@ -152,6 +152,18 @@ $SSH root@$SPEAKER_IP '
 # Per-station resolver files
 $SCP resolver/s[0-9]* root@$SPEAKER_IP:/mnt/nv/resolver/bmx/tunein/v1/playback/station/
 
+# Shepherd override directory. Creating /mnt/nv/shepherd switches shepherdd
+# to load ONLY from there, so it must hold the stock daemon set this product
+# needs. Do NOT just link every /opt/Bose/etc/Shepherd-*.xml — on a
+# multi-product firmware image (e.g. the ST 20) that supervises other
+# products' daemons and boot-loops the speaker (#160). This helper
+# reproduces the firmware's own variant selection and creates the directory
+# only after a brick guard recognises the variant. See ADR-0004.
+$SCP scripts/select-shepherd-configs.sh root@$SPEAKER_IP:/tmp/select-shepherd-configs.sh
+$SSH root@$SPEAKER_IP \
+  'sh /tmp/select-shepherd-configs.sh /opt/Bose/etc /mnt/nv/shepherd \
+   && rm -f /tmp/select-shepherd-configs.sh'
+
 # Daemon config so busybox httpd auto-starts at boot
 $SCP resolver/shepherd-resolver.xml \
      root@$SPEAKER_IP:/mnt/nv/shepherd/Shepherd-resolver.xml
@@ -232,7 +244,7 @@ needed — busybox httpd reads from disk on every request.
 ```bash
 $SSH root@$SPEAKER_IP '
   rm -rf /mnt/nv/resolver
-  rm -f  /mnt/nv/shepherd/Shepherd-resolver.xml
+  rm -rf /mnt/nv/shepherd
   rm -f  /mnt/nv/OverrideSdkPrivateCfg.xml
   sync
   reboot

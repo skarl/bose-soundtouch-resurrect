@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.8.4] - 2026-06-13
+
+SoundTouch 20 boot-loop fix ([#160](https://github.com/skarl/bose-soundtouch-resurrect/issues/160)). A full pre-deploy capture from a working, hard-reset ST 20 (`spotty`) pinned the cause to the right mechanism — and it was the **opposite** of the `Shepherd-*.xml` glob blind-spot suspected in 0.8.3. The ST 20's `/opt/Bose/etc/` is a **multi-product firmware image** carrying 10 Shepherd configs for 7 different Bose products; the firmware's own init script (`/etc/init.d/SoundTouch`) loads only a **variant-specific subset**, but `deploy.sh` linked **all** of them into the override directory, so shepherdd supervised eight foreign products' `recovery="reboot"` daemons at once → boot loop. Root cause confirmed against the firmware's init script and the working speaker's process list, not inferred.
+
+### Fixed
+
+- **`scripts/deploy.sh` now reproduces the firmware's own Shepherd-config selection instead of linking every `Shepherd-*.xml`.** When `/mnt/nv/shepherd/` exists, the firmware uses it verbatim (replacement, not merge — [ADR-0004](docs/adr/0004-shepherd-override-replaces-not-merges.md)), so the override directory must contain exactly the set `/etc/init.d/SoundTouch` would have assembled: `Shepherd-{core,noncore,product,<variant>,hsp}.xml` for whichever of those exist. (The firmware also has a Bardeen-Linus *bonded* substitution; we deliberately don't reproduce it — it isn't variant-gated, so on a non-bardeen speaker carrying the marker it would link a foreign-product config, re-creating the #160 class, and the project supports no bardeen-family device to validate it against.) On a single-product image (ST 10 / `rhino` ships only `{core,hsp,noncore,product,rhino}`) this is byte-identical to the old glob — **verified against the live ST 10, zero change to its working override directory.** On the multi-product ST 20 image it links only `{noncore,spotty}` and excludes the eight foreign-product configs that caused the loop. The selection is factored into **`scripts/select-shepherd-configs.sh`** (busybox-safe POSIX `sh`, like `synthesize-tunein-token.sh`), with a **brick guard**: if the per-variant stock config is absent the script refuses to populate the override directory and aborts the deploy *before* the reboot, leaving the speaker on its recoverable stock config. The override directory is now created lazily by that script (past the guard) rather than unconditionally, so a failed deploy can no longer leave a brick-class empty override dir.
+
+  > **Validation status (honesty doctrine):** the selection logic is verified on the live ST 10 and unit-tested against both the ST 10 and the captured ST 20 inventories, but the full reboot-and-recover deploy has **not** yet been run on a live ST 20 — that runs through the reporter ([#160](https://github.com/skarl/bose-soundtouch-resurrect/issues/160)), since the project has no ST 20 to test on. The ST 20 stays **Broken** in `docs/compatibility.md` until that pass lands.
+
+### Added
+
+- **`scripts/select-shepherd-configs.sh`** — standalone, fixture-testable reproduction of the firmware's Shepherd-config selection, scp'd to the speaker and run by `deploy.sh`. Idempotent; sweeps stale stock symlinks from an older over-linking deploy while preserving our own `Shepherd-resolver.xml`.
+- **`scripts/test/test_select_shepherd_configs.sh`** — 15 assertions driving the selector against the real ST 10 and ST 20 inventories: the ST 20 case (only `{noncore,spotty}`, none of the eight foreign configs) is the #160 regression gate. Also covers the stale-link sweep, the brick guard, variant derivation (including the no-trailing-newline edge), and idempotency.
+- **CI now runs the `scripts/test/*.sh` suites** (new `scripts/test` job in `.github/workflows/ci.yml`). Previously only `shellcheck` ran over `scripts/`; the shell unit tests (selector + TUNEIN synthesiser) existed but never gated a build.
+
+### Documentation
+
+- **[ADR-0004](docs/adr/0004-shepherd-override-replaces-not-merges.md) resolved.** The 0.8.3 "contested" status is lifted: the replace-not-merge decision stands, and the over-generalised "link every config / all variants" approach is replaced by the firmware's actual variant-selection rule, now documented with the `/etc/init.d/SoundTouch` evidence and reproduced in code.
+
 ## [v0.8.3] - 2026-05-30
 
 Diagnostics + documentation-honesty release. Two external reports —
